@@ -69,6 +69,23 @@ function fixture(): string {
 }
 
 describe("analyzePackageGraph", () => {
+  test("includes stale TypeScript aliases in graph violations", () => {
+    const root = fixture();
+    writeFileSync(
+      join(root, "packages", "a", "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          noEmit: true,
+          customConditions: ["bun"],
+          paths: { "@clarvis/b": ["../b/src/stale.ts"] },
+        },
+      }),
+    );
+    expect(analyzePackageGraph(root).errors).toContainEqual(
+      expect.stringContaining("development @clarvis/b"),
+    );
+  });
+
   test("reports a stable valid workspace graph", () => {
     const report = analyzePackageGraph(fixture());
     expect(report).toMatchObject({
@@ -287,16 +304,22 @@ describe("analyzePackageGraph", () => {
     const root = fixture();
     writeFileSync(
       join(root, "packages", "a", "tsconfig.build.json"),
-      '{ "references": [{ "path": "../b/tsconfig.build.json" }] }',
+      '{ "compilerOptions": { "composite": true, "noEmit": false, "declaration": true, "rootDir": "src", "outDir": "dist" }, "references": [{ "path": "../b/tsconfig.build.json" }] }',
     );
-    writeFileSync(join(root, "packages", "b", "tsconfig.build.json"), '{ "references": [] }');
+    writeFileSync(
+      join(root, "packages", "b", "tsconfig.build.json"),
+      '{ "compilerOptions": { "composite": true, "noEmit": false, "declaration": true, "rootDir": "src", "outDir": "dist" }, "references": [] }',
+    );
     writeFileSync(
       join(root, "tsconfig.json"),
       '{ // solution references\n "references": [{ "path": "packages/a/tsconfig.build.json" }, { "path": "packages/b/tsconfig.build.json" }] }',
     );
     expect(analyzePackageGraph(root).errors).toEqual([]);
 
-    writeFileSync(join(root, "packages", "a", "tsconfig.build.json"), '{ "references": [] }');
+    writeFileSync(
+      join(root, "packages", "a", "tsconfig.build.json"),
+      '{ "compilerOptions": { "composite": true, "noEmit": false, "declaration": true, "rootDir": "src", "outDir": "dist" }, "references": [] }',
+    );
     expect(
       analyzePackageGraph(root).errors.some((error) =>
         error.includes("dependency without project reference @clarvis/b"),

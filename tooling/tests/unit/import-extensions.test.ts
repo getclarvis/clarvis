@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  aliasedTypeScriptImports,
+  invalidRelativeImportExtensions,
   moduleSpecifiers,
   typescriptSourcePaths,
 } from "../../checks/import-extensions.ts";
@@ -40,7 +40,7 @@ describe("moduleSpecifiers", () => {
   });
 });
 
-describe("aliasedTypeScriptImports", () => {
+describe("invalidRelativeImportExtensions", () => {
   const existing = new Set([
     "/repo/shared/shared.ts",
     "/repo/src/value.ts",
@@ -60,7 +60,7 @@ describe("aliasedTypeScriptImports", () => {
       type Legacy = import("./legacy.cjs").Legacy;
     `;
 
-    expect(aliasedTypeScriptImports("/repo/src/entry.ts", source, fileExists)).toEqual([
+    expect(invalidRelativeImportExtensions("/repo/src/entry.ts", source, fileExists)).toEqual([
       { file: "/repo/src/entry.ts", specifier: "./value.js", expected: "./value.ts" },
       {
         file: "/repo/src/entry.ts",
@@ -79,7 +79,46 @@ describe("aliasedTypeScriptImports", () => {
       import "dependency/runtime.js";
     `;
 
-    expect(aliasedTypeScriptImports("/repo/src/entry.ts", source, fileExists)).toEqual([]);
+    expect(invalidRelativeImportExtensions("/repo/src/entry.ts", source, fileExists)).toEqual([]);
+  });
+
+  test("reports extensionless literals in every supported AST position", () => {
+    const source = `
+      import "./value";
+      import type { View } from "./view";
+      export type { Legacy } from "./legacy";
+      import alias = require("./module");
+      type Shape = import("./unknown").Shape;
+      const dynamic = import("./directory");
+      const common = require("./value");
+      // import "./comment"
+      const example = 'import("./example")';
+    `;
+    const exists = new Set([...existing, "/repo/src/directory/index.ts"]);
+    expect(
+      invalidRelativeImportExtensions("/repo/src/entry.ts", source, (path: string) =>
+        exists.has(path),
+      ),
+    ).toEqual([
+      { file: "/repo/src/entry.ts", specifier: "./value", expected: "./value.ts" },
+      { file: "/repo/src/entry.ts", specifier: "./view", expected: "./view.tsx" },
+      { file: "/repo/src/entry.ts", specifier: "./legacy", expected: "./legacy.cts" },
+      { file: "/repo/src/entry.ts", specifier: "./module", expected: "./module.mts" },
+      { file: "/repo/src/entry.ts", specifier: "./unknown", expected: undefined },
+      { file: "/repo/src/entry.ts", specifier: "./directory", expected: "./directory/index.ts" },
+      { file: "/repo/src/entry.ts", specifier: "./value", expected: "./value.ts" },
+    ]);
+  });
+
+  test("does not invent a suggestion for ambiguous or non-TypeScript targets", () => {
+    const exists = new Set([...existing, "/repo/src/value.tsx", "/repo/src/config.json"]);
+    expect(
+      invalidRelativeImportExtensions(
+        "/repo/src/entry.ts",
+        'import "./value"; import "./config.json"; import "./runtime.js";',
+        (path: string) => exists.has(path),
+      ),
+    ).toEqual([{ file: "/repo/src/entry.ts", specifier: "./value", expected: undefined }]);
   });
 });
 

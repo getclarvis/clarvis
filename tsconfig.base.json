@@ -4,6 +4,8 @@
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "customConditions": ["bun"],
     "rewriteRelativeImportExtensions": true,
     "types": ["bun", "node"],
     "strict": true,

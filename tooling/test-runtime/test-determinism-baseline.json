@@ -992,6 +992,30 @@
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "Real Bun worker stdio boundary verifies versioned frames and refusal of shell operations."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "tooling/tests/integration/module-resolution.test.ts",
+      "identity": "subprocess|test:workspace exports select source in development and declarations in build|spawnSync(process.execPath, [compiler, \"-b\", \"tsconfig.json\"], { cwd: root, encoding: \"utf8\", })|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "Runs the fixture through the pinned TypeScript compiler to verify real declaration emission and project references."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "tooling/tests/integration/module-resolution.test.ts",
+      "identity": "subprocess|test:workspace exports select source in development and declarations in build|spawnSync( process.execPath, [\"-e\", 'import { value } from \"@fixture/consumer\"; console.log(value)'], { cwd: root, encoding: \"utf8\" }, )|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "Runs fixture source or emitted JavaScript in Bun to verify real workspace and relative module loading."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "tooling/tests/integration/module-resolution.test.ts",
+      "identity": "subprocess|test:workspace exports select source in development and declarations in build|spawnSync( process.execPath, [\"-e\", 'import { value } from \"./packages/consumer/dist/index.js\"; console.log(value)'], { cwd: root, encoding: \"utf8\" }, )|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "Runs fixture source or emitted JavaScript in Bun to verify real workspace and relative module loading."
     }
   ]
 }

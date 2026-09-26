@@ -4,11 +4,7 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "noEmit": true,
-    "resolveJsonModule": true,
-    "paths": {
-      "@clarvis/capability": ["../capability/src/index.ts"],
-      "@clarvis/paths": ["../paths/src/index.ts"]
-    }
+    "resolveJsonModule": true
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist"]

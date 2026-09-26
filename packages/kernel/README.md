@@ -1195,8 +1195,9 @@ bun --filter @clarvis/kernel lint
 bun --filter @clarvis/kernel format:check
 ```
 
-When a dependency's public TypeScript surface changes, rebuild it before
-typechecking this package. The package requires Bun 1.4.0 or newer.
+The development typecheck resolves dependency sources through public `bun` exports without a prior
+build. When a dependency's public TypeScript surface changes, rebuild and qualify its declarations
+for downstream build consumers. The package requires Bun 1.4.0 or newer.
 
 ## Prompt-cache continuity
 

@@ -1330,6 +1330,10 @@ bun --filter @clarvis/code lint
 bun --filter @clarvis/code format:check
 ```
 
+The typecheck resolves Kernel and Protocol through their public source exports with the `bun`
+condition. It needs no preexisting declarations; `bun run build` separately qualifies emitted
+library declarations and the application bundle.
+
 Relative imports name the actual TypeScript source extension: `.ts` for TypeScript and `.tsx` for
 Solid components. A `.js` specifier is reserved for a real JavaScript artifact such as
 `dist/index.js` or a generated lazy chunk; it must not alias a neighboring `.ts`/`.tsx` source. The

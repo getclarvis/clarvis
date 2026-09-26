@@ -224,8 +224,9 @@ These are routing warnings, not replacements for the linked specs.
 3. Add or update tests at the correct level: `unit`, `component`, `contract`, `integration`,
    `architecture`, or `e2e`.
 4. Complete the documentation part of the iteration as defined above.
-5. Rebuild a changed package before downstream typechecking when its type surface changed; TypeScript
-   resolves cross-package declarations through built `dist/*.d.ts`.
+5. Typecheck development profiles against public source exports without relying on a prior `dist`.
+   When a public type surface changes, also rebuild the changed package and qualify downstream
+   declaration consumers; build profiles and the tooling CLI typecheck use `dist/*.d.ts`.
 6. Run the targeted package checks implicated by the change.
 7. For Markdown changes, run `bun run check:specs`. For dependency/package changes, also run
    `bun run check:graph`.

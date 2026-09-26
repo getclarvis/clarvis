@@ -19,15 +19,13 @@ bundling path for the one package that is never emitted by `tsc` — the termina
 (`packages/code/tooling/artifact/build.ts`). The root `build` command composes those two paths sequentially,
 so its completion means every distributable exists rather than only the TypeScript libraries.
 
-Two problems dominate the design as it stands in the code. The first is **cross-package resolution
-with no build step in development**: every library package's `exports` map declares a `bun` condition
-pointing at `src/*.ts` and `types`/`import` conditions pointing at `dist/*` (e.g.
-`packages/capability/package.json`), so Bun runs from source while `tsc` resolves the emitted
-declarations. The `tsconfig.build.json` files therefore carry `paths` mappings to `dist/*.d.ts`
-(`packages/kernel/tsconfig.build.json`) while the sibling `tsconfig.json` files carry the same
-names mapped to `src/*.ts` (`packages/kernel/tsconfig.json`). A machine-checked graph analyzer
-(`tooling/checks/package-graph.ts`) exists to keep manifest dependencies, `exports` maps, project
-references and the root solution file from drifting apart.
+Workspace resolution follows package `exports`: the `bun` condition points at source, `types` at
+declarations, and `import` at emitted JavaScript (`packages/capability/package.json`, `exports`).
+Development profiles enable `bun` and do not emit; build profiles disable it and emit declarations
+through project references (`tsconfig.base.json`, `packages/kernel/tsconfig.build.json`). No
+workspace `paths` aliases mediate those imports. `check:graph` validates effective profiles,
+exports and source resolution (`tooling/lib/module-resolution-policy.ts`,
+`moduleResolutionPolicyErrors`; `tooling/lib/package-graph.ts`, `analyzePackageGraph`).
 
 The executable Bun contract has the same single-owner shape. `mise.toml` carries the exact runtime,
 and `tooling/checks/bun-version.ts` projects it across CI, release packaging, the crash canary, both
@@ -67,6 +65,8 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `build:watch` | `tsc -b --watch` | `package.json` (`scripts.build:watch`) |
 | `clean` | `tsc -b --clean && bun --workspaces clean` | `package.json` (`scripts.clean`) |
 | `test` | `test:tooling`, followed by 18 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
+| `test:tooling` | unit and architecture tests, then the isolated module-resolution integration canary | `package.json` (`scripts.test:tooling`) |
+| `test:module-resolution` | compiler and Bun runtime canary in a disposable workspace | `package.json` (`scripts.test:module-resolution`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
 | `typecheck` | workspace typechecks followed by `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
@@ -172,14 +172,15 @@ Every export entry has the same three-condition shape, `bun` first:
 
 | Profile | Packages | Evidence |
 | --- | --- | --- |
-| Extends `tsconfig.base.json` | 13: capability, hooks, llm, loop, mcp-client, memory, paths, plan, skills, supervision, tools, trace, workflows | `rg -l tsconfig.base.json packages/*/tsconfig.json` → 13 |
+| Extends `tsconfig.base.json` | All libraries except protocol and kernel | `packages/<name>/tsconfig.json`, `extends` |
 | Standalone | 3: `protocol`, `kernel`, `code` | none of those three contains `extends` |
 
-`tsconfig.base.json` fixes `module`/`moduleResolution` = `NodeNext`,
+`tsconfig.base.json` fixes `module`/`moduleResolution` = `NodeNext`, `noEmit: true`,
+`customConditions: ["bun"]`,
 `rewriteRelativeImportExtensions: true`, `types: ["bun","node"]`, `strict`,
 `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `esModuleInterop`,
 `forceConsistentCasingInFileNames`, `resolveJsonModule`, `declaration: false`, `sourceMap: true` and
-`skipLibCheck: true`. Extending packages keep only `target`/`lib` and path-relative options
+`skipLibCheck: true`. Extending packages keep only `target`/`lib` and other local options
 (`packages/capability/tsconfig.json`).
 
 The three standalone profiles differ concretely:
@@ -187,8 +188,8 @@ The three standalone profiles differ concretely:
 | Package | `module` | `moduleResolution` | Extras |
 | --- | --- | --- | --- |
 | `protocol` | `NodeNext` | `NodeNext` | `rewriteRelativeImportExtensions`, `declaration: true`, `isolatedModules: true`, `verbatimModuleSyntax`, `noEmit: true`, no `types` array (`packages/protocol/tsconfig.json`) |
-| `kernel` | `NodeNext` | `NodeNext` | `rewriteRelativeImportExtensions`, `verbatimModuleSyntax`, 18 `paths` entries onto sibling **sources** (`packages/kernel/tsconfig.json`) |
-| `code` | `ESNext` | `bundler` | `jsx: "preserve"`, `jsxImportSource: "@opentui/solid"`, `types: ["bun"]` only, `allowImportingTsExtensions`, 16 `paths` entries (`packages/code/tsconfig.json`) |
+| `kernel` | `NodeNext` | `NodeNext` | `rewriteRelativeImportExtensions`, `verbatimModuleSyntax`, `noEmit: true`, `customConditions: ["bun"]` (`packages/kernel/tsconfig.json`) |
+| `code` | `ESNext` | `bundler` | `jsx: "preserve"`, `jsxImportSource: "@opentui/solid"`, `types: ["bun"]` only, `allowImportingTsExtensions`, `noEmit: true`, `customConditions: ["bun"]` (`packages/code/tsconfig.json`) |
 
 
 ### 2.5 ESLint / Prettier / Knip
@@ -413,9 +414,10 @@ URLs scraped from the crash logs.
 ### 4.1 Install and resolution
 
 At runtime under Bun, an internal `@clarvis/x` specifier resolves through that package's `exports`
-`bun` condition, which points at `src/*.ts` — so editing a package's source is immediately visible to
-its consumers with no build. Under `tsc`, the same specifier resolves through `types`/`import` to
-`dist/*.d.ts`, except where a `paths` mapping redirects it (§4.2).
+`bun` condition and loads source. Development typechecks select the same source using
+`customConditions: ["bun"]`; builds clear that condition and select `types` declarations through
+workspace links (`tsconfig.base.json`, `packages/kernel/tsconfig.build.json`,
+`tooling/tests/architecture/module-resolution-contract.test.ts`).
 
 ### 4.2 Root build composition and `tsc -b`
 
@@ -423,68 +425,49 @@ its consumers with no build. Under `tsc`, the same specifier resolves through `t
 `scripts.build`). The first phase runs `tsc -b` against the root solution file,
 then builds the native sandbox assets and the source tools worker manifest
 (`scripts.build:packages`). The second invokes `@clarvis/code`'s Bun bundle. The solution declares
-`"files": []` and 17 `references` — every package that has a `tsconfig.build.json`
+`"files": []` and references every package that has a `tsconfig.build.json`
 (`tsconfig.json`). `@clarvis/code` is absent; `tsconfig.json` states it "is Bun-only (runs from
 source, never emits) and is intentionally excluded", and indeed `packages/code` has no
 `tsconfig.build.json`.
 
-Each `tsconfig.build.json` `extends` its own package's `tsconfig.json`, then overrides it into an
-emitting composite project (`packages/capability/tsconfig.build.json`). Because the dev config
-sets `noEmit: true` for most packages, the build config must turn it back off — twelve of them carry
-an explicit `"noEmit": false` (e.g. `packages/loop/tsconfig.build.json`).
+Each `tsconfig.build.json` extends its development config and explicitly sets `noEmit: false` and
+`customConditions: []` for a composite declaration project with package-local `rootDir` and
+`outDir` (`packages/capability/tsconfig.build.json`,
+`tooling/lib/module-resolution-policy.ts`, `moduleResolutionPolicyErrors`).
 
-Repository source names the actual relative TypeScript extension. The 14 shared profiles and the
-three standalone emitting profiles enable `rewriteRelativeImportExtensions`, so JavaScript output
+Repository source names the actual relative TypeScript extension. Shared library profiles and the
+standalone emitting profiles enable `rewriteRelativeImportExtensions`, so JavaScript output
 still imports sibling `.js`/`.mjs`/`.cjs` files. `code` already permits TypeScript extensions under
 its non-emitting bundler profile. The `check:imports` pass scans tracked and unignored TypeScript ASTs
-and rejects only runtime-style relative specifiers that do not name a real JavaScript file but do
-alias a neighboring TypeScript source (`tooling/checks/import-extensions.ts`,
-`aliasedTypeScriptImports`). Real generated artifacts such as `dist/index.js` and lazy chunks remain
-JavaScript.
+and rejects literal relative specifiers without an extension, as well as runtime-style extensions
+that mask a neighboring TypeScript source (`tooling/checks/import-extensions.ts`,
+`invalidRelativeImportExtensions`). It suggests a source path only when that target is
+unambiguous. Real generated artifacts such as `dist/index.js` and lazy chunks remain JavaScript;
+calculated runtime imports are outside this literal-specifier check.
 
 Declaration emit deliberately retains the source-oriented `.ts`/`.tsx` specifier. Under NodeNext,
 TypeScript resolves that declaration edge to the sibling `.d.ts`; package build audits and the root
 project-reference build verify those consumers. The runtime rewrite claim therefore applies to
 emitted JavaScript, not to declaration text.
 
-Two different `paths` regimes exist and the direction matters. A package's dev `tsconfig.json`
-`paths` map is a **hand-maintained subset** of its dependencies, not a complete mirror of them, and the
-gaps resolve silently through the ordinary `types` condition onto `dist/*.d.ts` — the built output —
-even during an otherwise source-mapped, non-build `tsc -p tsconfig.json` typecheck:
-
-- The **dev** `tsconfig.json` of `loop`, `kernel`, `code`, `memory`, `workflows`, `trace`,
-  `hooks`, `llm`, `mcp-client`, `skills`, `supervision` maps most `@clarvis/*` specifiers it imports
-  onto sibling **sources** (e.g. `packages/loop/tsconfig.json`, `packages/kernel/tsconfig.json`),
-  but each package's map omits some of its own declared dependencies: `kernel`'s 18-entry map
-  (`packages/kernel/tsconfig.json`) excludes `@clarvis/capability`, `@clarvis/paths` and
-  even though `kernel` depends on both (`packages/kernel/package.json`);
-  `loop`'s 11-entry map (`packages/loop/tsconfig.json`) excludes `@clarvis/paths`,
-  `@clarvis/supervision`, `@clarvis/trace` and `@clarvis/mcp-client` despite depending on all four
-  (`packages/loop/package.json`); `skills`'s single-entry map
-  (`packages/skills/tsconfig.json`) excludes `@clarvis/paths` despite depending on it
-  (`packages/skills/package.json`); and `hooks`'s two-entry map
-  (`packages/hooks/tsconfig.json`) maps only the `@clarvis/tools/shell` subpath, never the
-  package's own `.` entrypoint, even though `hooks` declares `@clarvis/tools` as a whole
-  (`packages/hooks/package.json`) — in `hooks`'s case its `src`/`tests` never actually import the
-  bare `@clarvis/tools` specifier, so the gap is unexercised rather than latent. Each of these edges
-  therefore typechecks against the named package's built `dist`, not its live source, which is exactly
-  the asymmetry §4.3's "build precedes typecheck" rule exists to paper over.
-- The **build** `tsconfig.build.json` either clears the mapping (`"paths": {}`, e.g.
-  `packages/loop/tsconfig.build.json`) so resolution goes through the emitted `dist/*.d.ts`, or
-  remaps explicitly onto `dist/*.d.ts` — `kernel` does this for `protocol` and `plan`
-  (`packages/kernel/tsconfig.build.json`).
+No effective `@clarvis/...` `paths` mapping is permitted in development, build or tooling. The
+checker resolves configuration inheritance with TypeScript and rejects aliases, `bun` leaking into
+build, missing source targets and export condition drift. A source-resolution architecture test
+hides `dist` through its resolver host; an isolated two-package canary compiles and runs emitted
+JavaScript (`tooling/lib/module-resolution-policy.ts`, `moduleResolutionPolicyErrors`;
+`tooling/tests/architecture/module-resolution-contract.test.ts`;
+`tooling/tests/integration/module-resolution.test.ts`).
 
 Project references mirror the runtime dependency edges. `packages/kernel/tsconfig.build.json`
 lists its referenced packages; `packages/loop/tsconfig.build.json` lists nine (including the three optional
 packages `tools`, `hooks`, `skills`); leaves list one or two.
 
-`@clarvis/code` is typechecked separately by `tsc --noEmit` (`packages/code/package.json`) using
-`moduleResolution: "bundler"` and 16 source `paths` entries
-(`packages/code/tsconfig.json`). Those entries include `@clarvis/loop`, `@clarvis/memory`,
-`@clarvis/plan`, `@clarvis/skills`, `@clarvis/tools` — packages the architecture test forbids `code`
-from importing directly (`packages/code/tests/architecture/dependency-boundary.test.ts`); they
-are needed because `code`'s `@clarvis/kernel` mapping points at kernel **source**
-(`packages/code/tsconfig.json`), whose own imports must then resolve.
+`@clarvis/code` retains its separate `ESNext`/bundler typecheck and resolves Kernel and Protocol
+through public exports (`packages/code/tsconfig.json`,
+`packages/code/tests/architecture/dependency-boundary.test.ts`). Root tooling's editor config
+inherits source resolution; its CLI typecheck selects declarations through
+`tooling/tsconfig.check.json` so its existing less strict options do not recheck package
+implementations under a different strictness profile (`package.json`, `scripts.typecheck:tooling`).
 
 ### 4.3 The pre-commit gate
 
@@ -496,8 +479,8 @@ there, and `exec bun run check:pre-commit`. That script is a strictly sequential
 format:check → build → typecheck → lint:eslint → lint:intent → knip → test:coverage
 ```
 
-`build` sits immediately before `typecheck`, which is load-bearing because `typecheck` resolves
-cross-package types through the built `dist/*.d.ts` (§4.2). The hook is installed by
+`build` sits immediately before `typecheck`: package source typechecks can resolve without `dist`,
+while the tooling CLI profile and build qualification consume declarations (§4.2). The hook is installed by
 `bun run hooks:install`, which is just `git config core.hooksPath .githooks`
 (`package.json`, `scripts.hooks:install`) — a clone that has never run it has no gate at all.
 
@@ -944,18 +927,20 @@ test executables and maintenance automation use the pinned Bun runtime.
 Production: `tooling/checks/bun-sources.ts`, invoked by `check:bun-sources` inside `lint:intent`.
 Test: `tooling/tests/unit/bun-sources.test.ts` pins the accepted and rejected extensions.
 
-**BUILD-28.** Every tracked relative module specifier that targets a TypeScript source names the
-source's actual `.ts`, `.tsx`, `.mts` or `.cts` extension. Runtime extensions remain valid only for
-real JavaScript files; emitting packages rewrite source extensions back to their JavaScript
-equivalents in emitted JavaScript, while declaration specifiers remain source-oriented and resolve
+**BUILD-28.** Every tracked literal relative module specifier has an extension. A specifier that
+targets a TypeScript source names its actual `.ts`, `.tsx`, `.mts` or `.cts` extension. Runtime
+extensions remain valid for real JavaScript files; emitting packages rewrite source extensions back
+to their JavaScript equivalents in emitted JavaScript, while declaration specifiers remain
+source-oriented and resolve
 to sibling `.d.ts` files.
 Production: `tsconfig.base.json` and the standalone emitting profiles in
 `packages/{kernel,protocol}/tsconfig.json` enable `rewriteRelativeImportExtensions`;
-`packages/code/tsconfig.json` enables `allowImportingTsExtensions`; `check:imports` is part of
-`lint:intent` in `package.json`.
-Test: `tooling/checks/import-extensions.ts` (`moduleSpecifiers`, `aliasedTypeScriptImports`) scans the
-repository, while `tooling/tests/unit/import-extensions.test.ts` pins every supported syntax,
-positive aliases, real-JavaScript exceptions and source-file selection.
+`packages/code/tsconfig.json` enables `allowImportingTsExtensions`;
+`tooling/checks/import-extensions.ts` (`invalidRelativeImportExtensions`) implements the check;
+`check:imports` is part of `lint:intent` in `package.json`.
+Test: `tooling/tests/unit/import-extensions.test.ts` (`moduleSpecifiers`,
+`invalidRelativeImportExtensions`) pins supported literal syntax, extensionless imports,
+ambiguous suggestions, real-JavaScript exceptions and source-file selection.
 
 **BUILD-30.** `bun run setup` requires the exact Bun version pinned in `mise.toml`, performs a frozen
 root install, and builds the linked installation with `sourcemap: "none"`; no `.map` may exist in
@@ -1067,7 +1052,7 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 | Dependency | Direction forced by | Kind |
 | --- | --- | --- |
 | Bun ≥ 1.4.0 | `engines` in all 20 manifests; exact `mise.toml`; `check:bun-version` in `lint:intent` | runtime |
-| `typescript` ^6 | root devDependency; imported as a **library** by four repository-tooling modules (`tooling/lib/source-policy.ts`, `tooling/lib/package-graph.ts`, `tooling/checks/import-extensions.ts`, `tooling/tests/architecture/stream-metrics-drift.test.ts`) and five package architecture tests (three under `packages/code/tests/architecture/`, two under `packages/loop/tests/architecture/`) | static value import |
+| `typescript` ^6 | root devDependency; imported as a **library** by repository-tooling modules (`tooling/lib/source-policy.ts`, `tooling/lib/package-graph.ts`, `tooling/lib/module-resolution-policy.ts`, `tooling/checks/import-extensions.ts`, `tooling/tests/architecture/stream-metrics-drift.test.ts`) and package architecture tests (three under `packages/code/tests/architecture/`, two under `packages/loop/tests/architecture/`) | static value import |
 | `@opentui/solid/bun-plugin` | `packages/code/tooling/artifact/build.ts` — the build cannot produce the artifact without it | static value import |
 | `@clarvis/kernel/paths` | `packages/code/tooling/artifact/isolation.ts` uses shared path vocabulary through the host facade; `tooling/test-runtime/clarvis-home-preload.ts` reaches `@clarvis/paths` independently for its fixture | static value import |
 | GNU tar | `tooling/lib/ci-artifacts.ts` creates strict USTAR; restoration uses validated bytes and filesystem APIs | external process |
@@ -1087,7 +1072,7 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 
 **Type-only vs runtime.** `@clarvis/protocol` is a `dependencies` entry of `kernel` and
 `code` but has an emitting `tsconfig.build.json` (`packages/protocol/tsconfig.build.json`) purely so
-`dist/*.d.ts` exists for `tsc` — its own package `test` script is a typecheck, not a test run
+`dist/*.d.ts` exists for declaration consumers and builds — its own package `test` script is a typecheck, not a test run
 (`packages/protocol/package.json`). The inverse instance — a package declared only under
 `devDependencies` and absent from `src/` — is `@clarvis/kernel`'s `@clarvis/mcp-client`
 (`packages/kernel/package.json`, BUILD-11).
@@ -1127,8 +1112,8 @@ groups, `killTree` and session capture belong to **tools-shell-and-sessions**.
    not supplied the retirement evidence, so restored CI does not make the wrapper unnecessary.
 
 5. **Rationale for the ordering inside `check:pre-commit` is only partly derivable.** The chain is
-   sequential (`package.json`, `scripts.check:pre-commit`) and `build` precedes `typecheck`, which the `paths`-to-`dist`
-   arrangement (§4.2) makes necessary. Whether the rest of the order (format before build, knip before
+   sequential (`package.json`, `scripts.check:pre-commit`) and `build` precedes `typecheck`, which the
+   tooling declaration profile and build qualification (§4.2) require. Whether the rest of the order (format before build, knip before
    coverage) is load-bearing is not stated in any file in scope.
 
 ## Prompt-cache gates

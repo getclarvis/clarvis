@@ -160,6 +160,14 @@ roots, and a package's source may not import its own public root as a shortcut a
 module graph. The analyzer resolves export conditions, validates requested subpaths and reports
 both forms (`tooling/lib/package-graph.ts`, `analyzePackageGraph`).
 
+The same graph check rejects effective `@clarvis/...` `paths` aliases and verifies that development
+selects public `bun` source while builds disable that condition and emit package-local declarations.
+TypeScript resolves `extends` and child `paths` replacement; diagnostics name the config that
+declared a forbidden mapping. Source targets must exist, while declaration targets need not exist
+before the build
+(`tooling/lib/module-resolution-policy.ts`, `moduleResolutionPolicyErrors`;
+`tooling/lib/package-graph.ts`, `analyzePackageGraph`).
+
 A package root exports only symbols it owns. Re-exporting lower packages to make all consumers
 depend on one facade is prohibited. Kernel's current six-entry surface and no-generic-barrel rule
 are pinned by `packages/kernel/tests/architecture/public-surface.test.ts` (`kernel public surface`).
@@ -272,6 +280,18 @@ public root.
 Production: `tooling/lib/package-graph.ts` (`analyzePackageGraph`).
 
 Test: `tooling/tests/unit/package-graph.test.ts` (`analyzePackageGraph`).
+
+**INV-PA3a. No effective workspace alias replaces an export, and development and build resolve
+through the package's public source and declaration conditions respectively.** Development enables
+`bun` without emitting; builds clear it and confine output to the owning package.
+
+Production: `tooling/lib/module-resolution-policy.ts` (`moduleResolutionPolicyErrors`);
+`tooling/lib/package-graph.ts` (`analyzePackageGraph`).
+
+Test: `tooling/tests/unit/module-resolution-policy.test.ts` (`moduleResolutionPolicyErrors`);
+`tooling/tests/unit/package-graph.test.ts` (`includes stale TypeScript aliases in graph violations`);
+`tooling/tests/architecture/module-resolution-contract.test.ts` (dist-hidden source resolution);
+`tooling/tests/integration/module-resolution.test.ts` (declaration and runtime canary).
 
 **INV-PA4. Code depends on no Clarvis implementation package below Kernel; its only Clarvis package
 dependencies are Kernel and Protocol.**

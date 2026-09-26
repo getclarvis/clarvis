@@ -39,6 +39,13 @@ are private, and runtime reads of the root manifest are allowlisted. `lib/packag
 these policies to manifest and source edges, and `checks/package-graph.ts` verifies the generated
 role table and diagram committed in
 [`../specs/package-coupling-analysis.md`](../specs/package-coupling-analysis.md).
+`lib/module-resolution-policy.ts` rejects effective workspace aliases, verifies source and build
+profiles and checks public export targets. `tests/architecture/module-resolution-contract.test.ts`
+resolves real workspace imports with `dist` hidden;
+`tests/integration/module-resolution.test.ts` compiles and runs a disposable two-package workspace.
+The editor's `tsconfig.json` inherits source resolution. `tsconfig.check.json` selects declarations
+for the tooling CLI typecheck, preserving its existing less strict options while package typechecks
+use source exports.
 
 `ci/retry-code-coverage.sh` is intentionally isolated as a temporary crash retry. It remains until a
 Bun 1.4 GitHub-runner canary records at least 30 successful `@clarvis/code` coverage runs with none

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, extname, relative, resolve } from "node:path";
 import ts from "typescript";
 import { repositoryPaths } from "./bun-sources.ts";
 
@@ -60,28 +60,47 @@ export function moduleSpecifiers(file, source) {
   return specifiers;
 }
 
-/** Report runtime-style relative specifiers that alias a TypeScript source file. */
-export function aliasedTypeScriptImports(file, source, fileExists = existsSync) {
+function relativeSpecifier(file, target) {
+  const path = relative(dirname(file), target).replaceAll("\\", "/");
+  return path.startsWith(".") ? path : `./${path}`;
+}
+
+/** Report relative imports without an extension or with a JavaScript alias for TypeScript. */
+export function invalidRelativeImportExtensions(file, source, fileExists = existsSync) {
   const failures = [];
   for (const specifier of moduleSpecifiers(file, source)) {
     if (!specifier.startsWith(".")) continue;
+    const target = resolve(dirname(file), specifier);
+    if (extname(specifier) === "") {
+      const candidates = [".ts", ".tsx", ".mts", ".cts"]
+        .map((extension) => `${target}${extension}`)
+        .concat(
+          [".ts", ".tsx", ".mts", ".cts"].map((extension) => resolve(target, `index${extension}`)),
+        )
+        .filter(fileExists);
+      failures.push({
+        file,
+        specifier,
+        expected: candidates.length === 1 ? relativeSpecifier(file, candidates[0]) : undefined,
+      });
+      continue;
+    }
     const runtimeExtension = [...RUNTIME_TO_SOURCE_EXTENSIONS.keys()].find((extension) =>
       specifier.endsWith(extension),
     );
     if (runtimeExtension == null) continue;
 
-    const runtimePath = resolve(dirname(file), specifier);
+    const runtimePath = target;
     if (fileExists(runtimePath)) continue;
     const sourceStem = runtimePath.slice(0, -runtimeExtension.length);
     const sourcePath = RUNTIME_TO_SOURCE_EXTENSIONS.get(runtimeExtension)
       .map((extension) => `${sourceStem}${extension}`)
       .find(fileExists);
     if (sourcePath != null) {
-      const expectedPath = relative(dirname(file), sourcePath).replaceAll("\\", "/");
       failures.push({
         file,
         specifier,
-        expected: expectedPath.startsWith(".") ? expectedPath : `./${expectedPath}`,
+        expected: relativeSpecifier(file, sourcePath),
       });
     }
   }
@@ -97,7 +116,7 @@ if (import.meta.main) {
   const root = resolve(import.meta.dir, "../..");
   const failures = typescriptSourcePaths(repositoryPaths(root)).flatMap((path) => {
     const file = resolve(root, path);
-    return aliasedTypeScriptImports(file, readFileSync(file, "utf8")).map((failure) => ({
+    return invalidRelativeImportExtensions(file, readFileSync(file, "utf8")).map((failure) => ({
       ...failure,
       file: path,
     }));
@@ -106,13 +125,16 @@ if (import.meta.main) {
   if (failures.length > 0) {
     console.error(
       `relative import extensions (${String(failures.length)}):\n${failures
-        .map(({ file, specifier, expected }) => `- ${file}: ${specifier} -> ${expected}`)
+        .map(
+          ({ file, specifier, expected }) =>
+            `- ${file}: ${specifier}${expected === undefined ? " (missing extension)" : ` -> ${expected}`}`,
+        )
         .join("\n")}`,
     );
     process.exitCode = 1;
   } else {
     console.log(
-      "import extensions: every relative TypeScript source import names its real extension",
+      "import extensions: literal relative imports have extensions and do not mask TypeScript sources with JavaScript suffixes",
     );
   }
 }

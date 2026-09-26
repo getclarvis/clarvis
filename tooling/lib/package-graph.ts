@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
+import { moduleResolutionPolicyErrors } from "./module-resolution-policy.ts";
 import {
   PACKAGE_ROLE_ORDER,
   packageDependencyViolation,
@@ -473,6 +474,8 @@ export function analyzePackageGraph(root: string, options: { enforceArchitecture
       }
     }
   }
+
+  errors.push(...moduleResolutionPolicyErrors(repoRoot, packages));
 
   for (const pkg of packages) {
     const used = new Set(

@@ -52,6 +52,8 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
 | `test` | `test:tooling` followed by 18 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
+| `test:tooling` | unit and architecture suites, then the isolated module-resolution canary | `package.json` (`scripts.test:tooling`) |
+| `test:module-resolution` | disposable compiler and Bun runtime fixture | `package.json` (`scripts.test:module-resolution`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
 | `release:prepare` | `bun run tooling/release/prepare.ts <version>` | `package.json` (`scripts.release:prepare`) |
@@ -1117,14 +1119,14 @@ only the owner-specific default").
     `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/unit/package-graph.test.ts`.
 
 23. **Every package's `tsconfig.json` includes its `tests` tree**, so the gate's `typecheck` phase
-    type-checks test sources. Verified by reading all 17: fourteen use
-    `["src/**/*.ts","tests/**/*.ts"]`, and `code`, `kernel`, `protocol` use
-    `["src","tests"]` (e.g. `packages/protocol/tsconfig.json`, `packages/kernel/tsconfig.json`).
+    type-checks test sources. Package include patterns preserve their existing `src`, `tests` and
+    package-tooling ownership (e.g. `packages/protocol/tsconfig.json`, `packages/kernel/tsconfig.json`).
     **Unpinned.**
 
 24. **Repository checker tests are first-class classified suites.** Focused checker test files live under
-    `tooling/tests/unit/`; the repository-metadata and stream-metrics test files live under
-    `tooling/tests/architecture/`. `bun run test:tooling` executes both trees and the supported root
+    `tooling/tests/unit/`; repository-level boundary tests live under
+    `tooling/tests/architecture/` and `tooling/tests/integration/`. `bun run test:tooling` executes
+    unit and architecture suites, then the module-resolution integration canary. The supported root
     `test` and `lint:intent` commands invoke that script (`package.json`, `scripts.test:tooling`,
     `scripts.test`, `scripts.lint:intent`).
 
@@ -1144,8 +1146,8 @@ only the owner-specific default").
     `format:check → build → typecheck → lint:eslint → lint:intent → knip → test:coverage`
     (`package.json`, `scripts.check:pre-commit`), invoked by a hook that does nothing else
     (`.githooks/pre-commit`). `build` sits immediately before `typecheck` because
-    `typecheck` resolves cross-package types through the built `dist/*.d.ts`, so running it against a
-    stale `dist` reports errors that do not exist. `lint:intent` has its own inner order —
+    the tooling CLI profile and build qualification use fresh declarations, while package
+    development typechecks resolve public source. `lint:intent` has its own inner order —
     `test:tooling`, `check:source-policy`, `check:test-determinism`, `check:graph`, `check:specs`, `check:harness`,
     `check:bun-version`, `check:bun-sources`, `check:imports` and `check:release`
     (`package.json`, `scripts.lint:intent`). ~~**Unpinned**: the order is a literal in
@@ -1330,7 +1332,7 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
 
 7. ~~**The rationale for the gate's phase order is not in the repository.**~~ **Now recorded in
    `.githooks/pre-commit`**, at the one place a reader meets the chain. Beyond the two links data flow
-   forces (`build` before `typecheck` via `dist/*.d.ts`; the suites before `coverage:check` via
+   forces (`build` before the tooling CLI typecheck via `dist/*.d.ts`; the suites before `coverage:check` via
    `coverage/lcov.info`), the order is cost against probability of failing — cheapest and most likely
    first, so a failure arrives as early as the check that found it allows rather than after minutes of
    tests a formatting slip would have invalidated anyway. `format:check` is seconds and catches the

@@ -4,6 +4,7 @@
     "composite": true,
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "noEmit": false,
+    "customConditions": [],
     "rootDir": "src",
     "outDir": "dist",
     "declaration": true,

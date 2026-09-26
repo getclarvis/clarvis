@@ -247,7 +247,7 @@ test("file actions report resolved paths and required write roots", async () => 
     expect(
       (await prepareToolAction("read_file", { path: "new.txt" }, readOnly)).permissions,
     ).toBeUndefined();
-    const outsideRoot = mkdtempSync(join(tmpdir(), "clarvis-outside-"));
+    const outsideRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-outside-")));
     try {
       symlinkSync(outsideRoot, join(f.workspaceRoot, "link"));
       const linked = await prepareToolAction("write_file", { path: "link" }, f.config);

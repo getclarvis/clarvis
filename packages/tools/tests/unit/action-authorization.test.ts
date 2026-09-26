@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dispatch } from "../../src/core.ts";
 import { resolveConfig, type ToolActionAuthorization } from "../../src/config.ts";
 import { prepareToolAction } from "../../src/execution/action.ts";
+import { createExecutionPolicy } from "@clarvis/sandbox";
 
 function fixture(granted: boolean) {
   const workspaceRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-action-")));
@@ -240,6 +241,7 @@ test("file actions report resolved paths and required write roots", async () => 
         homeRoot: f.workspaceRoot,
         globalRoot: f.workspaceRoot,
         readOnlyPaths: [] as string[],
+        additionalWriteRoots: [] as string[],
       },
     } as unknown as typeof f.config;
     const outside = await prepareToolAction("write_file", { path: "new.txt" }, readOnly);
@@ -281,6 +283,53 @@ test("file actions report resolved paths and required write roots", async () => 
     }
   } finally {
     f.close();
+  }
+});
+
+test("admitted additional roots need no new permission while read-only paths stay restricted", async () => {
+  const f = fixture(true);
+  const outsideRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-admitted-")));
+  const alias = join(f.workspaceRoot, "admitted");
+  symlinkSync(outsideRoot, alias);
+  mkdirSync(join(outsideRoot, "protected"));
+  try {
+    const config = {
+      ...f.config,
+      executionPolicy: createExecutionPolicy({
+        id: "admitted",
+        mode: "sandbox",
+        workspaceRoot: f.workspaceRoot,
+        homeRoot: outsideRoot,
+        workspaceAccess: "read-only",
+        additionalWriteRoots: [join(outsideRoot, "missing"), alias, f.workspaceRoot],
+        readOnlyPaths: [join(outsideRoot, "protected")],
+      }),
+    };
+    for (const tool of ["write_file", "edit_file", "remove"]) {
+      for (const path of [join(outsideRoot, "new.txt"), "admitted/new.txt", "new.txt"]) {
+        expect((await prepareToolAction(tool, { path }, config)).permissions).toBeUndefined();
+      }
+      expect(
+        (await prepareToolAction(tool, { path: "admitted/protected/new.txt" }, config)).permissions
+          ?.writeRoots,
+      ).toContain(join(outsideRoot, "protected"));
+    }
+    const patch = "*** Begin Patch\n*** Add File: admitted/new.txt\n+x\n*** End Patch";
+    expect((await prepareToolAction("apply_patch", { patch }, config)).permissions).toBeUndefined();
+    const containing = {
+      ...config,
+      executionPolicy: {
+        ...config.executionPolicy,
+        additionalWriteRoots: [realpathSync(tmpdir())],
+      },
+    };
+    expect(
+      (await prepareToolAction("write_file", { path: "new.txt" }, containing)).permissions
+        ?.writeRoots,
+    ).toEqual([f.workspaceRoot]);
+  } finally {
+    f.close();
+    rmSync(outsideRoot, { recursive: true, force: true });
   }
 });
 

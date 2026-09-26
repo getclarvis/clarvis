@@ -24,7 +24,12 @@ observations in `createIsolationService` in
 
 Global `approval_mode` selects manual or auto review, while `judge` configures an
 optional catalog model, bounded guidance, one deadline, attempt cap and fallback.
-`execution_requirements` may require a judge or strict review. The workspace
+`execution_requirements` may require a judge or strict review. Its `read_only_paths` and
+`deny_read_paths` are mandatory filesystem boundaries: neither an approval nor the Host preference
+can discard them. Host execution is refused when it cannot preserve these paths. Production:
+`createIsolationService` in [isolation-service.ts](../../packages/kernel/src/execution/isolation-service.ts).
+Test: `mandatory filesystem requirements survive approved deltas and reject Host execution` in
+[isolation-service.test.ts](../../packages/kernel/tests/unit/isolation-service.test.ts). The workspace
 cannot contribute these host-owned blocks, even after trust approval.
 Production: `judgeSettingsSchema` in
 `packages/kernel/src/config/judge-settings.ts`, `kernelCapabilityRegistry` in

@@ -142,6 +142,22 @@ export async function prepareToolAction(
             : [metadata, existingWriteRoot(path)];
         }
         const workspace = within(path, config.workspaceRoot);
+        if (
+          config.executionPolicy?.additionalWriteRoots.some((root) => {
+            try {
+              const canonical = realpathSync(root);
+              return (
+                within(path, canonical) &&
+                (!workspace ||
+                  config.executionPolicy?.workspaceAccess !== "read-only" ||
+                  within(canonical, config.workspaceRoot))
+              );
+            } catch {
+              return false;
+            }
+          })
+        )
+          return [];
         if (workspace) {
           return config.executionPolicy?.workspaceAccess === "read-only"
             ? [config.workspaceRoot]

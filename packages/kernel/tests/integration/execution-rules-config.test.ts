@@ -36,3 +36,31 @@ test("rule check is read-only and a stale revision cannot replace another operat
   expect(check.matches.map((item) => item.id)).toEqual(["block"]);
   expect((await service.checkExecutionRule("git status", workspaceRoot)).decision).toBe("allow");
 });
+
+test("rule checks retain mandatory filesystem restrictions in bypass eligibility", async () => {
+  const root = mkdtempSync(join(tmpdir(), "clarvis-rule-required-"));
+  roots.push(root);
+  const globalDir = join(root, "global");
+  const workspaceRoot = join(root, "workspace");
+  mkdirSync(workspaceRoot);
+  const store = createFileConfigStore({ globalDir, workspaceRoot, logger: NOOP_LOGGER });
+  const service = createConfigService(store, { executionRulePaths: { globalDir, workspaceRoot } });
+  await service.updateExecutionRules(
+    "global",
+    {
+      version: 1,
+      rules: [{ id: "status", pattern: ["git", "status"], decision: "allow" }],
+    },
+    null,
+  );
+  expect((await service.checkExecutionRule("git status", workspaceRoot)).bypassEligible).toBe(true);
+  for (const requirements of [
+    { read_only_paths: [join(workspaceRoot, "protected")] },
+    { deny_read_paths: [join(workspaceRoot, "private")] },
+  ]) {
+    store.writeSettings("global", { execution_requirements: requirements });
+    const check = await service.checkExecutionRule("git status", workspaceRoot);
+    expect(check.decision).toBe("allow");
+    expect(check.bypassEligible).toBe(false);
+  }
+});

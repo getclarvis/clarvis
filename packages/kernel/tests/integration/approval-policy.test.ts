@@ -235,3 +235,62 @@ test("a mode change routes only later actions through judge", async () => {
   ).toBe(true);
   expect([questions, reviews]).toEqual([1, 1]);
 });
+
+test("unverified shell wrappers cannot grant Host through an inner allow rule", async () => {
+  const port = createApprovalService({
+    owner: "owner",
+    executionId: "run",
+    policy: "on-request",
+    policyRevision: "policy",
+    revision: () => 0,
+    backendAvailable: true,
+    denyRead: false,
+    sources: [
+      {
+        layer: "global",
+        file: "rules",
+        digest: "digest",
+        rules: [{ id: "status", pattern: ["git", "status"], decision: "allow" }],
+      },
+    ],
+  });
+  const result = await port.authorize(action("/tmp/bash -c 'git status'"));
+  expect(result.permissions).toBeUndefined();
+  expect(result.evidence.effectiveProfile).toBe("sandbox");
+});
+
+test("mandatory read-only requirements block Host grants and keep explicit allows sandboxed", async () => {
+  let reviews = 0;
+  const port = createApprovalService({
+    owner: "owner",
+    executionId: "run",
+    policy: "on-request",
+    policyRevision: "policy",
+    revision: () => 0,
+    backendAvailable: true,
+    denyRead: false,
+    mandatoryReadOnly: true,
+    sources: [
+      {
+        layer: "global",
+        file: "rules",
+        digest: "digest",
+        rules: [{ id: "status", pattern: ["git", "status"], decision: "allow" }],
+      },
+    ],
+    elicit: async () => {
+      reviews++;
+      return { action: "accept", content: { approved: "yes" } };
+    },
+  });
+  const result = await port.authorize({
+    ...action("echo changed > protected"),
+    permissions: { host: true },
+  });
+  expect(result.granted).toBe(false);
+  expect(result.evidence.reason).toBe("read_only_requires_sandbox");
+  expect(reviews).toBe(0);
+  const allowed = await port.authorize(action("git status"));
+  expect(allowed.granted).toBe(true);
+  expect(allowed.permissions).toBeUndefined();
+});

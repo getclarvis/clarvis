@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJudgeRunner } from "../../src/execution/judge-runner.ts";
@@ -16,6 +16,15 @@ test("inspection reads but cannot change workspace data", async () => {
   mkdirSync(global);
   mkdirSync(home);
   const target = join(workspace, "target.txt");
+  const shared =
+    process.platform === "linux" && existsSync("/dev/shm")
+      ? mkdtempSync("/dev/shm/clarvis-judge-test-")
+      : undefined;
+  const unrelated = [
+    join(root, "unrelated.txt"),
+    ...(shared ? [join(shared, "unrelated.txt")] : []),
+  ];
+  for (const path of unrelated) writeFileSync(path, "untouched");
   writeFileSync(target, "original");
   writeFileSync(globalPaths(global).keysFile, "synthetic-key");
   const runner = createJudgeRunner({
@@ -37,6 +46,24 @@ test("inspection reads but cannot change workspace data", async () => {
       ).text,
     ).not.toContain('"exit_code":0');
     expect(readFileSync(target, "utf8")).toBe("original");
+    for (const path of unrelated) {
+      const result = await runner.run(
+        "shell",
+        { command: `printf changed > '${path}'` },
+        new AbortController().signal,
+      );
+      expect(result.text).not.toContain('"exit_code":0');
+      expect(readFileSync(path, "utf8")).toBe("untouched");
+    }
+    const scratch = await runner.run(
+      "shell",
+      {
+        command: 'printf scratch-ok > "$TMPDIR/probe" && cat "$TMPDIR/probe"',
+      },
+      new AbortController().signal,
+    );
+    expect(scratch.text).toContain('"exit_code":0');
+    expect(scratch.text).toContain("scratch-ok");
     expect(
       (
         await runner.run(
@@ -61,6 +88,7 @@ test("inspection reads but cannot change workspace data", async () => {
   } finally {
     await runner.close();
     rmSync(root, { recursive: true, force: true });
+    if (shared) rmSync(shared, { recursive: true, force: true });
     if (priorSecret === undefined) delete process.env.CLARVIS_JUDGE_TEST_SECRET;
     else process.env.CLARVIS_JUDGE_TEST_SECRET = priorSecret;
   }

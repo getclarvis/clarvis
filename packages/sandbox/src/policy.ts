@@ -31,6 +31,7 @@ export interface ExecutionPolicy {
   readonly settingsFile: string;
   readonly installationRoots: readonly string[];
   readonly temporaryWriteRoots: readonly string[];
+  readonly sharedTemporaryWrites: boolean;
   readonly additionalWriteRoots: readonly string[];
   readonly readOnlyPaths: readonly string[];
   readonly denies: readonly string[];
@@ -47,6 +48,8 @@ export interface ExecutionPolicyOptions {
   readonly globalRoot?: string;
   readonly installationRoots?: readonly string[];
   readonly temporaryWriteRoots?: readonly string[];
+  /** Admit shared system temporary directories; false limits grants to explicit roots. */
+  readonly sharedTemporaryWrites?: boolean;
   readonly additionalWriteRoots?: readonly string[];
   readonly readOnlyPaths?: readonly string[];
   /** Exact default metadata roots intentionally writable for one approved action. */
@@ -128,6 +131,10 @@ export function createExecutionPolicy(options: ExecutionPolicyOptions): Executio
   const mode = options.mode ?? "host";
   const workspaceAccess = options.workspaceAccess ?? "read-write";
   const network = options.network ?? "enabled";
+  const sharedTemporaryWrites = options.sharedTemporaryWrites ?? true;
+  if (typeof sharedTemporaryWrites !== "boolean") {
+    throw new InvalidExecutionPolicy("invalid shared temporary writes");
+  }
   if (mode !== "host" && mode !== "sandbox") throw new InvalidExecutionPolicy("invalid mode");
   if (workspaceAccess !== "read-write" && workspaceAccess !== "read-only") {
     throw new InvalidExecutionPolicy("invalid workspace access");
@@ -157,8 +164,7 @@ export function createExecutionPolicy(options: ExecutionPolicyOptions): Executio
   }
   const writableRoots = [
     workspaceRoot,
-    "/tmp",
-    "/dev/shm",
+    ...(sharedTemporaryWrites ? ["/tmp", "/dev/shm"] : []),
     ...temporaryWriteRoots,
     ...additionalWriteRoots,
   ].map((root) => canonicalTarget(root, "writableRoot"));
@@ -205,6 +211,7 @@ export function createExecutionPolicy(options: ExecutionPolicyOptions): Executio
     settingsFile: global.settingsFile,
     installationRoots,
     temporaryWriteRoots,
+    sharedTemporaryWrites,
     additionalWriteRoots,
     readOnlyPaths,
     denies: paths(options.denies ?? [], "denies"),

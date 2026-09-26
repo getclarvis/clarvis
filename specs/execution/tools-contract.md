@@ -82,6 +82,14 @@ Production: `dispatch`, `boundParts` and `boundMeta` in
 
 ## Invariants and coupling
 
+- File mutations inside admitted `additionalWriteRoots` create no new permission delta, including
+  canonical aliases. Read-only paths retain precedence; a write root at or inside the workspace
+  can override its read-only preference. A containing temporary or additional root does not by
+  itself override that preference. Production: `prepareToolAction` in
+  [action.ts](../../packages/tools/src/execution/action.ts). Test: `admitted additional roots need
+  no new permission while read-only paths stay restricted` in
+  [action-authorization.test.ts](../../packages/tools/tests/unit/action-authorization.test.ts).
+
 - The advertised and dispatchable tool names come from one registry. Production:
   `selectSurface` in [registry.ts](../../packages/tools/src/tools/registry.ts). Test:
   [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts).

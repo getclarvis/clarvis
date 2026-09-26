@@ -21,6 +21,96 @@ function request(
   };
 }
 
+test("Host auto honors a decisive prompt rule in every segment position", async () => {
+  let reviews = 0;
+  let questions = 0;
+  const port = createApprovalService({
+    owner: "owner",
+    executionId: "run",
+    policyRevision: "policy",
+    revision: () => 0,
+    policy: "on-request",
+    mode: "auto",
+    backendAvailable: true,
+    denyRead: false,
+    sources: [
+      {
+        layer: "global",
+        file: "rules",
+        digest: "digest",
+        rules: [{ id: "push", pattern: ["git", "push"], decision: "prompt" }],
+      },
+    ],
+    elicit: async () => {
+      questions++;
+      return { action: "accept", content: { approved: "yes" } };
+    },
+    judge: {
+      async review() {
+        reviews++;
+        return { kind: "technical_failure", reason: "fixture" };
+      },
+    },
+  });
+  for (const command of [
+    "git push",
+    "echo x && git push",
+    "rm -f cache && git push",
+    "git push && rm -f cache",
+  ]) {
+    const decision = await port.authorize({
+      ...request(command),
+      requestedProfile: "host",
+      effectiveProfile: "host",
+    });
+    expect(decision.granted).toBe(false);
+    expect(decision.evidence.source).toBe("rule");
+    expect(decision.evidence.reason).toBe("judge_technical_failure");
+  }
+  expect(reviews).toBe(4);
+  expect(questions).toBe(0);
+});
+
+test("untrusted Host actions retain human review in auto mode", async () => {
+  let reviews = 0;
+  let questions = 0;
+  const common = {
+    owner: "owner",
+    executionId: "run",
+    policyRevision: "policy",
+    revision: () => 0,
+    policy: "untrusted" as const,
+    mode: "auto" as const,
+    backendAvailable: true,
+    denyRead: false,
+    sources: [],
+    judge: {
+      async review() {
+        reviews++;
+        return { kind: "technical_failure" as const, reason: "must not review" };
+      },
+    },
+  };
+  const action = {
+    ...request("echo unmatched"),
+    requestedProfile: "host" as const,
+    effectiveProfile: "host" as const,
+  };
+  const port = createApprovalService({
+    ...common,
+    elicit: async () => {
+      questions++;
+      return { action: "accept", content: { approved: "no" } };
+    },
+  });
+  expect((await port.authorize(action)).granted).toBe(false);
+  expect(questions).toBe(1);
+  expect(reviews).toBe(0);
+  expect((await createApprovalService(common).authorize(action)).evidence.reason).toBe(
+    "review_unavailable",
+  );
+});
+
 test("auto reviews eligible delta and skips ordinary calls; manual asks operator", async () => {
   let modelCalls = 0;
   let questions = 0;

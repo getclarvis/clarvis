@@ -192,6 +192,7 @@ export function createIsolationService(options: {
         backendAvailable: availabilityByNetwork.get(binding.settings.network) !== "unavailable",
         policyRevision,
         denyRead: (binding.requirements.deny_read_paths?.length ?? 0) > 0,
+        mandatoryReadOnly: (binding.requirements.read_only_paths?.length ?? 0) > 0,
         trace: ctx.services?.get(RUN_TRACE_PORT),
         mode: currentMode,
         judgeRequired: binding.requirements.judge_required,
@@ -367,6 +368,12 @@ export function createIsolationService(options: {
       const binding = bindings.get(key(ctx.owner, ctx.executionId));
       if (!binding) throw new Error("run isolation binding is missing");
       const settings = binding.settings;
+      if (
+        settings.mode === "host" &&
+        (binding.requirements.read_only_paths?.length ||
+          binding.requirements.deny_read_paths?.length)
+      )
+        throw new Error("Host cannot preserve mandatory filesystem restrictions");
       const [{ createExecutionPolicy, BubblewrapBackend, SeatbeltBackend }, tools] =
         await Promise.all([import("@clarvis/sandbox"), import("@clarvis/tools")]);
       const policy = createExecutionPolicy({
@@ -407,6 +414,8 @@ export function createIsolationService(options: {
         if (permissions.host) {
           if (policy.denies.length)
             throw new Error("Host cannot preserve explicit deny-read restrictions");
+          if (binding.requirements.read_only_paths?.length)
+            throw new Error("Host cannot preserve mandatory read-only restrictions");
           return {
             executionPort: tools.hostToolExecutor,
             sandboxBackend: undefined,

@@ -175,8 +175,7 @@ export class BubblewrapBackend implements SandboxBackend {
       writable: policy.workspaceAccess === "read-write",
     });
     for (const temporary of [
-      "/tmp",
-      "/dev/shm",
+      ...(policy.sharedTemporaryWrites ? ["/tmp", "/dev/shm"] : []),
       ...policy.temporaryWriteRoots,
       ...policy.additionalWriteRoots,
     ]) {

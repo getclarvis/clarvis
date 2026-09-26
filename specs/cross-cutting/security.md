@@ -18,7 +18,8 @@ an agent affects future runs, not the admitted tree. Production:
 
 The global judge configuration and approval mode are operator-owned. Workspace
 settings cannot add them. The reviewer's shell runs through a private Sandbox
-with read-only workspace, disabled network and temporary scratch; its tool
+with read-only workspace, disabled network and writes limited to private scratch. Shared system
+temporary directories receive no implicit write grant; its tool
 allowlist contains no mutation, approval, MCP or delegation entry point. A failed
 inspection backend does not fall back to Host. Production: `operatorLayers` in
 `packages/kernel/src/config/file-config-store.ts`, `createJudgeRunner` in

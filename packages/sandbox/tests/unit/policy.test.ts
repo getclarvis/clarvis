@@ -18,6 +18,7 @@ describe("execution policy", () => {
       expect(policy.mode).toBe("host");
       expect(policy.workspaceAccess).toBe("read-write");
       expect(policy.network).toBe("enabled");
+      expect(policy.sharedTemporaryWrites).toBe(true);
       expect(policy.globalAgentsRoot).toBe(join(root, ".agents"));
       expect(policy.workflowsRoot).toBe(join(root, ".clarvis", "workflows"));
       expect(policy.settingsFile).toBe(join(root, ".clarvis", "settings.json"));
@@ -34,6 +35,13 @@ describe("execution policy", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-policy-"));
     const installation = mkdtempSync(join(process.cwd(), ".policy-install-"));
     try {
+      expect(() =>
+        createExecutionPolicy({
+          id: "bad",
+          workspaceRoot: root,
+          sharedTemporaryWrites: "false" as unknown as boolean,
+        }),
+      ).toThrow(InvalidExecutionPolicy);
       expect(() =>
         createExecutionPolicy({
           id: "bad",

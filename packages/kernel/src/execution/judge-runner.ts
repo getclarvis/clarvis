@@ -33,6 +33,7 @@ export function createJudgeRunner(options: {
       workspaceAccess: "read-only",
       network: "disabled",
       temporaryWriteRoots: [scratch],
+      sharedTemporaryWrites: false,
       installationRoots: [
         dirname(realpathSync(process.execPath)),
         ...(existsSync(sandboxWorkerRoot) ? [sandboxWorkerRoot] : []),

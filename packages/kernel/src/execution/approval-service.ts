@@ -31,6 +31,8 @@ export function createApprovalService(options: {
   readonly backendAvailable: boolean;
   readonly policyRevision: string | (() => string);
   readonly denyRead: boolean;
+  /** Mandatory host requirements, excluding the overridable workspace preference. */
+  readonly mandatoryReadOnly?: boolean;
   readonly trace?: TracePort;
   readonly mode?: "manual" | "auto" | (() => "manual" | "auto");
   readonly judge?: {
@@ -128,7 +130,14 @@ export function createApprovalService(options: {
       let granted = evaluation.decision === "allow";
       let reason = evaluation.reason;
       let source: "rule" | "fallback" | "heuristic" | "host" | "reviewer" =
-        "segments" in evaluation ? (evaluation.segments[0]?.origin ?? "fallback") : "host";
+        "segments" in evaluation
+          ? (evaluation.segments.find(
+              (segment) => segment.decision === evaluation.decision && segment.origin === "rule",
+            )?.origin ??
+            evaluation.segments.find((segment) => segment.decision === evaluation.decision)
+              ?.origin ??
+            "fallback")
+          : "host";
       let judgeAssessment: "allow" | "deny" | undefined;
       let route: "judge" | "manual" | undefined;
       const base = {
@@ -154,12 +163,14 @@ export function createApprovalService(options: {
       if (options.strictReview && evaluation.decision !== "forbidden") needsReview = true;
       if (
         currentMode() === "auto" &&
+        options.policy !== "untrusted" &&
         request.effectiveProfile === "host" &&
         !options.strictReview &&
         !options.judgeRequired &&
         evaluation.decision !== "forbidden" &&
         source !== "rule" &&
-        !options.denyRead
+        !options.denyRead &&
+        !options.mandatoryReadOnly
       ) {
         needsReview = false;
         granted = true;
@@ -182,6 +193,11 @@ export function createApprovalService(options: {
         granted = false;
         needsReview = false;
         reason = "deny_read_requires_sandbox";
+      }
+      if (request.permissions?.host && options.mandatoryReadOnly) {
+        granted = false;
+        needsReview = false;
+        reason = "read_only_requires_sandbox";
       }
       options.trace?.record("execution_policy_result", {
         ...base,
@@ -265,7 +281,7 @@ export function createApprovalService(options: {
               options.rememberPrefix !== undefined;
             const action = request.command ?? JSON.stringify(request.arguments);
             const scope = canRemember
-              ? `\nRemembered allow: global rules, argv prefix ${JSON.stringify(prefix)}. A matching explicit allow can bypass sandbox when every segment is allowed and no deny-read applies.`
+              ? `\nRemembered allow: global rules, argv prefix ${JSON.stringify(prefix)}. A matching explicit allow can bypass sandbox when every segment is allowed and no mandatory read-only or deny-read restriction applies.`
               : "";
             const response = await options.elicit(
               {
@@ -344,6 +360,7 @@ export function createApprovalService(options: {
               "all_segments_explicitly_allowed" in evaluation &&
               evaluation.all_segments_explicitly_allowed &&
               !options.denyRead &&
+              !options.mandatoryReadOnly &&
               request.effectiveProfile === "sandbox"
             ? { host: true }
             : undefined;

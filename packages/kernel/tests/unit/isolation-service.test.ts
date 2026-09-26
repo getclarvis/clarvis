@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { realpathSync } from "node:fs";
@@ -10,6 +10,7 @@ import {
   createIsolationService,
   executeWithIsolationBinding,
 } from "../../src/execution/isolation-service.ts";
+import { createAgentTools, dispatch } from "@clarvis/tools";
 
 test("run bindings retain global preference and separate owners", async () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-isolation-run-"));
@@ -115,6 +116,83 @@ test("internal runs bind the owner and release the identity after execution", as
     }),
   ).rejects.toThrow("requires an execution id");
   expect(active.size).toBe(0);
+});
+
+test("mandatory filesystem requirements survive approved deltas and reject Host execution", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-required-paths-")));
+  const workspaceRoot = join(root, "workspace");
+  const scratchRoot = join(root, "scratch");
+  const globalRoot = join(root, "global");
+  for (const path of [workspaceRoot, scratchRoot, globalRoot]) mkdirSync(path);
+  const target = join(workspaceRoot, "protected");
+  writeFileSync(target, "original");
+  const store = createMemoryConfigStore({
+    settings: {
+      global: {
+        isolation: { mode: "sandbox" },
+        execution_requirements: { read_only_paths: [target] },
+      },
+    },
+  });
+  const service = createIsolationService({ store, workspaceRoot, globalRoot, homeRoot: root });
+  service.bind("owner", "run");
+  let questions = 0;
+  const ctx = {
+    owner: "owner",
+    executionId: "run",
+    elicit: async () => {
+      questions++;
+      return { action: "accept", content: { approved: "yes" } };
+    },
+  } as unknown as Parameters<typeof service.resolveExecution>[0];
+  try {
+    const execution = await service.resolveExecution(ctx, scratchRoot);
+    expect(() => execution.selectAuthorizedExecution?.({ host: true })).toThrow(
+      "mandatory read-only",
+    );
+    const grant = execution.selectAuthorizedExecution?.({
+      writeRoots: [workspaceRoot],
+      network: "enabled",
+    });
+    expect(grant?.executionPolicy?.readOnlyPaths).toContain(target);
+    const toolset = createAgentTools({
+      workspaceRoot,
+      temporaryRoots: [scratchRoot],
+      ...execution,
+    });
+    try {
+      const result = await dispatch(
+        "shell",
+        {
+          command: "printf changed > protected",
+          execution_permissions: { mode: "require_escalated" },
+        },
+        toolset.config,
+        undefined,
+        { actionCallId: "call", actionActor: "lead" },
+      );
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain("read_only_requires_sandbox");
+      expect(readFileSync(target, "utf8")).toBe("original");
+      expect(questions).toBe(0);
+    } finally {
+      await toolset.close();
+    }
+    for (const requirements of [{ read_only_paths: [target] }, { deny_read_paths: [target] }]) {
+      store.writeSettings("global", {
+        isolation: { mode: "host" },
+        execution_requirements: requirements,
+      });
+      service.bind("owner", "host");
+      await expect(
+        service.resolveExecution({ ...ctx, executionId: "host" }, scratchRoot),
+      ).rejects.toThrow("mandatory filesystem");
+      service.release("owner", "host");
+    }
+  } finally {
+    service.release("owner", "run");
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("approval mode edits publish a new revision for future actions in the bound run", async () => {

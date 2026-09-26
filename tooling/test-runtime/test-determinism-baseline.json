@@ -2,6 +2,14 @@
   "version": 1,
   "entries": [
     {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/scoped-writes-native.test.ts",
+      "identity": "subprocess|module|spawnSync(launch.file, [...launch.args], { cwd: launch.cwd, env: launch.env, encoding: \"utf8\", timeout: 5000, })|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Executes the physical backend to verify scratch-only writes and approved workspace grants while protected files remain unchanged; timeout is a subprocess fuse."
+    },
+    {
       "mechanism": "timer",
       "file": "packages/code/tests/component/mcp-bridge.test.ts",
       "identity": "timer|test:a never-settling MCP refresh does not accumulate physical requests|setTimeout(resolve, 5)|0",

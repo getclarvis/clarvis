@@ -150,7 +150,7 @@ export function evaluateCommand(options: {
   path?: string;
   resolve_executable?: ExecutableResolver;
 }): ExecutionEvaluation {
-  const analysis = analyzeShell(options.command);
+  const analysis = analyzeShell(options.command, options);
   const allArgv = analysis.limit === "none" ? analysis.segments : [["sh", "-c", options.command]];
   const segments: SegmentEvaluation[] = allArgv.map((argv) => {
     const matches: RuleMatch[] = [];
@@ -192,6 +192,13 @@ export function evaluateCommand(options: {
       origin = "fallback";
       reason = decision === "prompt" ? "untrusted" : "ordinary_command";
     }
+    if (decision === "prompt") {
+      const category = origin === "rule" ? "rules" : "sandbox_approval";
+      if (!canRequestApproval(options.approval_policy, category)) {
+        decision = "forbidden";
+        reason = `approval_disabled_${category}`;
+      }
+    }
     return { argv, decision, origin, reason, matches };
   });
   const winning = segments.reduce<SegmentEvaluation>(
@@ -201,22 +208,10 @@ export function evaluateCommand(options: {
   let decision = winning.decision;
   let reason = winning.reason;
   if (decision !== "forbidden" && options.override_requested && options.restricted) {
-    decision = "prompt";
-    reason = "sandbox_override";
+    const permitted = canRequestApproval(options.approval_policy, "sandbox_approval");
+    decision = permitted ? "prompt" : "forbidden";
+    reason = permitted ? "sandbox_override" : "approval_disabled_sandbox_approval";
   }
-  if (decision === "prompt") {
-    const category = reason.startsWith("rule_") ? "rules" : "sandbox_approval";
-    if (!canRequestApproval(options.approval_policy, category)) {
-      decision = "forbidden";
-      reason = `approval_disabled_${category}`;
-    }
-  }
-  if (decision === "prompt" && options.approval_policy === "never") {
-    decision = "forbidden";
-    reason = "approval_disabled_sandbox_approval";
-  }
-  if (decision === "forbidden" && winning.decision !== "forbidden" && reason === "sandbox_override")
-    reason = "approval_disabled_sandbox_approval";
   return {
     decision,
     reason,

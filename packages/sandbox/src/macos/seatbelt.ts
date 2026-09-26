@@ -49,9 +49,9 @@ function traversalAncestors(paths: readonly string[]): string[] {
 /** Produce a Seatbelt profile with narrow grants and explicit deny precedence. */
 export function seatbeltProfile(policy: ExecutionPolicy): string {
   const readSubtrees = ["/"];
+  const additionalWriteSubtrees = existing(policy.additionalWriteRoots);
   const writeSubtrees = existing([
-    "/tmp",
-    "/private/tmp",
+    ...(policy.sharedTemporaryWrites ? ["/tmp", "/private/tmp"] : []),
     ...policy.temporaryWriteRoots,
     ...policy.additionalWriteRoots,
     ...(policy.workspaceAccess === "read-write" ? [policy.workspaceRoot] : []),
@@ -71,7 +71,10 @@ export function seatbeltProfile(policy: ExecutionPolicy): string {
   }
   for (const path of writeSubtrees) {
     const exclusions: string[] = [];
-    if (policy.workspaceAccess === "read-only") {
+    if (
+      policy.workspaceAccess === "read-only" &&
+      !(additionalWriteSubtrees.includes(path) && within(realpathSync(path), policy.workspaceRoot))
+    ) {
       exclusions.push(...descendantExclusions(path, policy.workspaceRoot));
     }
     lines.push(`(allow file-read* file-write* ${subpathGrant(path, exclusions)})`);

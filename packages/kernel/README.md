@@ -806,6 +806,17 @@ in `packages/kernel/src/execution/isolation-service.ts`, `createRunJudge` in
 `packages/kernel/src/execution/judge-service.ts`. Test:
 `packages/kernel/tests/integration/approval-policy.test.ts` and
 `packages/kernel/tests/integration/judge-approval.test.ts`.
+Host auto review still honors a decisive prompt rule in any command segment and the human route
+required by `untrusted`. Mandatory `execution_requirements.read_only_paths` and `deny_read_paths`
+prevent Host selection, including approved escalation and explicit-allow bypass. The workspace
+read-only preference remains overridable through an approved write grant. The judge's inspection
+policy disables shared temporary write grants and permits only its private scratch.
+Production: `createApprovalService` in [approval-service.ts](src/execution/approval-service.ts),
+`createIsolationService` in [isolation-service.ts](src/execution/isolation-service.ts), and
+`createJudgeRunner` in [judge-runner.ts](src/execution/judge-runner.ts).
+Test: `tests/integration/judge-approval.test.ts`,
+`tests/unit/isolation-service.test.ts`, and `tests/unit/judge-runner.test.ts`.
+
 Manual review shows the action, cwd, effects and requested permissions. For a complete literal
 single-segment command it can offer the displayed argv prefix for global persistence. The Kernel
 checks the current rules before a digest-checked write; write failure leaves a valid one-time

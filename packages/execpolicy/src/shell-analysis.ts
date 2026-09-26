@@ -1,4 +1,4 @@
-import type { AnalysisLimit } from "./types.ts";
+import type { AnalysisLimit, ExecutableResolver } from "./types.ts";
 
 /** A bounded proof of literal POSIX argv segments. */
 export interface ShellAnalysis {
@@ -24,8 +24,12 @@ const CONTROL = new Set([
   "}",
 ]);
 
-/** Parse a conservative literal shell subset without executing a shell. */
-export function analyzeShell(command: string, depth = 0): ShellAnalysis {
+/** Parse literal shell syntax, retaining wrappers unless the host resolves a trusted shell identity. */
+export function analyzeShell(
+  command: string,
+  context?: { cwd: string; path?: string; resolve_executable?: ExecutableResolver },
+  depth = 0,
+): ShellAnalysis {
   if (Buffer.byteLength(command) > MAX_BYTES) return { segments: [], limit: "bytes" };
   if (depth >= MAX_DEPTH) return { segments: [], limit: "depth" };
   const segments: string[][] = [];
@@ -97,13 +101,17 @@ export function analyzeShell(command: string, depth = 0): ShellAnalysis {
   }
   const unwrapped: string[][] = [];
   for (const argv of segments) {
-    const shell = argv[0]?.split("/").at(-1);
+    const identity = context?.resolve_executable?.(argv[0]!, {
+      cwd: context.cwd,
+      path: context.path,
+    });
+    const shell = identity?.trusted ? identity.path.split("/").at(-1) : undefined;
     if (
       (shell === "sh" || shell === "bash" || shell === "zsh") &&
       (argv[1] === "-c" || argv[1] === "-lc") &&
       argv.length === 3
     ) {
-      const nested = analyzeShell(argv[2]!, depth + 1);
+      const nested = analyzeShell(argv[2]!, context, depth + 1);
       if (nested.limit !== "none") return nested;
       unwrapped.push(...nested.segments);
     } else {
@@ -138,9 +146,9 @@ export function dangerCandidates(command: string): string[][] {
         tokens.length = 0;
       }
       while (i + 1 < command.length && command[i + 1] !== "\n") i++;
-    } else if (quote === undefined && /\s/.test(ch)) {
+    } else if (quote === undefined && ch !== "\n" && /\s/.test(ch)) {
       flush();
-    } else if (quote === undefined && /[;&|()<>$`]/.test(ch)) {
+    } else if (quote === undefined && /[;&|()<>$`\n]/.test(ch)) {
       flush();
       if (tokens.length) {
         candidates.push([...tokens]);

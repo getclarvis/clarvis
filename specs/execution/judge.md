@@ -31,6 +31,14 @@ The judge receives a separate context. Original user turns from the run request,
 
 ## Inspection and failure
 
+The runner sets `sharedTemporaryWrites: false` on its native policy. Shared `/tmp`, `/dev/shm`
+and macOS temporary directories receive no implicit write grant; only its private scratch is
+admitted. Production: `createJudgeRunner` in
+[judge-runner.ts](../../packages/kernel/src/execution/judge-runner.ts). Test: `inspection reads but
+cannot change workspace data` in
+[judge-runner.test.ts](../../packages/kernel/tests/unit/judge-runner.test.ts) and
+[scoped-writes-native.test.ts](../../packages/sandbox/tests/integration/scoped-writes-native.test.ts).
+
 The reviewer may call `read_file`, `list_dir`, `read_image` and `shell` through the Kernel's bounded runner. Only those names reach the dispatcher. A native Sandbox gives the reviewer a read-only workspace, disabled network and private temporary scratch; no approval port, MCP, hooks, skills or Host fallback is present. Closing the runner drains its command sessions and worker. Production: `createJudgeRunner` in `packages/kernel/src/execution/judge-runner.ts`, `SandboxToolExecutor` in `packages/tools/src/execution/sandbox.ts`. Test: `inspection reads but cannot change workspace data` in `packages/kernel/tests/unit/judge-runner.test.ts` and the native sandbox tests in `packages/sandbox/tests`.
 
 Up to `judge.max_attempts` attempts share `judge.timeout_ms` (defaults: three and 90,000 ms). Parse and provider failures may retry; a valid `deny` is final. A valid current `allow` runs without a human prompt. Technical failure and cancellation never execute and never masquerade as a semantic denial. When required authority exceeds context, an optional judge may use the configured `manual_on_context_overflow` fallback; `judge_required` and `fallback: disabled` refuse that fallback. Three consecutive completed denials or ten in the latest fifty completed assessments open a run-local circuit breaker; the loop observes its generic host stop reason. Production: `createJudgeService` in `packages/judge/src/service.ts`, `reviewDeadline` in `packages/judge/src/retry.ts`, `DenialCircuitBreaker` in `packages/judge/src/circuit-breaker.ts`, `createApprovalService` in `packages/kernel/src/execution/approval-service.ts`, `runAgentLoop` in `packages/loop/src/runtime/loop/loop.ts`. Test: `packages/judge/tests/unit/judge.test.ts`, `three completed denials stop further reviews without a human fallback` in `packages/kernel/tests/integration/judge-approval.test.ts`.

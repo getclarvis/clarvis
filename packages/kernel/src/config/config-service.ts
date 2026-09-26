@@ -467,6 +467,8 @@ export function createConfigService(
         restricted: isolation.mode === "sandbox",
       });
       const denyRead = (settings?.execution_requirements?.deny_read_paths?.length ?? 0) > 0;
+      const mandatoryReadOnly =
+        (settings?.execution_requirements?.read_only_paths?.length ?? 0) > 0;
       return {
         rules,
         decision: evaluation.decision,
@@ -479,7 +481,10 @@ export function createConfigService(
         })),
         needsApproval: evaluation.decision === "prompt",
         bypassEligible:
-          evaluation.all_segments_explicitly_allowed && !denyRead && isolation.mode === "sandbox",
+          evaluation.all_segments_explicitly_allowed &&
+          !denyRead &&
+          !mandatoryReadOnly &&
+          isolation.mode === "sandbox",
         fallback: evaluation.segments.some((segment) => segment.origin === "fallback"),
       };
     },

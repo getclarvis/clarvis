@@ -44,14 +44,24 @@ describe("literal shell analysis", () => {
       limit: "none",
     });
   });
-  test("unwraps complete shell wrappers and preserves composed segments", () => {
-    expect(analyzeShell("sh -lc 'git status | cat' ").segments).toEqual([
+  test("unwraps only trusted shell identities and preserves composed segments", () => {
+    const context = {
+      cwd: "/work",
+      path: "/bin",
+      resolve_executable: (command: string) => ({ path: `/bin/${command}`, trusted: true }),
+    };
+    expect(analyzeShell("sh -lc 'git status | cat' ", context).segments).toEqual([
       ["git", "status"],
       ["cat"],
     ]);
-    expect(analyzeShell("bash -c 'git status' extra").segments).toEqual([
+    expect(analyzeShell("bash -c 'git status' extra", context).segments).toEqual([
       ["bash", "-c", "git status", "extra"],
     ]);
+    expect(analyzeShell("/tmp/bash -c 'git status'").segments).toEqual([
+      ["/tmp/bash", "-c", "git status"],
+    ]);
+    expect(analyzeShell("sh -c 'echo $HOME'", context).limit).toBe("syntax");
+    expect(analyzeShell("echo ok", context, 8).limit).toBe("depth");
   });
   test("incomplete syntax never authorizes a literal prefix", () => {
     for (const command of [
@@ -76,6 +86,27 @@ describe("literal shell analysis", () => {
     expect(run("echo $(rm -f cache)").decision).toBe("prompt");
     expect(run("echo hello > file").decision).toBe("allow");
     expect(run("echo okay # rm -f cache").decision).toBe("allow");
+  });
+  test("danger extraction splits unquoted newlines without splitting quoted operands", () => {
+    for (const command of [
+      "printf done\nrm -rf cache",
+      "printf done\n\nrm -f cache",
+      "echo ok # comment\nrm -rf cache",
+    ]) {
+      expect(run(command)).toMatchObject({
+        decision: "prompt",
+        reason: "forced_rm",
+        analysis_limit: "syntax",
+        all_segments_explicitly_allowed: false,
+      });
+    }
+    for (const command of [
+      "printf 'done\nrm -rf cache'",
+      'printf "done\nrm -rf cache"',
+      "printf done\\\nrm -rf cache",
+    ]) {
+      expect(run(command).decision).toBe("allow");
+    }
   });
 });
 
@@ -109,6 +140,23 @@ describe("rule evaluation", () => {
     expect(run("git status", rules).all_segments_explicitly_allowed).toBe(true);
     expect(run("git status | cat", rules).all_segments_explicitly_allowed).toBe(false);
     expect(run("git status && rm -rf cache", rules).decision).toBe("prompt");
+  });
+  test("a shell basename cannot borrow an inner command allow", () => {
+    for (const executable of ["/tmp/bash", "./sh", "zsh"]) {
+      const command = `${executable} -c 'git status'`;
+      expect(run(command, rules).all_segments_explicitly_allowed).toBe(false);
+      expect(
+        run(command, rules, {
+          approval_policy: "untrusted",
+          resolve_executable: () => ({ path: "/tmp/bash", trusted: false }),
+        }),
+      ).toMatchObject({ decision: "prompt", matches: [], all_segments_explicitly_allowed: false });
+    }
+    expect(
+      run("bash -c 'git status'", rules, {
+        resolve_executable: (command) => ({ path: `/usr/bin/${command}`, trusted: true }),
+      }).all_segments_explicitly_allowed,
+    ).toBe(true);
   });
   test("explicit allow replaces the hazard fallback for its command only", () => {
     expect(
@@ -256,6 +304,30 @@ describe("fallback and approval policy", () => {
     expect(run("echo okay", [], { override_requested: true, restricted: false }).decision).toBe(
       "allow",
     );
+  });
+  test("every required approval category is enforced regardless of segment order or override", () => {
+    const rules = [{ id: "push", pattern: ["git", "push"], decision: "prompt" as const }];
+    for (const command of ["rm -f cache && git push", "git push && rm -f cache"]) {
+      for (const [sandbox, rule, category] of [
+        [true, false, "rules"],
+        [false, true, "sandbox_approval"],
+      ] as const) {
+        expect(run(command, rules, { approval_policy: granular(sandbox, rule) })).toMatchObject({
+          decision: "forbidden",
+          reason: `approval_disabled_${category}`,
+        });
+      }
+      expect(run(command, rules, { approval_policy: granular(true, true) }).decision).toBe(
+        "prompt",
+      );
+    }
+    expect(
+      run("git push", rules, { approval_policy: granular(true, false), override_requested: true })
+        .decision,
+    ).toBe("forbidden");
+    expect(
+      run("git push", rules, { approval_policy: granular(false, true), override_requested: true }),
+    ).toMatchObject({ decision: "forbidden", reason: "approval_disabled_sandbox_approval" });
   });
   test("force removal respects -- and wrappers", () => {
     expect(run("rm -f -- cache").decision).toBe("prompt");

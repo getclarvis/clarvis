@@ -43,11 +43,15 @@ in `packages/execpolicy/tests/unit/policy.test.ts`.
 ## Shell analysis and fallback
 
 The bounded parser preserves empty arguments, quotes and escapes and decomposes literal `&&`, `||`,
-`;` and `|` commands. It unwraps complete `sh`, `bash` and `zsh` `-c`/`-lc` invocations. Expansions,
+`;` and `|` commands. It unwraps complete `sh`, `bash` and `zsh` `-c`/`-lc` invocations only when the
+injected resolver supplies a trusted shell identity for the execution cwd and PATH. Otherwise it
+retains the wrapper's original argv; a shell basename alone cannot transfer an inner allow.
+Expansions,
 substitutions, assignments, redirections, globs and control syntax yield an explicit incomplete
 classification. No prefix of a byte-limited action is authorized as a complete action. Incomplete
 actions are evaluated as their original shell invocation; incomplete analysis alone is not a danger
-signal. A separate permissive scan can find literal forced `rm` risk in complex syntax but cannot
+signal. A separate permissive scan splits unquoted newlines as command boundaries and can find
+literal forced `rm` risk in complex syntax but cannot
 set `all_segments_explicitly_allowed`. Production: `analyzeShell`, `dangerCandidates` in
 `packages/execpolicy/src/shell-analysis.ts` and `evaluateCommand` in
 `packages/execpolicy/src/policy.ts`. Test: `literal shell analysis` in
@@ -69,7 +73,9 @@ The accepted values are `on-request`, `untrusted`, `never`, or a granular object
 approves it. `never` forbids any action that would need approval. Unmatched ordinary commands are
 allowed under `on-request` and `never`; `untrusted` requests approval when a usable backend exists.
 Danger and restricted-profile overrides request `sandbox_approval`; an explicit prompt rule requests
-`rules`. An override in an unrestricted profile does not itself request approval. The package does
+`rules`. Each segment's required category is checked before aggregation, so a disabled category
+forbids the compound action regardless of segment order or an additional override request.
+An override in an unrestricted profile does not itself request approval. The package does
 not implement a retry mode or create tools for the optional categories. Production:
 `parseApprovalPolicy`, `canRequestApproval` in `packages/execpolicy/src/approval-policy.ts` and
 `evaluateCommand` in `packages/execpolicy/src/policy.ts`. Test: `fallback and approval policy` in
@@ -79,7 +85,9 @@ not implement a retry mode or create tools for the optional categories. Producti
 
 For eligible prompts, the Kernel selects a human in manual mode or `@clarvis/judge`
 in auto mode; this changes the reviewer without changing deterministic
-classification. `untrusted` retains human review. Production:
+classification. The source used for routing comes from a segment with the aggregate decision;
+a prompt rule wins ties against fallback or heuristic prompts. `untrusted` retains human review,
+including in Host auto mode. Production:
 `createApprovalService` in `packages/kernel/src/execution/approval-service.ts`.
 Test: `packages/kernel/tests/integration/judge-approval.test.ts`.
 

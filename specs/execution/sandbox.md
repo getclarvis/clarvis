@@ -3,7 +3,8 @@
 The TUI requires an explicit scope confirmation before switching an existing Sandbox preference
 to Host. That preference affects built-in tools; `forbidden` rules still prevent their matching
 actions. Remembering a literal argv prefix may make every fully understood segment eligible for
-Host bypass only when each has an explicit allow and no deny-read applies. Production:
+Host bypass only when each has an explicit allow and no mandatory read-only or deny-read requirement
+applies. Production:
 `IsolationPicker` in `packages/code/src/views/overlays/IsolationPicker.tsx`,
 `createApprovalService` in `packages/kernel/src/execution/approval-service.ts`. Test:
 `packages/code/tests/integration/app-shell-render.test.tsx` and
@@ -22,6 +23,30 @@ macOS Seatbelt projects broad reads, explicit write roots, protected metadata, e
 Temporary roots are shared with the host and are not private data storage. Host-user permissions, pathname races, hardlink aliases and code executing as the same user limit confidentiality. A denied read remains denied even when all command segments match explicit allow rules; that bypass cannot select Host. Production: `createExecutionPolicy` in `packages/sandbox/src/policy.ts`, `createApprovalService` in `packages/kernel/src/execution/approval-service.ts`. Test: `packages/sandbox/tests/unit/policy.test.ts`, `packages/kernel/tests/integration/approval-policy.test.ts`.
 
 ## Tool execution and failure
+
+`execution_requirements.read_only_paths` and `deny_read_paths` are mandatory boundaries, distinct
+from the overridable workspace preference. Host cannot enforce them, so both initial Host selection
+and per-action Host escalation are refused when either is present. An approved additional write
+root at or inside the workspace can override the workspace preference on Linux and macOS;
+mandatory read-only paths remain protected. Production: `createApprovalService` in
+[approval-service.ts](../../packages/kernel/src/execution/approval-service.ts),
+`createIsolationService` in [isolation-service.ts](../../packages/kernel/src/execution/isolation-service.ts),
+and `seatbeltProfile` in [seatbelt.ts](../../packages/sandbox/src/macos/seatbelt.ts).
+Test: `mandatory filesystem requirements survive approved deltas and reject Host execution` in
+[isolation-service.test.ts](../../packages/kernel/tests/unit/isolation-service.test.ts) and
+[scoped-writes-native.test.ts](../../packages/sandbox/tests/integration/scoped-writes-native.test.ts).
+
+The trusted `sharedTemporaryWrites` option defaults to true for ordinary tool policies. The
+inspection runner sets it to false: neither backend adds its usual shared system temporary write
+grants, and only the explicitly supplied scratch is writable. Production: `createExecutionPolicy`
+in [policy.ts](../../packages/sandbox/src/policy.ts), `BubblewrapBackend.prepare` in
+[bubblewrap.ts](../../packages/sandbox/src/linux/bubblewrap.ts), `seatbeltProfile` in
+[seatbelt.ts](../../packages/sandbox/src/macos/seatbelt.ts), and `createJudgeRunner` in
+[judge-runner.ts](../../packages/kernel/src/execution/judge-runner.ts). Test:
+[seatbelt-profile.test.ts](../../packages/sandbox/tests/unit/seatbelt-profile.test.ts),
+[scoped-writes-native.test.ts](../../packages/sandbox/tests/integration/scoped-writes-native.test.ts),
+and `inspection reads but cannot change workspace data` in
+[judge-runner.test.ts](../../packages/kernel/tests/unit/judge-runner.test.ts).
 
 `dispatch` validates and coerces a cloned action before the host authorization port decides it. Builtin file and shell tools use the selected policy. The file worker validates tool identity and schema again inside the sandbox; shell children use the same policy through `ExecutionSessionManager`. A selected permission delta creates a scoped profile for that action. `shell_session` only observes or stops a run-owned process and does not launch another command. Production: `dispatch` in `packages/tools/src/core.ts`, `SandboxToolExecutor` in `packages/tools/src/execution/sandbox.ts`, `ExecutionSessionManager.launch` in `packages/tools/src/lib/execution-session.ts`. Test: `packages/tools/tests/unit/action-authorization.test.ts`, `packages/tools/tests/integration/native-sandbox.test.ts`, `packages/tools/tests/integration/shell-session.test.ts`.
 

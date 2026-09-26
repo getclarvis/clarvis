@@ -22,9 +22,13 @@ does not constrain deliberate operator edits. The Kernel's manual approval offer
 prefix only for a complete single-segment command and persists it under a digest-checked lease.
 
 The strict parser understands quoting, escapes, empty arguments, `&&`, `||`, `;`, pipes and complete
-`sh`/`bash`/`zsh` `-c` or `-lc` wrappers. Unsupported syntax has an explicit incomplete result.
+`sh`/`bash`/`zsh` `-c` or `-lc` wrappers only when the injected resolver verifies their identity.
+Without that proof it retains the original invocation, including its executable path.
+Unsupported syntax has an explicit incomplete result.
 The fallback sees the entire action and does not prompt solely because parsing was incomplete.
-Permissive danger extraction can raise risk but cannot prove an allow. Prefix rules do not establish
+Permissive danger extraction treats unquoted newlines as command boundaries and can raise risk but
+cannot prove an allow. Every segment's required approval category is checked before aggregation;
+an enabled category cannot mask a disabled one in another segment. Prefix rules do not establish
 script contents or filesystem integrity. This package has no Windows or PowerShell contract.
 
 See [the execution policy spec](../../specs/execution/execpolicy.md). Run

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExecutionPolicy, seatbeltProfile } from "../../src/index.ts";
@@ -53,6 +53,65 @@ test("Seatbelt read-only profile denies workspace writes while keeping scratch w
     expect(profile).toContain(
       `(allow file-read* file-write* (subpath ${JSON.stringify(scratch)}))`,
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Seatbelt explicit temporary policy grants only private scratch writes", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-seatbelt-scratch-")));
+  try {
+    const workspace = join(root, "workspace");
+    const scratch = join(root, "scratch");
+    mkdirSync(workspace);
+    mkdirSync(scratch);
+    const profile = seatbeltProfile(
+      createExecutionPolicy({
+        id: "scratch",
+        mode: "sandbox",
+        workspaceRoot: workspace,
+        homeRoot: root,
+        workspaceAccess: "read-only",
+        sharedTemporaryWrites: false,
+        temporaryWriteRoots: [scratch],
+      }),
+    );
+    const grants = profile
+      .split("\n")
+      .filter((line) => line.startsWith("(allow") && line.includes("file-write*"));
+    expect(grants).toEqual([
+      '(allow file-read* file-write* (literal "/dev/null"))',
+      `(allow file-read* file-write* (subpath ${JSON.stringify(scratch)}))`,
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Seatbelt approved workspace grants override its preference and retain mandatory denies", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-seatbelt-grant-")));
+  try {
+    const workspace = join(root, "workspace");
+    const alias = join(root, "alias");
+    const protectedPath = join(workspace, "protected");
+    mkdirSync(workspace);
+    symlinkSync(workspace, alias);
+    const profile = seatbeltProfile(
+      createExecutionPolicy({
+        id: "approved",
+        mode: "sandbox",
+        workspaceRoot: workspace,
+        homeRoot: root,
+        workspaceAccess: "read-only",
+        additionalWriteRoots: [alias],
+        readOnlyPaths: [protectedPath],
+      }),
+    );
+    expect(profile).toContain(
+      `(allow file-read* file-write* (subpath ${JSON.stringify(workspace)}))`,
+    );
+    expect(profile).toContain(`(deny file-write* (literal ${JSON.stringify(protectedPath)}))`);
+    expect(profile).toContain(`(deny file-write* (subpath ${JSON.stringify(protectedPath)}))`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

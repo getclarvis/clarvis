@@ -401,7 +401,11 @@ test.skipIf(
         path: settings,
         content: "after",
       });
-      expect(replaced.isError).toBe(false);
+      if (replaced.isError) {
+        throw new Error(
+          `Settings replacement recovery failed: ${JSON.stringify(replaced.content)}`,
+        );
+      }
       expect(replaced.meta?.execution_mode).toBe("host");
       expect(replaced.meta?.sandbox_fallback).toBe(true);
       expect(readFileSync(settings, "utf8")).toBe("after");
@@ -410,7 +414,9 @@ test.skipIf(
         path: settings,
         content: "created",
       });
-      expect(created.isError).toBe(false);
+      if (created.isError) {
+        throw new Error(`Settings creation recovery failed: ${JSON.stringify(created.content)}`);
+      }
       expect(created.meta?.execution_mode).toBe("host");
       expect(created.meta?.sandbox_fallback).toBe(true);
       expect(readFileSync(settings, "utf8")).toBe("created");

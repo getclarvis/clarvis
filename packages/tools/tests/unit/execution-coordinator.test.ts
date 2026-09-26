@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createExecutionPolicy, SandboxSetupError, SeatbeltBackend } from "@clarvis/sandbox";
 import { resolveConfig } from "../../src/config.ts";
 import { ToolError } from "../../src/errors.ts";
@@ -221,7 +221,15 @@ test("only the exact settings write may recover from an OS permission denial", a
       mode: "sandbox",
       workspaceRoot: workspace,
       homeRoot: home,
+      globalRoot: join(home, ".clarvis"),
     });
+    mkdirSync(policy.globalRoot, { recursive: true });
+    const homeAlias = join(root, "home-alias");
+    symlinkSync(home, homeAlias);
+    const settingsAlias = join(homeAlias, ".clarvis", "settings.json");
+    expect(resolve(realpathSync(dirname(settingsAlias)), basename(settingsAlias))).toBe(
+      policy.settingsFile,
+    );
     const config = { ...resolveConfig({ workspaceRoot: workspace }), executionPolicy: policy };
     for (const errno of ["EACCES", "EPERM"]) {
       const sandbox: ToolExecutionPort = {
@@ -230,7 +238,7 @@ test("only the exact settings write may recover from an OS permission denial", a
         },
       };
       const coordinator = new CoordinatedToolExecutor(sandbox, true);
-      const recovered = await coordinator.execute(tool, { path: policy.settingsFile }, config);
+      const recovered = await coordinator.execute(tool, { path: settingsAlias }, config);
       expect(recovered).toMatchObject({
         content: "host result",
         meta: {
@@ -248,6 +256,19 @@ test("only the exact settings write may recover from an OS permission denial", a
         coordinator.execute(tool, { path: join(root, "other.json") }, config),
       ).rejects.toMatchObject({ code: "io_error" });
     }
+    rmSync(policy.globalRoot, { recursive: true });
+    const missingParent: ToolExecutionPort = {
+      async execute() {
+        throw new ToolError("io_error", "sandbox denied staging", { errno_code: "EPERM" });
+      },
+    };
+    expect(
+      await new CoordinatedToolExecutor(missingParent, true).execute(
+        tool,
+        { path: settingsAlias },
+        config,
+      ),
+    ).toMatchObject({ meta: { effective_mode: "host", fallback_reason: "atomic_settings" } });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

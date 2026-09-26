@@ -4,7 +4,8 @@ import type { ToolResult } from "../tools/content.ts";
 import type { ToolCallHooks, ToolDef } from "../tools/types.ts";
 import { hostToolExecutor } from "./host.ts";
 import type { ToolExecutionPort } from "./port.ts";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { ToolError } from "../errors.ts";
 import { resultDiagnostic } from "./diagnostics.ts";
 import { randomUUID } from "node:crypto";
@@ -53,7 +54,22 @@ function settingsAtomicFailure(
   const path = args.path;
   if (typeof path !== "string" || !config.executionPolicy) return false;
   const target = isAbsolute(path) ? resolve(path) : resolve(config.workspaceRoot, path);
-  return target === config.executionPolicy.settingsFile;
+  let parent = dirname(target);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return (
+        resolve(realpathSync(parent), ...missing, basename(target)) ===
+        config.executionPolicy.settingsFile
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+      const ancestor = dirname(parent);
+      if (ancestor === parent) return false;
+      missing.unshift(basename(parent));
+      parent = ancestor;
+    }
+  }
 }
 
 function marked(

@@ -55,6 +55,7 @@ async function fixture(environmentOverrides: Readonly<Record<string, string | un
       providers: [{ name: "anthropic", kind: "anthropic" }],
       plans: { mode: "off" },
       memory: { enabled: false },
+      ...(environmentOverrides.CLARVIS_TEST_SESSION === "1" ? { isolation: { mode: "host" } } : {}),
     }),
   );
   const environment = {

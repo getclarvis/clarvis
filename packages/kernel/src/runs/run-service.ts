@@ -149,6 +149,17 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
     }
     return createManagedRun({
       executionId,
+      ...(cfg.isolationService
+        ? {
+            onSteer: (message) =>
+              cfg.isolationService?.steer(
+                owner,
+                executionId,
+                typeof message === "string" ? message : JSON.stringify(message.content),
+                typeof message === "string" ? undefined : message.authorized_denial,
+              ),
+          }
+        : {}),
       eventBuffer: cfg.eventBuffer,
       ingestGraceMs,
       lifecycle: cfg.lifecycle,

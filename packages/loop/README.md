@@ -266,8 +266,12 @@ implicit host bridge.
 
 Built-ins cover:
 
-- coding tools default to Host; a host-supplied run binding can route shell and file
-  operations through a native Sandbox policy with per-operation Host recovery.
+- standalone coding tools default to Host; the file Kernel binds each run to a
+  native Sandbox policy and a host authorization port for each action.
+  The neutral authorization port can stop a turn after its host-side review limit;
+  no judge type or product setting enters the loop. A revision changed by steering
+  or a host policy edit triggers fresh action authorization with the current policy revision
+  before launch.
 - one owner-only scratch root per run, allocated by `@clarvis/paths` as a short, exclusive,
   account-owned directory and advertised as `TMPDIR`, `TEMP` and `TMP`, plus the host's existing system
   temporary roots available to commands. Shortness is what keeps a tool's own

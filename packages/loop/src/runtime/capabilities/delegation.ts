@@ -23,7 +23,7 @@ import type {
   SubagentCapabilitiesFactory,
 } from "@clarvis/capability";
 import { activationForScope } from "@clarvis/capability";
-import { SPAWN_GATE_PORT } from "@clarvis/capability";
+import { ACTION_AUTHORIZATION_PORT, SPAWN_GATE_PORT } from "@clarvis/capability";
 import { buildDelegationContribution } from "../delegation.ts";
 import type { SubagentAggregate } from "../subagents/spawn-subagent.ts";
 import type { SubagentProfileRegistry } from "../subagents/subagent-profiles.ts";
@@ -128,6 +128,9 @@ export function createDelegationRunCapability(deps: DelegationCapabilityDeps): R
               subagentAggByModel: deps.subagentAggByModel,
               semaphore: deps.semaphore,
               ...(deps.agents !== undefined ? { agents: deps.agents } : {}),
+              ...(deps.services?.get(ACTION_AUTHORIZATION_PORT)
+                ? { actionAuthorization: deps.services.get(ACTION_AUTHORIZATION_PORT) }
+                : {}),
               ...(spawnGate === undefined ? {} : { spawnGate }),
               capabilitiesFor,
               ...(scope.clock ? { clock: scope.clock } : {}),

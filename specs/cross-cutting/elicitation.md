@@ -1,5 +1,34 @@
 # Asking a human: ask_user, MCP elicitation and the mux
 
+Manual execution approval uses the Kernel's existing run elicitation bridge with
+trusted `origin: "external"` and `kind: "execution_approval"`. The request shows
+the final action, cwd, effects, requested permissions and reason; the TUI offers no preselected
+approval. Decline, timeout, disconnect, cancellation and stale authority never
+grant execution. A server-supplied MCP elicitation kind cannot claim this host
+approval identity. Production: `createApprovalService` in
+`packages/kernel/src/execution/approval-service.ts`, `createElicitBridge` in
+`packages/kernel/src/runs/elicit-bridge.ts`, `ElicitBlock` in
+`packages/code/src/views/ElicitBlock.tsx`. Test:
+`packages/kernel/tests/integration/approval-policy.test.ts` and
+`packages/code/tests/integration/elicit-block-render.test.tsx`.
+
+For one fully parsed literal segment, manual review can offer an operator-authenticated
+“approve and remember prefix” choice. The request shows its exact argv prefix, global destination
+and possible explicit-allow sandbox bypass. The Kernel rechecks action identity and current rules,
+then persists before reporting remembered; an unsuccessful write leaves one-time consent valid.
+Production: `createApprovalService` in `packages/kernel/src/execution/approval-service.ts`,
+`createIsolationService` in `packages/kernel/src/execution/isolation-service.ts`. Test:
+`manual remember binds a shown literal prefix and a failed write keeps one-time approval` in
+`packages/kernel/tests/integration/approval-policy.test.ts`.
+
+With global `approval_mode: "auto"`, an eligible request goes to the judge and
+a valid allow produces no human elicitation. A valid deny does not turn into an
+automatic human question. Only required context exceeding the judge window may
+fall back to the same manual request when the judge is optional and its fallback
+allows it. `untrusted` policy preserves human review. Production:
+`createApprovalService` in `packages/kernel/src/execution/approval-service.ts`.
+Test: `packages/kernel/tests/integration/judge-approval.test.ts`.
+
 > Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
 

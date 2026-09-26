@@ -1,5 +1,16 @@
 # Grants, agent profiles and which tools an agent actually sees
 
+Grants determine which tool calls an agent may make; they do not authorize a
+specific effect. A Kernel-bound call with an effect is evaluated by the
+run-scoped action authorization port after grant admission. The host supplies
+owner/execution identity and the loop supplies the actual actor and call ID;
+subagents inherit the same host authority. Production: `createAgentToolset` in
+`packages/loop/src/runtime/tools/builtin/toolset.ts`, `runDispatch` in
+`packages/loop/src/runtime/loop/loop.ts`, `createIsolationService` in
+`packages/kernel/src/execution/isolation-service.ts`. Test:
+`packages/loop/tests/architecture/reviewer-boundary.test.ts` and
+`packages/kernel/tests/integration/approval-policy.test.ts`.
+
 > Implemented at `packages/capability/src`, `packages/loop/src/validation` and
 > `packages/loop/src/runtime`, `packages/kernel/src/config/builtin-agents`, plus the capability
 > packages that contribute their own grants (`skills`, `workflows`, `tasks`). Every

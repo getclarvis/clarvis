@@ -45,7 +45,12 @@ export type SecretNamesResolver = (ctx: RunCapabilityContext) => readonly string
 /** Host-owned run boundary; absent keeps standalone and embedded callers on Host. */
 export type AgentExecutionBinding = Pick<
   AgentToolsOptions,
-  "executionPort" | "executionPolicy" | "sandboxBackend"
+  | "executionPort"
+  | "executionPolicy"
+  | "sandboxBackend"
+  | "actionAuthorization"
+  | "actionIdentity"
+  | "selectAuthorizedExecution"
 >;
 export type AgentExecutionResolver = (
   ctx: RunCapabilityContext,
@@ -237,6 +242,7 @@ export function buildAgentToolsHandler(deps: {
 }): ToolHandler {
   const { base, toolset } = deps;
   return {
+    authorizationHandled: true,
     matches: (call) => toolset.names.has(call.name),
     canonicalName: (call) => (toolset.names.has(call.name) ? call.name : undefined),
     interruptible: (call) => call.name === "shell",

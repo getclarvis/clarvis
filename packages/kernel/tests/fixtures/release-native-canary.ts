@@ -1,7 +1,9 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { BubblewrapBackend, createExecutionPolicy, SeatbeltBackend } from "@clarvis/sandbox";
-import { createAgentTools, SandboxToolExecutor } from "@clarvis/tools";
+import { createAgentTools, dispatch, SandboxToolExecutor } from "@clarvis/tools";
+import { createJudgeService } from "@clarvis/judge";
+import { createApprovalService } from "../../src/execution/approval-service.ts";
 
 const productRoot = process.argv[2];
 const home = process.env.HOME;
@@ -23,6 +25,7 @@ const policy = createExecutionPolicy({
   globalRoot: global,
   network: "disabled",
   temporaryWriteRoots: [scratch],
+  denies: [privateFile],
   installationRoots: [dirname(process.execPath), productRoot],
 });
 const backend = process.platform === "darwin" ? new SeatbeltBackend() : new BubblewrapBackend();
@@ -72,7 +75,68 @@ try {
   ) {
     throw new Error("installed native sandbox exposed a private home file");
   }
-  process.stdout.write(`native release sandbox ok - ${backend.name}\n`);
+  let reviews = 0;
+  let questions = 0;
+  const counts = () => ({ reviews, questions });
+  const judge = createJudgeService({
+    llm: {
+      async call() {
+        reviews++;
+        return {
+          text: '{"outcome":"allow"}',
+          usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+        };
+      },
+    },
+    model: {
+      provider: "smoke",
+      model: "local",
+      kind: "openai-compatible",
+      contextWindowTokens: 8192,
+      capabilities: [],
+      reasoningEfforts: ["low"],
+      promptCache: undefined,
+    },
+  });
+  const executeReviewed = async (mode: "auto" | "manual", target: string) => {
+    mkdirSync(join(workspace, target));
+    const port = createApprovalService({
+      owner: "smoke",
+      executionId: `smoke-${mode}`,
+      policy: "on-request",
+      policyRevision: "smoke-policy",
+      sources: [],
+      revision: () => 0,
+      backendAvailable: true,
+      denyRead: false,
+      mode,
+      judge,
+      elicit: async () => {
+        questions++;
+        return { action: "accept" as const, content: { approved: "yes" } };
+      },
+    });
+    const result = await dispatch(
+      "shell",
+      { command: `rm -rf ${target}` },
+      {
+        ...tools.config,
+        actionAuthorization: port,
+        actionIdentity: { owner: "smoke", executionId: `smoke-${mode}` },
+      },
+      undefined,
+      { actionCallId: `call-${mode}`, actionActor: "lead" },
+    );
+    if (result.isError || existsSync(join(workspace, target)))
+      throw new Error(`${mode} reviewed action did not execute in the release sandbox`);
+  };
+  await executeReviewed("auto", "approval-auto-cache");
+  if (counts().reviews !== 1 || counts().questions !== 0)
+    throw new Error("release auto review required human input or skipped judge");
+  await executeReviewed("manual", "approval-manual-cache");
+  if (counts().reviews !== 1 || counts().questions !== 1)
+    throw new Error("release manual review did not ask exactly once");
+  process.stdout.write(`native release sandbox ok - ${backend.name}; approval auto/manual ok\n`);
 } finally {
   await tools.close();
 }

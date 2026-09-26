@@ -15,13 +15,14 @@
  * two together.
  */
 export const PLAN_REVIEW_ELICIT_KIND = "plan_review";
+export const EXECUTION_APPROVAL_ELICIT_KIND = "execution_approval";
 
 export interface ElicitRequestParams {
   message: string;
   /** What raised this question, so the UI can frame it: a plan-approval gate for
    * `plan_review`, or a neutral question for `ask_user`. Mirrors the protocol
    * `ElicitationRequest.kind`. */
-  kind?: "ask_user" | "plan_review" | "workflow_review" | (string & {});
+  kind?: "ask_user" | "plan_review" | "workflow_review" | "execution_approval" | (string & {});
   /** Form variant: a JSON-schema object describing the requested fields. */
   requestedSchema?: {
     type?: string;

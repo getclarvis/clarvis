@@ -55,7 +55,7 @@ control-plane service the host emits transient `preparing` run phases (`GoalRun.
 Goal state or authority. Guided creation is an ordinary selected-agent
 turn and keeps the
 transcript mounted; the complete Goal view opens only by explicit `/goal`, click, or contextual
-`Ctrl+X O` from that sidebar section. Once open, the same `Ctrl+X O` returns to the transcript.
+`Ctrl+X G` from that sidebar section. Once open, the same `Ctrl+X G` returns to the transcript.
 Production: goal controller composition and `closeWorkspace` in
 [runtime.tsx](../../packages/code/src/runtime.tsx), `registerCodeCommands` in
 [command-composition.ts](../../packages/code/src/app/command-composition.ts), and `runOutcomeStatus`
@@ -1153,12 +1153,13 @@ saving the staged controller choice. Production:
 
 Header and footer use their content height instead of reserving a single terminal row.
 The header packs complete fields into rows using terminal cell widths: brand, workspace,
-agent, model, Memory, actionable host state and version. Narrow widths
-retain every field; a field longer than a row wraps within the available width. The brand
+agent, model, Memory, Isolation, Approval, actionable host state and version. Narrow widths
+retain every field; the separator tightens below 72 columns to preserve transcript space, and a
+field longer than a row wraps within the available width. The brand
 appears only once, the version anchors the final row, and continuation rows have no leading
 separator. The transcript receives the remaining height.
 
-`projectHeader` retains model and memory labels at every width. Workspace uses its display
+`projectHeader` retains model, memory, isolation mode and selected global approval mode labels at every width. Workspace uses its display
 label or basename and optional branch. Floor mode omits secondary agent identity. Memory `inert`
 remains labelled on. Connection failure and reconnect-pending notices remain available at narrow
 widths.

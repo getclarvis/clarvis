@@ -54,6 +54,12 @@
       "path": "../sandbox/tsconfig.build.json"
     },
     {
+      "path": "../execpolicy/tsconfig.build.json"
+    },
+    {
+      "path": "../judge/tsconfig.build.json"
+    },
+    {
       "path": "../workflows/tsconfig.build.json"
     },
     {

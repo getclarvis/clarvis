@@ -355,6 +355,34 @@ export const OPERATIONS = {
     },
   }),
   config: serviceOperations<ConfigService>({
+    getExecutionRules: {
+      method: "config.getExecutionRules",
+      metadata: read(),
+      encode: () => ({}),
+      invoke: (services) => services.config.getExecutionRules(),
+    },
+    checkExecutionRule: {
+      method: "config.checkExecutionRule",
+      metadata: read(),
+      encode: (command, cwd) => ({ command, cwd }),
+      invoke: (services, p) =>
+        services.config.checkExecutionRule(p.command as string, p.cwd as string),
+    },
+    updateExecutionRules: {
+      method: "config.updateExecutionRules",
+      metadata: write(),
+      encode: (scope, document, expectedRevision) => ({
+        scope,
+        document,
+        expected_revision: expectedRevision,
+      }),
+      invoke: (services, p) =>
+        services.config.updateExecutionRules(
+          p.scope as "global" | "workspace",
+          p.document as Parameters<ConfigService["updateExecutionRules"]>[1],
+          p.expected_revision as string | null,
+        ),
+    },
     getIsolationStatus: {
       method: "config.getIsolationStatus",
       metadata: read(),

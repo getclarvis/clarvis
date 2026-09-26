@@ -2,8 +2,8 @@
 
 ## Global isolation preference
 
-`kernelSettingsSchema` registers a strict `isolation` block with Host,
-read-write workspace and enabled network defaults. Only the global file
+`kernelSettingsSchema` registers a strict `isolation` block with Sandbox,
+read-write workspace and disabled network defaults. Only the global file
 contributes it. A workspace block is ignored silently, including in a trusted
 workspace; it neither changes the effective policy nor triggers trust review.
 Global partial updates merge individual isolation fields so switching to Host
@@ -21,6 +21,21 @@ observations in `createIsolationService` in
 `packages/kernel/src/execution/isolation-service.ts`. Test:
 `packages/kernel/tests/integration/isolation-settings.test.ts` and
 `packages/kernel/tests/integration/capability-settings-schema.test.ts`.
+
+Global `approval_mode` selects manual or auto review, while `judge` configures an
+optional catalog model, bounded guidance, one deadline, attempt cap and fallback.
+`execution_requirements` may require a judge or strict review. Its `read_only_paths` and
+`deny_read_paths` are mandatory filesystem boundaries: neither an approval nor the Host preference
+can discard them. Host execution is refused when it cannot preserve these paths. Production:
+`createIsolationService` in [isolation-service.ts](../../packages/kernel/src/execution/isolation-service.ts).
+Test: `mandatory filesystem requirements survive approved deltas and reject Host execution` in
+[isolation-service.test.ts](../../packages/kernel/tests/unit/isolation-service.test.ts). The workspace
+cannot contribute these host-owned blocks, even after trust approval.
+Production: `judgeSettingsSchema` in
+`packages/kernel/src/config/judge-settings.ts`, `kernelCapabilityRegistry` in
+`packages/kernel/src/config/capability-registry.ts`, and `operatorLayers` in
+`packages/kernel/src/config/file-config-store.ts`. Test: `global isolation settings`
+in `packages/kernel/tests/integration/isolation-settings.test.ts`.
 
 > Implemented at `packages/kernel/src/config/**`, `packages/kernel/tests/**`,
 > `packages/protocol/src/config.ts` and the loop/paths modules they call. Every claim below is

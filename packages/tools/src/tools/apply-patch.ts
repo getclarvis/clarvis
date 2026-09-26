@@ -37,6 +37,40 @@ function cleanName(name: string | undefined): string | undefined {
   return noTab.replace(/^[ab]\//, "");
 }
 
+/** Parse and resolve every patch target before authorization or mutation. */
+export function patchTargets(
+  patchText: string,
+  config: Pick<RuntimeConfig, "workspaceRoot">,
+): string[] {
+  const modelPatchText = patchText.trimStart();
+  let parsed: ParsedPatch[];
+  try {
+    parsed = modelPatchText.startsWith("*** Begin Patch")
+      ? parseModelPatch(modelPatchText)
+      : parsePatch(patchText);
+  } catch (error) {
+    throw new ToolError("invalid_input", `Malformed patch: ${(error as Error).message}`);
+  }
+  if (parsed.length === 0)
+    throw new ToolError("invalid_input", "Patch contains no applicable hunks");
+  const actionable = parsed.some(
+    (p) =>
+      p.hunks.length > 0 ||
+      p.modelHunks !== undefined ||
+      p.modelCreateContent !== undefined ||
+      p.modelDeleteWholeFile === true ||
+      (!!cleanName(p.oldFileName) &&
+        !!cleanName(p.newFileName) &&
+        cleanName(p.oldFileName) !== cleanName(p.newFileName)),
+  );
+  if (!actionable) throw new ToolError("invalid_input", "Patch contains no applicable hunks");
+  return parsed.flatMap((p) =>
+    [cleanName(p.oldFileName), cleanName(p.newFileName)]
+      .filter((name): name is string => !!name && name !== "/dev/null")
+      .map((name) => resolveFileToolPath(name, config)),
+  );
+}
+
 /**
  * Read and decode a file that a patch will edit, rejecting non-UTF-8 content.
  *

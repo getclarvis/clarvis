@@ -85,6 +85,8 @@ export interface AppCommandDeps {
     | "openAgentPicker"
     | "openMemoryPicker"
     | "openIsolationPicker"
+    | "openApprovalPicker"
+    | "openDeniedAction"
     | "openDiff"
     | "openPlan"
     | "quit"
@@ -346,6 +348,28 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     hintPriority: 48,
     hintGroup: "navigation",
     run: () => effects.openIsolationPicker(),
+  });
+
+  commands.registerAction({
+    name: "approval.picker",
+    enabled: () => !deps.runActive(),
+    title: "Approval mode",
+    desc: "Choose manual or automatic review for eligible actions",
+    slash: "/approval",
+    surface: "slash",
+    group: "navigate",
+    run: () => effects.openApprovalPicker?.(),
+  });
+
+  commands.registerAction({
+    name: "approval.denied-action",
+    enabled: () => deps.runActive(),
+    title: "Authorize denied action",
+    desc: "Review the last judge denial and authorize one new attempt",
+    slash: "/authorize",
+    surface: "slash",
+    group: "actions",
+    run: () => effects.openDeniedAction?.(),
   });
 
   commands.registerAction({

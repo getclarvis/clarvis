@@ -26,6 +26,8 @@
       "@clarvis/skills/catalog": ["../skills/src/catalog/index.ts"],
       "@clarvis/tools": ["../tools/src/index.ts"],
       "@clarvis/sandbox": ["../sandbox/src/index.ts"],
+      "@clarvis/execpolicy": ["../execpolicy/src/index.ts"],
+      "@clarvis/judge": ["../judge/src/index.ts"],
       "@clarvis/tools/shell": ["../tools/src/shell/index.ts"],
       "@clarvis/trace/testing": ["../trace/src/testing.ts"]
     },

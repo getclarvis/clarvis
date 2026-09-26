@@ -54,7 +54,7 @@ acceptance picker offers only pending criteria; historical approvals cannot sati
 Guided creation publishes the ordinary run activity instead of freezing the composer or switching screens. The main agent calls the host-bound `create_goal` tool before implementation work; a
 compact Goal section shares the activity sidebar with Plan, parallel work and agents; it shows
 formulation/progress state and uses Plan's title, lifecycle-tone, metadata and key placement. It uses
-`Ctrl+X O` to toggle the existing full Goal view while revealed;
+`Ctrl+X G` to toggle the existing full Goal view while revealed;
 the full view binds the same key to return directly to the transcript.
 The sidebar footer remains structural and shows only its `Ctrl+X S` close action while open; Goal
 navigation stays on the Goal row and is not duplicated in that footer.
@@ -220,6 +220,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `packages/code/src/views/overlays/ListPicker.tsx` |
 | `AgentProfilePicker(props)` | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/AgentProfilePicker.tsx` |
 | `IsolationPicker(props)` | `ListPicker` of Host/Sandbox with workspace and network subpickers | `packages/code/src/views/overlays/IsolationPicker.tsx` |
+| `ApprovalPicker(props)` | `ListPicker` of global manual/auto approval modes | `packages/code/src/views/overlays/ApprovalPicker.tsx` |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
 | `DiffViewer(props)` | Full-screen changed-file tree and per-file reader for every mutation in the active transcript; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
 | `PlanOverlay(props)` | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |

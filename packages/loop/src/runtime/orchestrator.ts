@@ -61,6 +61,7 @@ import { collectCapabilityToolMetadata } from "./capability-tool-metadata.ts";
 import { createToolEffectPort } from "./tools/tool-effect.ts";
 import { createEntryInput, type EntryInputDeps } from "./entry-inputs.ts";
 import { buildElicitRelay } from "./elicit-relay.ts";
+import { ACTION_AUTHORIZATION_PORT } from "@clarvis/capability";
 import { openToolPool } from "./open-tool-pool.ts";
 import { createMcpInstructionsRunCapability } from "./mcp-instructions.ts";
 import { addAutomaticMcpTools } from "./tools/automatic-mcp-tools.ts";
@@ -496,7 +497,9 @@ export async function runOrchestrator(
     ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
     clockHolder,
     trace: traceHandle,
-    enabled: shape.userInputEnabled,
+    enabled:
+      shape.userInputEnabled &&
+      (services.get(ACTION_AUTHORIZATION_PORT)?.mayRelayMcpElicitation ?? true),
     elicitWaitMs,
   });
   const depsForMode: OrchestratorDeps = {

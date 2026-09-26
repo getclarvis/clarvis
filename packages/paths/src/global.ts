@@ -29,6 +29,10 @@ export interface GlobalPaths {
   pluginDataRoot: string;
   /** Global settings document. */
   settingsFile: string;
+  /** Operator-authored execution rule directory. */
+  executionRulesDir: string;
+  /** Default execution rule document for remembered operator decisions. */
+  executionRulesFile: string;
   /** Directory of file-based agent profiles. */
   agentsDir: string;
   /** Provider credential store. */
@@ -122,6 +126,8 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     cache,
     pluginDataRoot: join(state, "plugin-data"),
     settingsFile: join(base, "settings.json"),
+    executionRulesDir: join(base, "rules"),
+    executionRulesFile: join(base, "rules", "default.json"),
     agentsDir,
     keysFile: join(base, "keys.json"),
     subscriptionsFile: join(base, "subscriptions.json"),

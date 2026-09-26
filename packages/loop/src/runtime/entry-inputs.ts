@@ -29,6 +29,7 @@ import type { Semaphore } from "./support/concurrency.ts";
 import type { ComputeClock } from "@clarvis/capability";
 import { toLlmTarget } from "./loop/loop-shared.ts";
 import type { RunAgentInput } from "./loop/run-agent.ts";
+import { ACTION_AUTHORIZATION_PORT } from "@clarvis/capability";
 import type { Elicit } from "./tools/ask-user-tool.ts";
 import type {
   AgentScope,
@@ -265,6 +266,9 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
         : {}),
       spillToolResult,
       registry,
+      ...(deps.services?.get(ACTION_AUTHORIZATION_PORT)
+        ? { actionAuthorization: deps.services.get(ACTION_AUTHORIZATION_PORT) }
+        : {}),
       stagnationThreshold: entryResolved.stagnationThreshold,
       stagnationSoftThreshold: deps.env.CLARVIS_DEFAULT_STAGNATION_SOFT_THRESHOLD,
       ...(request.guard_escalation === true && deps.elicit !== undefined

@@ -29,7 +29,7 @@ const CLARVIS_FILES = new Set([
   "CLARVIS.md",
   "AGENTS.md",
 ]);
-const CLARVIS_DIRS = new Set(["agents", "workflows", "extension-profiles"]);
+const CLARVIS_DIRS = new Set(["agents", "workflows", "extension-profiles", "rules"]);
 const SHARED_DIRS = new Set(["skills", "plugins"]);
 const PRIVATE_COMPONENT =
   /^(?:keys?|subscriptions?|auth(?:-key)?|credentials?|secrets?|tokens?|workspace-trust)(?:[.-]|$)|^\.env(?:[.-]|$)|\.(?:pem|key|p12|pfx)$/i;
@@ -75,6 +75,7 @@ export function configurationPathClass(
     /^skills\/[a-z0-9][a-z0-9_-]*\/SKILL\.md$/.test(path) ||
     (!shared &&
       (/^agents\/[a-z0-9][a-z0-9_-]*\.md$/.test(path) ||
+        /^rules\/[a-z0-9][a-z0-9_-]*\.json$/.test(path) ||
         /^workflows\/[a-z0-9][a-z0-9_-]*\/WORKFLOW\.md$/.test(path)))
   )
     return "authoring";

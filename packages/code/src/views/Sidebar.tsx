@@ -491,7 +491,7 @@ export function Sidebar(props: {
                     </text>
                     <text selectable={false}>
                       <span style={{ fg: tokens.accent }}>
-                        <b>{`[${compactKey("<leader>o")}]`}</b>
+                        <b>{`[${compactKey("<leader>g")}]`}</b>
                       </span>
                       <span style={{ fg: tokens.muted }}> full goal</span>
                     </text>

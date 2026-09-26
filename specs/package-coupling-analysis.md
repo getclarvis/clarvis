@@ -23,15 +23,17 @@ The table and Mermaid source belong to the generator and must stay exactly as em
 
 <!-- prettier-ignore-start -->
 <!-- package-graph:start -->
-Packages: 18; internal edges: 47; optional edges: 3.
+Packages: 20; internal edges: 50; optional edges: 3.
 
 | Package | Role | Direct internal dependencies | Internal consumers |
 | --- | --- | --- | ---: |
-| `capability` | foundation | — | 12 |
+| `capability` | foundation | — | 13 |
 | `code` | application | `kernel`, `protocol` | 0 |
+| `execpolicy` | execution-service | — | 1 |
 | `goal` | product-capability | `capability`, `loop` | 1 |
 | `hooks` | execution-service | `capability`, `tools` | 1 |
-| `kernel` | host-implementation | `capability`, `goal`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `sandbox`, `skills`, `tools`, `trace`, `workflows` | 1 |
+| `judge` | execution-service | `capability` | 1 |
+| `kernel` | host-implementation | `capability`, `execpolicy`, `goal`, `judge`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `sandbox`, `skills`, `tools`, `trace`, `workflows` | 1 |
 | `llm` | execution-service | `capability` | 2 |
 | `loop` | engine | `capability`, `hooks` (optional), `llm`, `mcp-client`, `paths`, `skills` (optional), `supervision`, `tools` (optional), `trace` | 4 |
 | `mcp-client` | execution-service | `capability`, `paths` | 2 |
@@ -60,7 +62,9 @@ flowchart LR
     protocol["@clarvis/protocol"]
   end
   subgraph role_execution_service["execution services"]
+    execpolicy["@clarvis/execpolicy"]
     hooks["@clarvis/hooks"]
+    judge["@clarvis/judge"]
     llm["@clarvis/llm"]
     mcp_client["@clarvis/mcp-client"]
     sandbox["@clarvis/sandbox"]
@@ -90,8 +94,11 @@ flowchart LR
   goal --> loop
   hooks --> capability
   hooks --> tools
+  judge --> capability
   kernel --> capability
+  kernel --> execpolicy
   kernel --> goal
+  kernel --> judge
   kernel --> llm
   kernel --> loop
   kernel --> mcp_client

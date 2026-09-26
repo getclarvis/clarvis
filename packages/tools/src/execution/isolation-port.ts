@@ -12,6 +12,8 @@ export interface ToolIsolationPolicy {
   readonly settingsFile: string;
   readonly installationRoots: readonly string[];
   readonly temporaryWriteRoots: readonly string[];
+  readonly additionalWriteRoots: readonly string[];
+  readonly readOnlyPaths: readonly string[];
   readonly denies: readonly string[];
 }
 

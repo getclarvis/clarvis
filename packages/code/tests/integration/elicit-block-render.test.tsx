@@ -138,6 +138,28 @@ const WORKFLOW_REVIEW: ElicitRequestParams = {
   },
 };
 
+const EXECUTION_APPROVAL: ElicitRequestParams = {
+  kind: "execution_approval",
+  message:
+    "Tool: shell\nCommand: curl example.com\nPermissions: network enabled\nReason: network request",
+  requestedSchema: {
+    type: "object",
+    properties: { approved: { type: "string", enum: ["yes", "no"] } },
+    required: ["approved"],
+  },
+};
+
+test("execution approval displays the action and requires an explicit choice", async () => {
+  const approval = await mountKeyed(EXECUTION_APPROVAL);
+  expect(approval.t.captureCharFrame()).toContain("Execution approval required");
+  expect(approval.t.captureCharFrame()).toContain("network enabled");
+  approval.press("return");
+  expect(approval.resolved).toEqual([]);
+  approval.press("1");
+  expect(approval.resolved).toEqual([{ action: "accept", content: { approved: "yes" } }]);
+  approval.t.renderer.destroy();
+});
+
 test("a workflow_review is an explicit preflight with a safe before-start promise", async () => {
   const out = await frame(() => (
     <ElicitBlock interaction={stubInteraction} request={WORKFLOW_REVIEW} onResolve={() => {}} />

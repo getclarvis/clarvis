@@ -138,7 +138,7 @@ export function GoalView(
       registerLevel(host.interaction.keymap, {
         enabled,
         scroll: () => scroll,
-        ...detailCloseActions("<leader>o", () => host.close()),
+        ...detailCloseActions("<leader>g", () => host.close()),
         verbs: [
           {
             key: "e",

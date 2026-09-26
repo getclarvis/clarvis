@@ -2,7 +2,7 @@ import { createSignal, type Accessor } from "solid-js";
 import type { IsolationSettings } from "@clarvis/protocol";
 import type { SettingsAdapter } from "./settings.ts";
 
-export type IsolationChoice = Required<IsolationSettings>;
+export type IsolationChoice = Required<Pick<IsolationSettings, "mode" | "workspace" | "network">>;
 
 export interface IsolationModeStore {
   choice: Accessor<IsolationChoice>;
@@ -12,9 +12,9 @@ export interface IsolationModeStore {
 /** Resolve omitted fields without erasing preferences while Host is selected. */
 export function isolationChoice(value?: IsolationSettings): IsolationChoice {
   return {
-    mode: value?.mode ?? "host",
+    mode: value?.mode ?? "sandbox",
     workspace: value?.workspace ?? "read-write",
-    network: value?.network ?? "enabled",
+    network: value?.network ?? "disabled",
   };
 }
 

@@ -1,3 +1,4 @@
+import type { ActionAuthorizationPort } from "@clarvis/capability";
 /**
  * The `delegation` capability's agent-loop contribution: independent spawning
  * through inline and background paths.
@@ -171,6 +172,7 @@ function spawnInBackground(
  * @remarks The optional spawn gate can refuse a call before child preparation.
  */
 export interface DelegationDeps {
+  actionAuthorization?: ActionAuthorizationPort;
   /** Inherited host-resolved machinery namespace. */
   statePaths?: WorkspaceStatePaths;
   bc: AgentBuildContext;
@@ -233,6 +235,7 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
   let iter: IterState = { subagentSpawned: false };
 
   const spawnCtx: SpawnContext = {
+    ...(deps.actionAuthorization ? { actionAuthorization: deps.actionAuthorization } : {}),
     env: deps.env,
     opened: deps.opened,
     profiles: deps.profiles,

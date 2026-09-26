@@ -133,6 +133,8 @@ once, in one place.
 | `subagent_iteration_started` | `SubagentIterationStartedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_call` | `ToolCallDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_call_started` | `ToolCallStartedDetail` | `packages/capability/src/trace-kinds.ts` |
+| `approval_requested` / `approval_resolved` | `ApprovalRequestedDetail` / `ApprovalResolvedDetail` | `packages/capability/src/trace-kinds.ts` |
+| `execution_policy_result` / `execution_attempt` | `ExecutionPolicyResultDetail` / `ExecutionAttemptDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_output_delta` | `ToolOutputDeltaDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_control_released` | `ToolControlReleasedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_input_delta` | `ToolInputDeltaDetail` | `packages/capability/src/trace-kinds.ts` |
@@ -257,12 +259,13 @@ builtin kind above, so the two vocabularies differ only by those unmapped kinds:
 `delegation_completed`, `delegation_failed`, `budget_check`, `compaction_started`, `compaction`, `compaction_skipped`,
 `cancellation`, `user_question`, `user_steering`, `soft_limit_check`,
 `run_started`, `run_ended`, `delegation_started`, `model_call_error`, `guard_escalation`,
-`convergence_warning`, `model_call_retry`, `elicitation_requested`, `model_reasoning`,
+`convergence_warning`, `model_call_retry`, `elicitation_requested`, `approval_requested`,
+`approval_resolved`, `execution_policy_result`, `execution_attempt`, `model_reasoning`,
 `model_stream_delta`, `mcp_degraded`.
 
 Each becomes one flat member of the `BuiltinTraceEvent` union (`packages/capability/src/trace-events.ts`), whose exact
 per-type field shape is what §4c's mapping table and §4o's span table describe branch-by-branch; it is
-not re-enumerated field-by-field here to avoid a second, driftable copy of the same 31 shapes.
+not re-enumerated field-by-field here to avoid a second, driftable copy.
 
 ### 2b. `@clarvis/trace` — entrypoint `.` (`packages/trace/src/index.ts`)
 
@@ -951,6 +954,7 @@ event gets `{ span_id: "run", phase: "point", kind: "event" }`. Then:
 | `subagent_iteration_started` / `subagent_iteration` | `<instanceId>:<n>` | start / end | `iteration` |
 | `delegation_created` / `_started` / `_completed` / `_failed` | `delegation:<id>` | start / point / end / end | `subagent` |
 | `tool_call_started` | `call_id` | start | `tool` |
+| `approval_requested` / `approval_resolved` / `execution_policy_result` / `execution_attempt` | `call_id` | point | `tool` |
 | `tool_output_delta` / `tool_control_released` / `tool_input_delta` | `call_id` | point | `tool` |
 | `tool_call` | `call_id ?? "<agent>:<iteration_ref>:tool"` | end | `tool` |
 | `model_reasoning` / `model_stream_delta` / `model_call_error` / `model_call_retry` | iteration span | point | `iteration` |

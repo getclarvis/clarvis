@@ -1,4 +1,6 @@
+import type { ActionAuthorizationPort } from "@clarvis/capability";
 import { randomUUID } from "node:crypto";
+import { authorizeAction } from "../tools/authorize-action.ts";
 import { NOOP_LOGGER, sanitizeErrorMessage } from "@clarvis/capability";
 import type {
   AgentRole,
@@ -121,6 +123,7 @@ export interface AgentLoopResults {
  *   re-marshaled between the two layers.
  */
 export interface LoopCore {
+  actionAuthorization?: ActionAuthorizationPort;
   agent: AgentRole;
   subagentInstanceId?: string;
   target: LlmTarget;
@@ -828,6 +831,21 @@ async function runDispatch(
         rewritten === undefined
           ? original
           : { ...original, arguments: rewritten.arguments, rewrittenFrom: original.arguments };
+      if (handler.authorizationHandled !== true) {
+        const authorizationError = await authorizeAction(
+          core.actionAuthorization,
+          call,
+          handler.canonicalName?.(call) ?? call.name,
+          core.subagentInstanceId === undefined
+            ? core.agent
+            : `${core.agent}:${core.subagentInstanceId}`,
+          batchSignal(),
+        );
+        if (authorizationError !== null) {
+          results[i] = `Tool '${call.name}' result: ${authorizationError}`;
+          continue;
+        }
+      }
       const invocation = openToolInvocation(handler, call, core);
       let handled: Awaited<ReturnType<typeof settleOrAbort<HandlerVerdict>>>;
       let continuation: { stop(): Promise<boolean>; completed: Promise<unknown> } | undefined;
@@ -986,6 +1004,13 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
 
   try {
     for (;;) {
+      const hostStop = core.actionAuthorization?.stopReason?.();
+      if (hostStop)
+        return {
+          status: "error",
+          partialText: "",
+          error: { code: "host_policy_stop", message: hostStop },
+        };
       const prepared = await runBeforeIteration(d.beforeIteration, { signal: runtime.signal });
       if (prepared !== undefined) return d.maybeCancelled() ?? prepared;
 

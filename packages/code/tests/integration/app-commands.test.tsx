@@ -40,6 +40,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { Help } from "../../src/views/overlays/Help.tsx";
+import { DeniedActionPrompt } from "../../src/views/overlays/DeniedActionPrompt.tsx";
 
 async function waitUntil(predicate: () => boolean, maxIters = 40): Promise<void> {
   for (let i = 0; i < maxIters && !predicate(); i++) await Bun.sleep(0);
@@ -112,6 +113,35 @@ test("Help renders from the minimal application command projection", async () =>
   }
 });
 
+test("denied action prompt shows the exact command and review reason", async () => {
+  const rendered = await openRender(
+    () => (
+      <DeniedActionPrompt
+        interaction={fakeInteraction()}
+        active={() => true}
+        denials={() => [
+          {
+            callId: "call",
+            attempt: 1,
+            tool: "shell",
+            arguments: { command: "rm cache.tmp" },
+            reason: "target unclear",
+          },
+        ]}
+        onConfirm={() => {}}
+        onClose={() => {}}
+      />
+    ),
+    { width: 100, height: 24 },
+  );
+  try {
+    const frame = await waitForFrame(rendered, "target unclear");
+    expect(frame).toContain("rm cache.tmp");
+  } finally {
+    rendered.renderer.destroy();
+  }
+});
+
 function fakeSettings(): SettingsAdapter {
   return {
     version: () => 0,
@@ -174,6 +204,8 @@ function baseDeps(
       openAgentPicker: () => calls.push("agent-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
       openIsolationPicker: () => calls.push("isolation-picker"),
+      openApprovalPicker: () => calls.push("approval-picker"),
+      openDeniedAction: () => calls.push("denied-action"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
       quit: () => calls.push("quit"),
@@ -934,6 +966,36 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
   expect(commands.entries().flatMap((entry) => entry.slashes)).not.toContain("/plans");
   expect(commands.entries().flatMap((entry) => entry.slashes)).not.toContain("/planning");
   dispose();
+});
+
+test("approval preference and scoped denial have distinct slash routes", () => {
+  const inactive = harness({ runActive: () => false });
+  expect(
+    inactive.commands.entries().find((entry) => entry.name === "approval.picker"),
+  ).toMatchObject({ slashes: ["/approval"] });
+  expect(
+    inactive.commands.entries().find((entry) => entry.name === "approval.denied-action"),
+  ).toMatchObject({ slashes: ["/authorize"] });
+  inactive.commands.runCommand("approval.picker");
+  expect(inactive.calls).toContain("approval-picker");
+  expect(
+    inactive.commands
+      .entries()
+      .find((entry) => entry.name === "approval.denied-action")
+      ?.canAct?.(),
+  ).toBe(false);
+  inactive.dispose();
+
+  const active = harness({ runActive: () => true });
+  expect(
+    active.commands
+      .entries()
+      .find((entry) => entry.name === "approval.denied-action")
+      ?.canAct?.(),
+  ).toBe(true);
+  active.commands.runCommand("approval.denied-action");
+  expect(active.calls).toContain("denied-action");
+  active.dispose();
 });
 
 test("Extensions children remain internal and only the wizard owns a slash route", () => {

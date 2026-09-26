@@ -1,5 +1,27 @@
 # Tool wire names, dispatch, MCP integration and the result contract
 
+The file Kernel supplies a neutral, run-scoped action authorization port. After
+admissibility, grants, hooks and final argument validation, builtin, MCP and
+effectful capability calls pass their trusted actor/call identity and final
+arguments to that port. The loop does not import the rule evaluator or reviewer.
+MCP server elicitation is separately controlled by `mcp_elicitations`; an MCP
+call is not automatically a human approval request. `tool_call_started` marks
+dispatch admission, not physical process launch; `execution_attempt` reports
+admission and launch separately. Production: `runDispatch` in
+`packages/loop/src/runtime/loop/loop.ts`, `dispatchMcpTool` in
+`packages/loop/src/runtime/tools/mcp-dispatch.ts`, `authorizeAction` in
+`packages/loop/src/runtime/tools/authorize-action.ts`. Test:
+`packages/loop/tests/architecture/reviewer-boundary.test.ts` and
+`packages/kernel/tests/integration/approval-policy.test.ts`.
+`authorizeAction` reissues current authorization and policy revisions for an external
+tool call before allowing dispatch. The neutral host stop probe in
+`runAgentLoop` ends a turn when the reviewer circuit opens, without importing
+the judge into the engine. Production: `authorizeAction` in
+`packages/loop/src/runtime/tools/authorize-action.ts`, `runAgentLoop` in
+`packages/loop/src/runtime/loop/loop.ts`. Test:
+`packages/kernel/tests/integration/judge-approval.test.ts` and
+`packages/loop/tests/architecture/reviewer-boundary.test.ts`.
+
 > Implemented at `packages/loop/src/runtime/tools/**`,
 > `packages/loop/src/runtime/open-tool-pool.ts`, `packages/loop/src/runtime/loop/mcp-handler.ts`,
 > and their tests. Every claim below is anchored to a file and a named symbol or test. Open questions are collected in

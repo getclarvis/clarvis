@@ -113,6 +113,7 @@ export interface KernelRunClient {
     executionId: string;
     message: MessageContent;
     profile?: string;
+    authorizedDenial?: { call_id: string; attempt: number };
   }): Promise<SteerResult>;
   compact(input: {
     executionId: string;
@@ -601,13 +602,19 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     executionId: string;
     message: MessageContent;
     profile?: string;
+    authorizedDenial?: { call_id: string; attempt: number };
   }): Promise<SteerResult> {
     const handleP = live.get(input.executionId);
     if (!handleP) return { status: "unknown", execution_id: input.executionId };
     const handle = await handleP;
     const message: string | ProtoMessage =
-      requireKernel().hosting !== undefined
-        ? { role: "user", content: input.message, steering_id: crypto.randomUUID() }
+      requireKernel().hosting !== undefined || input.authorizedDenial !== undefined
+        ? {
+            role: "user",
+            content: input.message,
+            steering_id: crypto.randomUUID(),
+            ...(input.authorizedDenial ? { authorized_denial: input.authorizedDenial } : {}),
+          }
         : typeof input.message === "string"
           ? input.message
           : { role: "user", content: input.message };
@@ -677,6 +684,10 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   const config: ConfigService = {
     getSettings: () => requireKernel().config.getSettings(),
     getIsolationStatus: () => requireKernel().config.getIsolationStatus(),
+    getExecutionRules: () => requireKernel().config.getExecutionRules(),
+    checkExecutionRule: (command, cwd) => requireKernel().config.checkExecutionRule(command, cwd),
+    updateExecutionRules: (scope, document, expectedRevision) =>
+      requireKernel().config.updateExecutionRules(scope, document, expectedRevision),
     previewSettingsRepair: (scope) => requireKernel().config.previewSettingsRepair(scope),
     repairSettings: (scope, expectedRevision) =>
       requireKernel().config.repairSettings(scope, expectedRevision),

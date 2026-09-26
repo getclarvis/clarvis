@@ -278,6 +278,9 @@ export class SandboxToolExecutor implements ToolExecutionPort {
       if (Buffer.byteLength(frame, "utf8") > MAX_WORKER_FRAME_BYTES) {
         throw new ToolError("too_large", "Worker request exceeds protocol limit");
       }
+      if (config.actionValid?.() === false || signal?.aborted) {
+        throw new ToolError("sandbox_denied", "Action authority changed before worker dispatch");
+      }
       const result = await new Promise<string | ToolResult>((resolve, reject) => {
         const settledResolve = (value: string | ToolResult) => {
           signal?.removeEventListener("abort", onAbort);
@@ -294,6 +297,7 @@ export class SandboxToolExecutor implements ToolExecutionPort {
           this.stopWorker();
         };
         signal?.addEventListener("abort", onAbort, { once: true });
+        config.actionStarted?.(this.backend.name);
         worker.stdin.write(`${frame}\n`, (error) => {
           if (error) this.stopWorker();
         });

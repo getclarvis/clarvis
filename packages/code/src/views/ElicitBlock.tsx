@@ -1,7 +1,10 @@
 import type { Accessor, JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { InputRenderable } from "@opentui/core";
-import { PLAN_REVIEW_ELICIT_KIND } from "../adapters/elicit-types.ts";
+import {
+  EXECUTION_APPROVAL_ELICIT_KIND,
+  PLAN_REVIEW_ELICIT_KIND,
+} from "../adapters/elicit-types.ts";
 import { ELICIT_NO_RESPONSE_TEXT, elicitCountdownText } from "../adapters/elicit-types.ts";
 import type { ElicitRequestParams, ElicitResult } from "../adapters/elicit-types.ts";
 import type { PlanActivity } from "../adapters/plan-projection.ts";
@@ -65,7 +68,9 @@ export function ElicitBlock(props: {
   const fields = form.fields;
   const isPlanReview = props.request.kind === PLAN_REVIEW_ELICIT_KIND;
   const isWorkflowReview = props.request.kind === "workflow_review";
-  const accent = (): string => (isPlanReview || isWorkflowReview ? tokens.accent2 : tokens.accent);
+  const isExecutionApproval = props.request.kind === EXECUTION_APPROVAL_ELICIT_KIND;
+  const accent = (): string =>
+    isPlanReview || isWorkflowReview || isExecutionApproval ? tokens.accent2 : tokens.accent;
   const windowLeft = (): number | null => props.remaining?.() ?? null;
   /** Whether this question's decision window is really running on screen: the
    * request declares one and the kernel has projected what is left of it.
@@ -113,7 +118,10 @@ export function ElicitBlock(props: {
 
   // A plan or workflow gate authorizes work. Unlike an ordinary choice question,
   // it must not silently choose a verdict from enum order: select first, then confirm.
-  const init = initialValues(fields, isPlanReview || isWorkflowReview ? "none" : "first");
+  const init = initialValues(
+    fields,
+    isPlanReview || isWorkflowReview || isExecutionApproval ? "none" : "first",
+  );
   const [values, setValues] = createSignal<Record<string, string>>(init);
   const [active, setActive] = createSignal(0);
   const inputs: Record<string, InputRenderable> = {};
@@ -256,12 +264,12 @@ export function ElicitBlock(props: {
               ? "Confirm workflow decision"
               : "Send answer",
           description:
-            isPlanReview || isWorkflowReview
+            isPlanReview || isWorkflowReview || isExecutionApproval
               ? "Confirm the selected decision"
               : "Send the current answer",
           category: "primary",
           surfaces: form.mode === "url" ? ["internal"] : ["footer"],
-          footerLabel: isPlanReview || isWorkflowReview ? "confirm" : "send",
+          footerLabel: isPlanReview || isWorkflowReview || isExecutionApproval ? "confirm" : "send",
           hintPriority: 100,
           hintGroup: "primary",
           essential: true,
@@ -286,11 +294,15 @@ export function ElicitBlock(props: {
           : []),
         uiCommand({
           id: "elicit.decline",
-          title: isWorkflowReview ? "Do not run workflow" : "Decline request",
+          title: isWorkflowReview
+            ? "Do not run workflow"
+            : isExecutionApproval
+              ? "Deny action"
+              : "Decline request",
           description: "Decline without cancelling the run",
           category: "mutation",
           surfaces: ["footer"],
-          footerLabel: isWorkflowReview ? "do not run" : "decline",
+          footerLabel: isWorkflowReview ? "do not run" : isExecutionApproval ? "deny" : "decline",
           hintPriority: 80,
           hintGroup: "mutation",
           enabled: () => !expired(),
@@ -350,7 +362,9 @@ export function ElicitBlock(props: {
           ? "Plan approval required"
           : isWorkflowReview
             ? "Workflow approval required"
-            : "Agent asks"}
+            : isExecutionApproval
+              ? "Execution approval required"
+              : "Agent asks"}
       </text>
       <Show when={windowed()}>
         <text fg={tokens.muted} flexShrink={0}>

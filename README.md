@@ -23,7 +23,8 @@ repository in front of you.
   does not imply provider endorsement of Clarvis.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
   `audit`, `implement`, and `research` workflows.
-- **Tool use:** Shell and file tools follow host OS permissions. Workspace trust still governs
+- **Tool use:** Shell and file tools use Sandbox by default, with explicit Host selection and
+  manual or automatic review for eligible permissions. Workspace trust still governs
   activation of workspace configuration.
 - **Extensible:** add MCP servers, plugins, hooks, Agent Skills, custom agents, and workflows.
 - **Interactive or headless:** use the full TUI or run a prompt from scripts with `clarvis -p`.
@@ -216,6 +217,8 @@ units and are not published independently.
 | [`@clarvis/supervision`](packages/supervision) | execution service   | `packages/supervision` | Run-scoped parent/child observation and control.                      |
 | [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.                |
 | [`@clarvis/sandbox`](packages/sandbox)         | execution service   | `packages/sandbox`     | Native process policy and Linux/macOS launch backends.                |
+| [`@clarvis/execpolicy`](packages/execpolicy)   | execution service   | `packages/execpolicy`  | Deterministic shell command rules and approval classification.        |
+| [`@clarvis/judge`](packages/judge)             | execution service   | `packages/judge`       | Semantic assessment for eligible automatic execution approvals.        |
 | [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                         |
 | [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                           |
 | [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                         |

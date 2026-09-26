@@ -95,6 +95,7 @@ const WORKFLOW_DECISION_LABELS: Record<string, string> = {
 const DECISION_LABELS: Record<string, Record<string, string>> = {
   [PLAN_REVIEW_ELICIT_KIND]: PLAN_DECISION_LABELS,
   workflow_review: WORKFLOW_DECISION_LABELS,
+  execution_approval: { yes: "approve once", no: "deny", remember: "approve and remember prefix" },
 };
 
 function isIterationLimitForm(

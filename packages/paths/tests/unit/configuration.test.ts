@@ -30,7 +30,7 @@ test("configuration roots default to the normal global resolver and OS home", ()
 
 test("configuration classes distinguish authoring, generated, secret and unknown targets", () => {
   for (const root of ["workspace_clarvis", "global_clarvis"] as const) {
-    for (const path of ["agents/reviewer.md", "workflows/review/WORKFLOW.md"])
+    for (const path of ["agents/reviewer.md", "workflows/review/WORKFLOW.md", "rules/default.json"])
       expect(configurationPathClass(root, path)).toBe("authoring");
     for (const path of ["settings.json", "plugins/review/plugin.json", "skills/review/helper.sh"])
       expect(configurationPathClass(root, path)).toBe(

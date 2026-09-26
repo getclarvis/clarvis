@@ -64,6 +64,10 @@ export interface InteractionEffects {
   openMemoryPicker(): void;
   /** Open global isolation preferences for subsequent runs. */
   openIsolationPicker(): void;
+  /** Open the global manual/auto approval preference. */
+  openApprovalPicker?(): void;
+  /** Show the last denied action before requesting one scoped retry. */
+  openDeniedAction?(): void;
   /** Move to the next focus target without activating it or changing transcript selection. */
   focusNext(): void;
   /** Open the current Goal detail from the shell. */
@@ -112,8 +116,9 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "activity.toggle": [{ key: "<leader>s" }],
   "memory.picker": [{ key: "<leader>m" }],
   "isolation.picker": [{ key: "<leader>i" }],
+  "approval.picker": [{ key: "<leader>a" }],
   "plan.open": [{ key: "<leader>p" }],
-  "goal.toggle": [{ key: "<leader>o" }],
+  "goal.toggle": [{ key: "<leader>g" }],
   "workflow.current": [{ key: "<leader>w" }],
   "transcript.diff": [{ key: "<leader>d" }],
   "transcript.toggleCollapse": [{ key: "<leader>k" }],
@@ -136,6 +141,7 @@ export const DEFAULT_WHEN: Record<string, string> = {
   "activity.toggle": "overlay==none",
   "memory.picker": "overlay==none",
   "isolation.picker": "overlay==none",
+  "approval.picker": "overlay==none",
   "plan.open": "overlay in (none, plan)",
   "goal.toggle": "overlay==none",
   "workflow.current": "overlay==none",
@@ -255,6 +261,7 @@ const ACTION_PROJECTION: Readonly<Record<string, Record<string, unknown>>> = {
   },
   "app.suspend": { uiSurfaces: ["full-help"] },
   "goal.toggle": { uiSurfaces: ["full-help"] },
+  "approval.picker": { uiSurfaces: ["full-help"] },
   "transcript.toggleCollapse": {
     uiSurfaces: ["footer", "full-help"],
     footerLabel: "expand",
@@ -602,6 +609,12 @@ export function createInteraction(
       title: "Goal details",
       desc: "Open the current Goal; use the same key there to return",
       category: "view",
+    }),
+    command("approval.picker", () => effects.openApprovalPicker?.(), {
+      title: "Approval mode",
+      desc: "Choose manual or automatic review for eligible actions",
+      category: "app",
+      enabled: () => !effects.isRunActive(),
     }),
     command("transcript.toggleCollapse", () => effects.toggleExpandAll(), {
       title: "Expand / collapse blocks",

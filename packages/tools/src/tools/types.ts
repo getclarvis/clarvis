@@ -6,6 +6,9 @@ import type { ToolResult } from "./content.ts";
  * runs. Every field is opt-in and advisory.
  */
 export interface ToolCallHooks {
+  /** Trusted call identity assigned after hooks by the loop. */
+  actionCallId?: string;
+  actionActor?: string;
   /** Called once by shell on successful spawn with abort listeners installed; never after spawn failure. */
   onExecutionStarted?: () => void;
   /**

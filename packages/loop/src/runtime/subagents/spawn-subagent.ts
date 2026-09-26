@@ -1,3 +1,4 @@
+import type { ActionAuthorizationPort } from "@clarvis/capability";
 import { projected } from "../capability-event.ts";
 import { randomUUID } from "node:crypto";
 import type { WorkspaceStatePaths } from "@clarvis/paths";
@@ -170,6 +171,7 @@ export type { SubagentAggregate };
  * capability event emitter.
  */
 export interface SpawnContext {
+  actionAuthorization?: ActionAuthorizationPort;
   /** Inherited host-resolved machinery namespace. */
   statePaths?: WorkspaceStatePaths;
   env: EnvConfig;
@@ -386,6 +388,7 @@ export async function prepareSpawn(
  * the usage sink.
  */
 export interface SubagentRunContext {
+  actionAuthorization?: ActionAuthorizationPort;
   /** Inherited host-resolved machinery namespace. */
   statePaths?: WorkspaceStatePaths;
   task: string;
@@ -588,6 +591,7 @@ export async function runPreparedSubagent(
         ...(ctx.statePaths === undefined ? {} : { statePaths: ctx.statePaths }),
         hooks: ctx.hooks,
         usageSink,
+        ...(ctx.actionAuthorization ? { actionAuthorization: ctx.actionAuthorization } : {}),
         ...(ctx.toolInterrupts !== undefined ? { toolInterrupts: ctx.toolInterrupts } : {}),
       }),
     ));

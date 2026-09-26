@@ -42,6 +42,9 @@
         "eslint-plugin-unicorn": "^71.1.0",
       },
     },
+    "packages/execpolicy": {
+      "name": "@clarvis/execpolicy",
+    },
     "packages/goal": {
       "name": "@clarvis/goal",
       "dependencies": {
@@ -57,6 +60,12 @@
         "@clarvis/tools": "workspace:*",
       },
     },
+    "packages/judge": {
+      "name": "@clarvis/judge",
+      "dependencies": {
+        "@clarvis/capability": "workspace:*",
+      },
+    },
     "packages/kernel": {
       "name": "@clarvis/kernel",
       "bin": {
@@ -64,7 +73,9 @@
       },
       "dependencies": {
         "@clarvis/capability": "workspace:*",
+        "@clarvis/execpolicy": "workspace:*",
         "@clarvis/goal": "workspace:*",
+        "@clarvis/judge": "workspace:*",
         "@clarvis/llm": "workspace:*",
         "@clarvis/loop": "workspace:*",
         "@clarvis/mcp-client": "workspace:*",
@@ -276,9 +287,13 @@
 
     "@clarvis/code": ["@clarvis/code@workspace:packages/code"],
 
+    "@clarvis/execpolicy": ["@clarvis/execpolicy@workspace:packages/execpolicy"],
+
     "@clarvis/goal": ["@clarvis/goal@workspace:packages/goal"],
 
     "@clarvis/hooks": ["@clarvis/hooks@workspace:packages/hooks"],
+
+    "@clarvis/judge": ["@clarvis/judge@workspace:packages/judge"],
 
     "@clarvis/kernel": ["@clarvis/kernel@workspace:packages/kernel"],
 

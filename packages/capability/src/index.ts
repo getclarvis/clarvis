@@ -27,6 +27,15 @@ export type {
   SubagentCapabilitiesFactory,
 } from "./contract.ts";
 export type { OutputTokenBudget, OutputTokenReservation } from "./output-budget.ts";
+export type {
+  ActionIdentity,
+  ActionPermissions,
+  ActionAuthorizationRequest,
+  ActionAuthorizationEvidence,
+  ActionAuthorizationDecision,
+  ActionAuthorizationPort,
+} from "./action-authorization.ts";
+export { ACTION_AUTHORIZATION_PORT } from "./action-authorization.ts";
 export { createCapabilityRequestView, portKey, createCapabilityServices } from "./services.ts";
 export type { PortKey, CapabilityServices } from "./services.ts";
 export { SPAWN_GATE_PORT } from "./spawn-gate-port.ts";

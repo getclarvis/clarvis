@@ -14,7 +14,7 @@ import { createServer } from "node:tls";
 import { createExecutionPolicy, prepareLaunch, SeatbeltBackend } from "../../src/index.ts";
 
 test.skipIf(process.platform !== "darwin")(
-  "Seatbelt enforces global exceptions and workspace read-only",
+  "Seatbelt enforces workspace read-only and broad ordinary reads",
   () => {
     const root = mkdtempSync(join(process.cwd(), ".native-seatbelt-"));
     const workspace = join(root, "workspace");
@@ -73,16 +73,16 @@ test.skipIf(process.platform !== "darwin")(
       expect(run(`cat '${join(workflows, "workflow.txt")}'`).stdout).toBe("workflow");
       expect(run(`cat '${settings}'`).stdout).toBe("before");
       for (const path of privatePaths) {
-        expect(run(`cat '${path}'`).status).not.toBe(0);
+        expect(run(`cat '${path}'`).status).toBe(0);
         expect(run(`printf breach > '${path}'`).status).not.toBe(0);
         expect(readFileSync(path, "utf8")).toBe("private");
       }
       expect(run(`cat '${join(sibling, "private.txt")}'`).stdout).toBe("sibling-private");
       expect(run(`printf breach > '${join(sibling, "new.txt")}'`).status).not.toBe(0);
       expect(existsSync(join(sibling, "new.txt"))).toBe(false);
-      expect(run("cat secret-link").status).not.toBe(0);
-      expect(run(`printf changed > '${settings}'`).status).toBe(0);
-      expect(readFileSync(settings, "utf8")).toBe("changed");
+      expect(run("cat secret-link").status).toBe(0);
+      expect(run(`printf changed > '${settings}'`).status).not.toBe(0);
+      expect(readFileSync(settings, "utf8")).toBe("before");
       expect(run(`printf blocked > '${join(workspace, "blocked")}'`).status).not.toBe(0);
       const hostTemporary = join("/tmp", `clarvis-seatbelt-native-${process.pid}`);
       try {
@@ -100,7 +100,7 @@ test.skipIf(process.platform !== "darwin")(
 );
 
 test.skipIf(process.platform !== "darwin")(
-  "Seatbelt keeps a redirected global root private inside the real /tmp",
+  "Seatbelt treats a redirected global root inside /tmp as temporary space",
   () => {
     const root = mkdtempSync(join(process.cwd(), ".native-seatbelt-redirect-"));
     const temporary = mkdtempSync(join("/tmp", "clarvis-seatbelt-global-"));
@@ -137,16 +137,14 @@ test.skipIf(process.platform !== "darwin")(
     };
     try {
       expect(run(`cat '${settings}'`).stdout).toBe("before");
-      expect(run(`cat '${privateFile}'`).status).not.toBe(0);
-      expect(run(`printf breach > '${privateFile}'`).status).not.toBe(0);
-      expect(readFileSync(privateFile, "utf8")).toBe("private");
+      expect(run(`cat '${privateFile}'`).status).toBe(0);
       expect(run(`printf changed > '${settings}'`).status).toBe(0);
       expect(readFileSync(settings, "utf8")).toBe("changed");
       expect(run(`printf flow > '${join(workflows, "run.txt")}'`).status).toBe(0);
       expect(readFileSync(join(workflows, "run.txt"), "utf8")).toBe("flow");
       rmSync(settings);
-      expect(run(`printf created > '${settings}'`).status).not.toBe(0);
-      expect(existsSync(settings)).toBe(false);
+      expect(run(`printf created > '${settings}'`).status).toBe(0);
+      expect(readFileSync(settings, "utf8")).toBe("created");
     } finally {
       rmSync(temporary, { recursive: true, force: true });
       rmSync(root, { recursive: true, force: true });

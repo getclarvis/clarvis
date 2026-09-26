@@ -746,7 +746,14 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const workspaceForMerge =
       workspaceSettings === undefined
         ? undefined
-        : (({ isolation: _isolation, ...other }) => other)(workspaceSettings);
+        : (({
+            isolation: _isolation,
+            approval_mode: _mode,
+            approval_policy: _policy,
+            judge: _judge,
+            execution_requirements: _requirements,
+            ...other
+          }) => other)(workspaceSettings);
     const scopes: SettingsScope[] = [];
     if (global.value !== undefined)
       scopes.push({ origin: "operator", settings: asEngine(global.value) });
@@ -1017,7 +1024,14 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
      */
     writeSettings: (scope, data) => {
       if (scope === "workspace") {
-        const { isolation: _isolation, ...other } = data;
+        const {
+          isolation: _isolation,
+          approval_mode: _mode,
+          approval_policy: _policy,
+          judge: _judge,
+          execution_requirements: _requirements,
+          ...other
+        } = data;
         data = other;
       }
       const path = requireScope(scope, settingsPath(scope));
@@ -1044,7 +1058,14 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       rewriteUnderLease(scope, expectedRevision, (document, path) => {
         const next = mutate(settingsFromDocument(document, scope, path));
         if (scope !== "workspace") return next;
-        const { isolation: _isolation, ...other } = next;
+        const {
+          isolation: _isolation,
+          approval_mode: _mode,
+          approval_policy: _policy,
+          judge: _judge,
+          execution_requirements: _requirements,
+          ...other
+        } = next;
         return other;
       }),
     /**

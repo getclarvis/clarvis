@@ -22,6 +22,8 @@ export const PACKAGE_ROLES = {
   "@clarvis/supervision": "execution-service",
   "@clarvis/trace": "execution-service",
   "@clarvis/sandbox": "execution-service",
+  "@clarvis/execpolicy": "execution-service",
+  "@clarvis/judge": "execution-service",
   "@clarvis/tools": "execution-service",
   "@clarvis/hooks": "execution-service",
   "@clarvis/skills": "execution-service",

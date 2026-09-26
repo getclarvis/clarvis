@@ -76,18 +76,30 @@ adapter using the same RPC framing.
 
 ## Services
 
-`SettingsData.isolation` is a typed global preference for built-in tools.
+`SettingsData.isolation`, `approval_mode`, `approval_policy`, `judge` and
+`execution_requirements` are typed global execution preferences.
 `ConfigService.getIsolationStatus` reports that preference separately from
 backend availability. A `tool_call` event may include `execution` with the
-requested and effective mode, backend, policy, fallback reason and attempt
-identity; the transport codec validates it. Production: `SettingsData`,
+requested and effective mode, backend, policy and attempt identity. Typed
+approval and execution-attempt events use the same strict codec. Production: `SettingsData`,
 `IsolationStatus` and `RunEvent` in `packages/protocol/src/config.ts` and
 `packages/protocol/src/runs.ts`, and `OPERATIONS.config` in
 `packages/kernel/src/transport/operations.ts`. Test:
 `packages/kernel/tests/integration/isolation-settings.test.ts` and
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
-File-tool configuration uses ordinary runs; file calls have no configuration approval path.
+`ConfigService.getExecutionRules`, `checkExecutionRule` and `updateExecutionRules` expose rule
+sources, a no-execution preview and a revision-checked replacement through authenticated Kernel
+operations. No caller-supplied workspace-trust flag is accepted. Approval events carry an optional
+`route` so clients can distinguish judge progress from manual input; the strict run-event codec
+checks it. Production: `ConfigService` in `packages/protocol/src/config.ts`, `RunEvent` in
+`packages/protocol/src/runs.ts`, `serviceOperations` in
+`packages/kernel/src/transport/operations.ts`, and `RUN_EVENT_SCHEMAS` in
+`packages/kernel/src/transport/run-event-codec.ts`. Test:
+`packages/kernel/tests/integration/execution-rules-config.test.ts` and
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
+
+File-tool configuration uses ordinary runs and the same execution approval path.
 Host-owned authority is separate from model-provided parameters and saved transcript content.
 `LocalHostStatus.skills_revision` notifies attached clients when the host publishes a skill catalog
 generation, allowing command listings to refresh without reconnecting. See
@@ -373,6 +385,9 @@ validation and separate deterministic, live-provider and installed-artifact qual
 the conversation's monotonic acceptance sequence. They are separate from admitted `turns`.
 `Message.steering_id` correlates steering with the optional `steering_applied.id`; it is not model
 message content. Goal receipts distinguish a recorded pending recovery from admitted work.
+`Message.authorized_denial` optionally identifies one prior judge denial by
+call and attempt. The Kernel accepts it only for a denial in that owner/run and
+uses it as scoped evidence for a later attempt, not as an execution command.
 
 `GoalControlAction.edit.resume_operation_id` explicitly links a limit correction to a retained resume. Usage gaps optionally carry bounded `call_ids` and a sequence fingerprint.
 

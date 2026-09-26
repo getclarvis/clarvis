@@ -87,6 +87,21 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
           type: "string",
           description: "Optional readiness regex scanned across bounded output windows.",
         },
+        execution_permissions: {
+          type: "object",
+          properties: {
+            mode: {
+              type: "string",
+              enum: ["use_default", "require_escalated", "with_additional_permissions"],
+            },
+            write_roots: { type: "array", items: { type: "string" } },
+            network: { type: "string", enum: ["enabled"] },
+          },
+          required: ["mode"],
+          additionalProperties: false,
+        },
+        justification: { type: "string" },
+        prefix_rule: { type: "array", items: { type: "string" } },
       },
       required: ["command"],
     },

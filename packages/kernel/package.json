@@ -81,6 +81,8 @@
     "@clarvis/plan": "workspace:*",
     "@clarvis/protocol": "workspace:*",
     "@clarvis/sandbox": "workspace:*",
+    "@clarvis/execpolicy": "workspace:*",
+    "@clarvis/judge": "workspace:*",
     "@clarvis/skills": "workspace:*",
     "@clarvis/tools": "workspace:*",
     "@clarvis/trace": "workspace:*",

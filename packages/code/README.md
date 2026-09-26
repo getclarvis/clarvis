@@ -101,14 +101,14 @@ ordinary main-agent creation turn is visible immediately in the Lead activity li
 automatically reveal a compact Goal section in
 the same activity sidebar used by Plans, parallel work and agents. The section remains after
 creation with objective, status and stage count, using the same title/status/key anatomy and lifecycle
-tones as Plan, with the `full goal` navigation label; `Ctrl+X O` toggles the complete Goal view while
+tones as Plan, with the `full goal` navigation label; `Ctrl+X G` toggles the complete Goal view while
 that section is revealed. While the ordinary creation turn runs, both surfaces show its normal
 bounded activity and current iteration when known.
 The sidebar retains the latest completed workspace activity above the current thinking line so a
 short read or search remains observable after the next model iteration begins.
 Creation never switches screens automatically. Insufficient, stale or
 failed outcomes show their one question or actionable message and never retry analysis
-automatically. From the complete Goal view, `Ctrl+X O` returns to the transcript without requiring
+automatically. From the complete Goal view, `Ctrl+X G` returns to the transcript without requiring
 `Escape`. The full view uses a bounded reading column with spaced status, review and usage blocks;
 completed goals omit the internal completion reason. Transcript-wide expansion is a separate `Ctrl+X K` action. `/goal edit` opens a
 deterministic form for objective, criteria, constraints, exclusions, assumptions and limits. A
@@ -578,13 +578,34 @@ the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 Memory starts off on a fresh installation. Ctrl+X M saves the global on/off choice across
 workspaces and restarts; subsequent runs use that choice until it is changed.
 Ctrl+X I opens Host/Sandbox isolation; W and N edit its workspace and tool-network preferences.
-Those choices persist through the connected kernel and apply to future runs. Sandbox can recover
-an unavailable operation on Host automatically, which is shown in the transcript.
+Those choices persist through the connected kernel and apply to future runs. Sandbox
+with disabled network is the default; backend failure leaves the action unexecuted.
+Enabling Host from Sandbox requires one explicit scope confirmation. Host gives built-in tools
+host file and network access, while forbidden execution rules still apply. Production:
+`IsolationPicker` in `packages/code/src/views/overlays/IsolationPicker.tsx`. Test:
+`packages/code/tests/integration/app-shell-render.test.tsx`.
+Manual execution approval appears inline with an explicit choice.
+`/approval` or Ctrl+X A selects global manual or auto review for eligible future actions.
+Auto uses the configured judge without asking on a valid allow; untrusted policy
+still routes eligible commands to the operator. A host judge requirement is
+shown beside Manual and still routes eligible requests to the judge. A judge
+review is shown as an in-call progress notice, followed by approved or technical failure.
+The picker checks that its configured judge model and provider are available before saving Auto.
+Manual approval can offer a safe, shown argv prefix to remember globally; a failed rule write
+does not discard a valid approval for this one action. Production: `ApprovalPicker` in
+`packages/code/src/views/overlays/ApprovalPicker.tsx`, `ElicitBlock` in
+`packages/code/src/views/ElicitBlock.tsx`, and `onEvent` in `packages/code/src/run-host.ts`.
+A judge
+denial leaves the action unexecuted and shows its reason in the transcript,
+while provider or inspection failure is reported as a technical review failure.
+During the same active run, `/authorize` lists recent denied tool calls, their
+arguments and the judge's reason. Confirming a selected call sends one scoped authorization as
+steering; the agent must propose a new call, which is reviewed again.
 Sandbox preserves host tool availability and ordinary filesystem reads, including
-other repositories, while limiting writes and denying explicit private paths.
+other repositories, while limiting writes and applying explicit read denies.
 Its read-only mounts do not imply that all files outside the workspace are hidden.
 Application actions use Ctrl+X: M for Memory,
-I for Isolation, P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
+I for Isolation, A for Approval, P for Plan, G for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
 plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
 the navigation band names the sequence the user actually holds and lists the continuations the
@@ -1433,7 +1454,7 @@ the notice is never written into transcript history. A selected plugin whose cap
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
 runtime MCP/hook projections are withheld.
 
-The workspace header reports model and memory status.
+The workspace header reports model, memory, isolation and the selected approval mode.
 
 Local and SSH destinations remain available through `WorkspaceClientManager`. Their settings,
 Agent, prompt and model-catalog writes stay with the selected host; `/model` attempts an idle reload
@@ -1474,6 +1495,12 @@ rather than cached.
 Because OpenTUI requires a PTY, use `bun run smoke` for the repeatable bundle boot assertion and the
 `tui-driver` skill for interactive reproduction. Do not launch the app through plain redirected
 stdin and treat that as a renderer test.
+
+`bun --filter @clarvis/code release:smoke` also qualifies the portable archive with a native
+Sandbox canary. Its deterministic local judge allows a synthetic action in auto without a human
+question; manual asks once. Both checks observe the action's filesystem effect inside the disposable
+workspace. Production: `qualifyNativeArchive` in `packages/code/tooling/release/smoke.ts` and
+`executeReviewed` in `packages/kernel/tests/fixtures/release-native-canary.ts`.
 
 ## Prompt-cache continuity
 

@@ -1013,6 +1013,15 @@ describe("file kernel behind the hosted RPC", () => {
     input.params.messages = [{ role: "user", content: "Set workspace budget to 200000 tokens" }];
     const started = await f.client.hosting!.start(input);
     const events = Array.fromAsync(started.handle.events);
+    started.handle.onElicit((request) => {
+      if (request.kind === "execution_approval") {
+        void started.handle.respond({
+          id: request.id,
+          action: "accept",
+          content: { approved: "yes" },
+        });
+      }
+    });
     f.released.resolve();
     expect(await started.handle.done).toMatchObject({ status: "completed" });
     await events;

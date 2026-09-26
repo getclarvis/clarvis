@@ -463,6 +463,9 @@ export class ExecutionSessionManager {
       },
       "a shell command is being spawned under the run-owned process manager",
     );
+    if (request.config.actionValid?.() === false || request.signal?.aborted) {
+      throw new ToolError("sandbox_denied", "Action authority changed before process launch");
+    }
     let child: ChildProcess;
     try {
       child = (request.spawnChild ?? spawn)(spec.file, spec.args, {
@@ -477,6 +480,7 @@ export class ExecutionSessionManager {
       child.on("error", () => {});
       throw new ToolError("io_error", "Failed to run command: process has no pid");
     }
+    request.config.actionStarted?.(prepared?.backend ?? "host");
     const session = new LiveSession(
       id,
       request.agent,

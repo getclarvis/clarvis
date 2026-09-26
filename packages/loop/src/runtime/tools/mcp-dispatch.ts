@@ -1,3 +1,4 @@
+import type { ActionAuthorizationPort } from "@clarvis/capability";
 import { randomUUID } from "node:crypto";
 import { malformedArgumentsMessage } from "@clarvis/capability";
 import type { LLMToolCall, TracePort } from "@clarvis/capability";
@@ -6,6 +7,7 @@ import type { ConvergenceGuards } from "../guards/convergence-guards.ts";
 import type { ToolArgValidator } from "./tool-arg-validator.ts";
 import type { AgentRole, ToolResultImage } from "@clarvis/capability";
 import { safeStringify } from "../support/stringify.ts";
+import { authorizeAction } from "./authorize-action.ts";
 
 /**
  * The outcome of dispatching one MCP tool call: the model-facing `resultText`,
@@ -96,6 +98,7 @@ export interface McpDispatchArgs {
   subagentInstanceId?: string;
   iteration: number;
   signal?: AbortSignal;
+  actionAuthorization?: ActionAuthorizationPort;
 }
 
 /**
@@ -145,6 +148,7 @@ export async function executeMcpToolCall(args: McpDispatchArgs): Promise<McpCall
     subagentInstanceId,
     iteration,
     signal,
+    actionAuthorization,
   } = args;
   const toolStart = trace.now();
   const resolved = registry.resolve(call.name);
@@ -175,35 +179,48 @@ export async function executeMcpToolCall(args: McpDispatchArgs): Promise<McpCall
       resultText = errText;
       productive = false;
     } else {
-      trace.record("tool_call_started", {
-        agent,
-        ...(subagentInstanceId !== undefined ? { subagent_instance_id: subagentInstanceId } : {}),
-        iteration_ref: iteration,
-        call_id: callId,
-        started_at: toolStart,
-        name: resolved.fullName,
-        arguments: tracedArguments,
-      });
-      const conn = resolved.connection;
-      let result;
-      if (resolved.kind === "resource_list" && conn.listResources) {
-        result = await conn.listResources(signal);
-      } else if (resolved.kind === "resource_read" && conn.readResource) {
-        const uri = (call.arguments as { uri?: unknown }).uri;
-        result = await conn.readResource(String(uri), signal);
-      } else {
-        result = await conn.callTool(resolved.toolName, call.arguments, signal);
-      }
-      if (result.ok) {
-        const extracted = extractMcpResult(result.data);
-        resultText = extracted.text;
-        images = extracted.images;
-        errText = null;
-        productive = true;
-      } else {
-        errText = result.error?.message ?? "tool execution failed";
+      const authorizationError = await authorizeAction(
+        actionAuthorization,
+        call,
+        resolved.fullName,
+        subagentInstanceId === undefined ? agent : `${agent}:${subagentInstanceId}`,
+        signal,
+      );
+      if (authorizationError !== null) {
+        errText = authorizationError;
         resultText = errText;
-        productive = result.error?.code !== "mcp_unavailable";
+        productive = false;
+      } else {
+        trace.record("tool_call_started", {
+          agent,
+          ...(subagentInstanceId !== undefined ? { subagent_instance_id: subagentInstanceId } : {}),
+          iteration_ref: iteration,
+          call_id: callId,
+          started_at: toolStart,
+          name: resolved.fullName,
+          arguments: tracedArguments,
+        });
+        const conn = resolved.connection;
+        let result;
+        if (resolved.kind === "resource_list" && conn.listResources) {
+          result = await conn.listResources(signal);
+        } else if (resolved.kind === "resource_read" && conn.readResource) {
+          const uri = (call.arguments as { uri?: unknown }).uri;
+          result = await conn.readResource(String(uri), signal);
+        } else {
+          result = await conn.callTool(resolved.toolName, call.arguments, signal);
+        }
+        if (result.ok) {
+          const extracted = extractMcpResult(result.data);
+          resultText = extracted.text;
+          images = extracted.images;
+          errText = null;
+          productive = true;
+        } else {
+          errText = result.error?.message ?? "tool execution failed";
+          resultText = errText;
+          productive = result.error?.code !== "mcp_unavailable";
+        }
       }
     }
   }

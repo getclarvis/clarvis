@@ -8,11 +8,11 @@ import {
 } from "../../src/adapters/isolation-mode.ts";
 import type { SettingsAdapter } from "../../src/adapters/settings.ts";
 
-test("Host defaults leave both Sandbox preferences independently enabled", () => {
+test("workspace sandbox defaults keep network restricted", () => {
   expect(isolationChoice()).toEqual({
-    mode: "host",
+    mode: "sandbox",
     workspace: "read-write",
-    network: "enabled",
+    network: "disabled",
   });
   expect(isolationChoice({ mode: "host", workspace: "read-only", network: "disabled" })).toEqual({
     mode: "host",

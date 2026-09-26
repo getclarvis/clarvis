@@ -164,12 +164,24 @@ Test: `packages/code/tests/integration/app-shell-render.test.tsx` and
 workspace write access and tool network access are independent subpickers and persist globally
 through the connected kernel, including SSH. A failed write leaves the previous radio active;
 external settings reload updates the next-run choice. The preview reports backend availability
-and automatic Host fallback without claiming continuous confinement. Production:
+and reports an unavailable backend without promising Host recovery. Enabling Host from Sandbox
+requires a separate confirmation of its file and network reach; a cancelled confirmation does not
+write settings. Production:
 `IsolationPicker` in `packages/code/src/views/overlays/IsolationPicker.tsx`,
 `createIsolationModeStore` and `saveIsolationChoice` in
 `packages/code/src/adapters/isolation-mode.ts`, and `createWorkspaceAdapters` in
 `packages/code/src/runtime.tsx`. Test: `packages/code/tests/unit/isolation-mode.test.ts` and
 `packages/code/tests/integration/app-shell-render.test.tsx`.
+
+`/approval` and Ctrl+X A open `ApprovalPicker` and save `approval_mode` globally for future
+runs. It shows manual and auto without changing the isolation choice. Auto with
+`untrusted` policy still requires human review of eligible commands. When the
+host requires judge, the picker labels that requirement beside Manual. Selecting auto requires a
+configured judge/default model and matching provider in the current settings projection; a missing
+configuration leaves the previous preference active.
+Production: `ApprovalPicker` in
+`packages/code/src/views/overlays/ApprovalPicker.tsx` and `approval.picker` in
+`packages/code/src/app/commands.tsx`. Test: `packages/code/tests/integration/app-commands.test.tsx`.
 
 `UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
 toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global
@@ -1416,6 +1428,17 @@ Marketplace install composes installation, exact membership and reconnect as one
 Production: `MarketplaceBrowser` and `marketplace.open` in
 `packages/code/src/app/commands.tsx`. Test:
 `packages/code/tests/integration/marketplace-browser-render.test.tsx` and
+`packages/code/tests/integration/app-commands.test.tsx`.
+During an active run, `/authorize` opens `DeniedActionPrompt` for the last
+judge-denied call. `RunHost.onEvent` first records the denial reason in the
+transcript. The prompt shows the call arguments and rationale, then sends a
+scoped steering request after explicit confirmation. Production:
+`approval.denied-action` in `packages/code/src/app/commands.tsx`,
+`DeniedActionPrompt` in `packages/code/src/views/overlays/DeniedActionPrompt.tsx`,
+`onEvent` and `authorizeDeniedAction` in `packages/code/src/run-host.ts`. Test:
+`a live judge denial exposes its action and queues only a scoped new attempt`
+in `packages/code/tests/component/run-host.test.ts` and
+`denied action prompt shows the exact command and review reason` in
 `packages/code/tests/integration/app-commands.test.tsx`.
 
 **INV-P50.** Enter executes an exact hierarchical parent token while Tab retains child completion;

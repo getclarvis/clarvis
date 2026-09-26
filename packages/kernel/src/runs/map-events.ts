@@ -680,6 +680,13 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         question: ev.question,
         ...(ev.options !== undefined ? { options: ev.options } : {}),
       };
+    case "approval_requested":
+    case "approval_resolved":
+    case "execution_policy_result":
+    case "execution_attempt": {
+      const { occurred_at, ...details } = ev;
+      return { ...details, at: occurred_at };
+    }
     case "user_question":
       return {
         type: "elicitation_resolved",

@@ -29,16 +29,44 @@ export interface SettingsData {
   mcp_servers?: Record<string, McpServerConfig>;
   memory?: MemoryConfig;
   isolation?: IsolationSettings;
+  execution_requirements?: {
+    read_only_paths?: string[];
+    deny_read_paths?: string[];
+    judge_required?: boolean;
+    strict_review?: boolean;
+  };
+  approval_mode?: "manual" | "auto";
+  judge?: {
+    model?: string;
+    guidance?: string;
+    timeout_ms?: number;
+    max_attempts?: number;
+    fallback?: "manual_on_context_overflow" | "disabled";
+  };
+  approval_policy?:
+    | "on-request"
+    | "untrusted"
+    | "never"
+    | {
+        granular: {
+          sandbox_approval: boolean;
+          rules: boolean;
+          skill_approval?: boolean;
+          request_permissions?: boolean;
+          mcp_elicitations: boolean;
+        };
+      };
   budget?: unknown;
   /** Forward-compatible: the kernel owns the exhaustive schema. */
   [block: string]: unknown;
 }
 
-/** Global preference for built-in tool execution. Host ignores workspace and network preferences. */
+/** Global preference for built-in tool execution. */
 export interface IsolationSettings {
   mode?: "host" | "sandbox";
   workspace?: "read-only" | "read-write";
   network?: "enabled" | "disabled";
+  additional_write_roots?: string[];
 }
 
 /** Current operator preference and platform support; each tool result reports its actual mode. */
@@ -47,6 +75,40 @@ export interface IsolationStatus {
   backend: "bubblewrap" | "seatbelt" | null;
   availability: "available" | "unavailable" | "unverified";
   scope: "builtin_tools";
+}
+
+/** Exact argv-prefix rule edited by an authenticated operator. */
+export interface ExecutionRuleData {
+  id: string;
+  pattern: readonly (string | readonly string[])[];
+  decision: "allow" | "prompt" | "forbidden";
+  justification?: string;
+  match?: readonly (readonly string[])[];
+  not_match?: readonly (readonly string[])[];
+}
+
+export interface ExecutionRulesView {
+  status: "loaded" | "invalid_rules" | "io_failure";
+  warning?: string;
+  sources: {
+    layer: "global" | "workspace" | "host";
+    file: string;
+    digest: string;
+    rules: readonly ExecutionRuleData[];
+  }[];
+  revisions: { global: string | null; workspace?: string | null };
+  workspaceTrusted: boolean;
+}
+
+/** Read-only policy projection; checking never executes or contacts the judge. */
+export interface ExecutionRuleCheck {
+  rules: ExecutionRulesView;
+  decision: "allow" | "prompt" | "forbidden";
+  reason: string;
+  matches: { id: string; source: string; layer: string; decision: string }[];
+  needsApproval: boolean;
+  bypassEligible: boolean;
+  fallback: boolean;
 }
 
 /** One configured LLM / completion provider. */
@@ -306,6 +368,16 @@ export interface ConfigService {
   getSettings(): Promise<SettingsView>;
   /** Global built-in execution preference and backend readiness. */
   getIsolationStatus(): Promise<IsolationStatus>;
+  /** Read effective rule sources and revisions, deriving workspace trust on the host. */
+  getExecutionRules(): Promise<ExecutionRulesView>;
+  /** Preview one complete command under current rules without executing it. */
+  checkExecutionRule(command: string, cwd: string): Promise<ExecutionRuleCheck>;
+  /** Replace one rule document only while its exact source revision still matches. */
+  updateExecutionRules(
+    scope: "global" | "workspace",
+    document: { version: 1; rules: ExecutionRuleData[] },
+    expectedRevision: string | null,
+  ): Promise<ExecutionRulesView>;
 
   /**
    * Preview a safe repair for one corrupt settings scope.

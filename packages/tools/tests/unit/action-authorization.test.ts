@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dispatch } from "../../src/core.ts";
@@ -7,7 +7,7 @@ import { resolveConfig, type ToolActionAuthorization } from "../../src/config.ts
 import { prepareToolAction } from "../../src/execution/action.ts";
 
 function fixture(granted: boolean) {
-  const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-action-"));
+  const workspaceRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-action-")));
   const requests: Parameters<ToolActionAuthorization["authorize"]>[0][] = [];
   let executed = 0;
   const config = resolveConfig({

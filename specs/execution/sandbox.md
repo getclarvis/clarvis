@@ -279,12 +279,14 @@ the projection denies staging. The exact settings target is compared through
 its nearest existing canonical ancestor so macOS `/var` aliases and an absent
 configuration directory retain that recovery. Seatbelt
 `EPERM` also qualifies for a single-file mutation in a read-only workspace
-outside explicit denies.
+outside explicit denies, after resolving path aliases through the same canonical
+target.
 Other denied paths retain their Sandbox error.
 
 Production: `CoordinatedToolExecutor` in
 `packages/tools/src/execution/coordinator.ts` and `SandboxToolExecutor.onWorkerExit`
-in `packages/tools/src/execution/sandbox.ts`. Test:
+in `packages/tools/src/execution/sandbox.ts`, with `canonicalTarget` in
+`packages/tools/src/execution/canonical-target.ts`. Test:
 `packages/tools/tests/unit/execution-coordinator.test.ts` and
 `packages/tools/tests/integration/native-sandbox.test.ts`.
 

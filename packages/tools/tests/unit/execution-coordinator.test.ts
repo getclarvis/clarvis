@@ -334,7 +334,7 @@ test("Seatbelt read-only denial recovers only for a workspace file outside expli
     const sandbox: ToolExecutionPort = {
       async execute(_tool, args) {
         throw new ToolError("sandbox_denied", "Seatbelt denied write", {
-          path: args.path,
+          path: join(workspaceAlias, String(args.path)),
           errno_code: "EPERM",
         });
       },

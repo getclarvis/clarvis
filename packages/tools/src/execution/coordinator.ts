@@ -4,8 +4,8 @@ import type { ToolResult } from "../tools/content.ts";
 import type { ToolCallHooks, ToolDef } from "../tools/types.ts";
 import { hostToolExecutor } from "./host.ts";
 import type { ToolExecutionPort } from "./port.ts";
-import { realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import { canonicalTarget } from "./canonical-target.ts";
 import { ToolError } from "../errors.ts";
 import { resultDiagnostic } from "./diagnostics.ts";
 import { randomUUID } from "node:crypto";
@@ -23,9 +23,11 @@ function readonlyWorkspaceMutation(error: unknown, tool: ToolDef, config: Runtim
     !(config.sandboxBackend?.name === "seatbelt" && error.fields.errno_code === "EPERM")
   )
     return false;
-  const target = isAbsolute(error.fields.path)
+  const path = isAbsolute(error.fields.path)
     ? resolve(error.fields.path)
     : resolve(config.executionPolicy.workspaceRoot, error.fields.path);
+  const target = canonicalTarget(path);
+  if (!target) return false;
   if (
     config.executionPolicy.denies.some((deny) => {
       const suffix = relative(deny, target);
@@ -54,22 +56,7 @@ function settingsAtomicFailure(
   const path = args.path;
   if (typeof path !== "string" || !config.executionPolicy) return false;
   const target = isAbsolute(path) ? resolve(path) : resolve(config.workspaceRoot, path);
-  let parent = dirname(target);
-  const missing: string[] = [];
-  for (;;) {
-    try {
-      return (
-        resolve(realpathSync(parent), ...missing, basename(target)) ===
-        config.executionPolicy.settingsFile
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
-      const ancestor = dirname(parent);
-      if (ancestor === parent) return false;
-      missing.unshift(basename(parent));
-      parent = ancestor;
-    }
-  }
+  return canonicalTarget(target) === config.executionPolicy.settingsFile;
 }
 
 function marked(

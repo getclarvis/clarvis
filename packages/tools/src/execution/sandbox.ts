@@ -16,6 +16,7 @@ import { stopOwnedProcess } from "../lib/process-owner.ts";
 import type { ToolResult } from "../tools/content.ts";
 import type { ToolExecutionPort } from "./port.ts";
 import { resultDiagnostic } from "./diagnostics.ts";
+import { canonicalTarget } from "./canonical-target.ts";
 import {
   MAX_WORKER_FRAME_BYTES,
   WORKER_PROTOCOL_VERSION,
@@ -64,7 +65,10 @@ function policyDenied(
   if (!["EACCES", "EPERM", "EROFS"].includes(String(error.fields.errno_code))) return undefined;
   const path = error.fields.path;
   if (typeof path !== "string") return undefined;
-  const target = isAbsolute(path) ? resolve(path) : resolve(policy.workspaceRoot, path);
+  const target = canonicalTarget(
+    isAbsolute(path) ? resolve(path) : resolve(policy.workspaceRoot, path),
+  );
+  if (!target) return undefined;
   const explicitDeny = policy.denies.some((deny) => within(target, deny));
   const readonlyWorkspace =
     policy.workspaceAccess === "read-only" &&

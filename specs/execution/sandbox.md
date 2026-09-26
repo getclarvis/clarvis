@@ -125,12 +125,15 @@ resolution can reach them without allowing directory contents. The profile has
 unit coverage for escaping, traversal and workspace read-only mode. Its native
 canary places home, workspace and a sibling repository outside the writable
 scratch roots, then checks private global siblings, credential denial, sibling
-read access with write denial, symlink denial, read-only workspace, the real `/tmp`, and Git startup.
+read access with write denial, symlink denial, read-only workspace and the real `/tmp`.
+The separate installed-tool canary executes an unknown command through a symlink and host
+interpreter. The macOS runner's `/usr/bin/git` launcher can invoke developer-tool setup inside
+Seatbelt, so the native boundary test does not use it as a generic execution probe.
 Another canary redirects global state inside the real `/tmp` and checks the
 private subtree, exact settings file, workflows, and absent settings. A third
 uses a disposable local TLS server to compare enabled and disabled network
-profiles without public internet. These canaries have not been executed in
-this Linux environment.
+profiles without public internet. CI executes these canaries on macOS Intel
+and ARM64 runners.
 
 Production: `SeatbeltBackend.prepare` and `seatbeltProfile` in
 `packages/sandbox/src/macos/seatbelt.ts`. Test:

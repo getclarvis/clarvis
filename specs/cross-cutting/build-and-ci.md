@@ -556,13 +556,15 @@ historical evidence in [Known issues](../known-issues.md), not current workflow 
 
 ### 4.5 Shared build identity and coverage supervision
 
-Generated sandbox files under `packages/sandbox/assets/native/` and the source-worker manifest
-at `packages/tools/assets/worker.manifest.json` are ignored by Git. The Linux coverage job
+Generated sandbox assets and the source-worker manifest are ignored by Git. The Linux coverage job
 generates these platform-local assets after restoring the shared TypeScript build; it installs
-Bubblewrap and a C compiler first. This does not rebuild the shared declarations or Code bundle.
+Bubblewrap and a C compiler first. Ubuntu's AppArmor restriction on unprivileged user namespaces
+must be disabled on the disposable CI runner before executing the native canaries; Bubblewrap still
+creates the sandbox namespaces and applies Clarvis's seccomp filter. This does not rebuild the shared
+declarations or Code bundle.
 Production: `.github/workflows/ci.yml` (`jobs.coverage`), `.gitignore`, and each owning package's
 `build:assets` script. Test: `ciWorkflowFailures` in `tooling/lib/ci-workflow.ts` and the missing
-coverage-asset step regression in `tooling/tests/unit/ci-workflow.test.ts`.
+coverage-prerequisite regression in `tooling/tests/unit/ci-workflow.test.ts`.
 
 The build tar contains exclusively workspace `dist` directories, their internal incremental files,
 and `ci-build-manifest.json`. The manifest records schema, actual `git rev-parse HEAD`, run ID,

@@ -219,6 +219,8 @@ jobs:
         run: bun run tooling/checks/ci-artifacts.ts restore
       - name: install Linux sandbox helper for native coverage canaries
         run: sudo apt-get update && sudo apt-get install -y bubblewrap build-essential
+      - name: admit unprivileged namespaces on this disposable runner
+        run: if test -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
       - name: generate native and worker assets outside the shared dist archive
         run: bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets
       - name: sequential workspace coverage with classified code retry

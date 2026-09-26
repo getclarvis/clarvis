@@ -939,14 +939,6 @@
     },
     {
       "mechanism": "subprocess",
-      "file": "packages/sandbox/tests/integration/macos-native.test.ts",
-      "identity": "subprocess|module|spawnSync(\"/usr/bin/git\", [\"--version\"], { encoding: \"utf8\", timeout: 5000, })|0",
-      "package_owner": "@clarvis/sandbox",
-      "classification": "boundary-canary",
-      "reason": "Read-only host Git probe distinguishes a runner installation failure from a Seatbelt denial."
-    },
-    {
-      "mechanism": "subprocess",
       "file": "packages/tools/tests/contract/worker-protocol.test.ts",
       "identity": "subprocess|test:worker protocol admits only versioned, schema-valid file operations|spawn( process.execPath, [resolve(import.meta.dir, \"../../src/execution/worker.ts\")], { cwd: resolve(import.meta.dir, \"../..\"), env: { PATH: process.env.PATH ?? \"\", HOME: root, TMPDIR: scratch, CLARVIS_HOME: root }, stdio: [\"pipe\", \"pipe\", \"pipe\"], timeout: 5000, }, )|0",
       "package_owner": "@clarvis/tools",

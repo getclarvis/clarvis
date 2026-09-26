@@ -138,7 +138,8 @@ from the complete payload, writes the internal manifest, creates a gzip tar arch
 sidecar SHA-256. The tar subprocess receives the portable `C` locale explicitly, so a host runtime's
 synthetic or unavailable UTF-8 locale cannot add a platform warning or alter archive processing.
 The release job builds the source-worker manifest and platform-native assets before packaging;
-Linux installs Bubblewrap and a C compiler. Only Linux archives append the permission-free deny
+Linux installs Bubblewrap and a C compiler and admits unprivileged user namespaces on its disposable
+release runner before native smoke. Only Linux archives append the permission-free deny
 mask with GNU tar flags. macOS has no such asset and uses portable tar creation flags.
 Production:
 `packages/code/tooling/release/package.ts` and

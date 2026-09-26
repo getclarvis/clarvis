@@ -31,6 +31,13 @@ describe("independent CI workflow", () => {
         workflow.jobs.coverage.steps = workflow.jobs.coverage.steps.filter(
           (step) =>
             step.run !==
+            "if test -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi",
+        );
+      },
+      (workflow) => {
+        workflow.jobs.coverage.steps = workflow.jobs.coverage.steps.filter(
+          (step) =>
+            step.run !==
             "bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets",
         );
       },

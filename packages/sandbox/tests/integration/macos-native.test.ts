@@ -69,15 +69,9 @@ test.skipIf(process.platform !== "darwin")(
       });
     };
     try {
-      const hostGit = spawnSync("/usr/bin/git", ["--version"], {
-        encoding: "utf8",
-        timeout: 5000,
-      });
-      expect(hostGit.status).toBe(0);
       expect(run(`cat '${join(agents, "agent.txt")}'`).stdout).toBe("agent");
       expect(run(`cat '${join(workflows, "workflow.txt")}'`).stdout).toBe("workflow");
       expect(run(`cat '${settings}'`).stdout).toBe("before");
-      expect(run("/usr/bin/git --version").status).toBe(0);
       for (const path of privatePaths) {
         expect(run(`cat '${path}'`).status).not.toBe(0);
         expect(run(`printf breach > '${path}'`).status).not.toBe(0);

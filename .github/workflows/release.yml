@@ -58,6 +58,9 @@ jobs:
       - name: install Linux sandbox build prerequisites
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y bubblewrap build-essential
+      - name: admit unprivileged namespaces on this disposable runner
+        if: runner.os == 'Linux'
+        run: if test -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
       - run: bun run build:packages
       - name: verify release identity
         run: bun run check:release

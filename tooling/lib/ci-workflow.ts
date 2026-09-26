@@ -155,6 +155,7 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       knip: ["bun run knip"],
       checks: ["bun run format:check", "bun run lint:intent", "bun run test:cache"],
       coverage: [
+        "if test -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi",
         "bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets",
         "bash tooling/ci/retry-code-coverage.sh",
       ],

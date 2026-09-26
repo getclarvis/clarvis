@@ -8,7 +8,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import { ensureWorkspaceLocalDir, workspaceStatePaths } from "@clarvis/paths";
+import { ensureWorkspaceLocalDir, workspaceStatePaths } from "@clarvis/kernel/paths";
 import { sanitizeErrorMessage } from "@clarvis/kernel/policy";
 import {
   DEFAULT_DIAGNOSTIC_LEVEL,

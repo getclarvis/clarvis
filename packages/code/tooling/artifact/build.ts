@@ -157,7 +157,7 @@ async function main(): Promise<void> {
     // Pino and thread-stream also resolve workers relative to their package
     // directories. Bundling them materializes the build host's absolute
     // node_modules path in generated __dirname values.
-    external: ["@opentui/core", "@opentui/core-*", "pino"],
+    external: ["@opentui/core", "@opentui/core-*", "@clarvis/tools", "@clarvis/sandbox", "pino"],
     splitting: true,
     minify: true,
     sourcemap: installBuild ? "none" : "external",

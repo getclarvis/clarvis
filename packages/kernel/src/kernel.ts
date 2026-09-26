@@ -67,6 +67,7 @@ import {
 } from "./secrets/secret-store.ts";
 import { createConfigService } from "./config/config-service.ts";
 import type { ConfigStore } from "./config/config-store.ts";
+import type { IsolationService } from "./execution/isolation-service.ts";
 import {
   createSettingsRunAssembler,
   resolveEntryAgentProfile,
@@ -98,6 +99,7 @@ import {
   type GoalAgentRunResult,
 } from "@clarvis/goal";
 import { createKernelGoalAgentRuntime } from "./goals/agent-runtime.ts";
+import { executeWithIsolationBinding } from "./execution/isolation-service.ts";
 import { createStewardExecutionRuntime } from "./goals/steward-runtime.ts";
 import type { StewardExecutionRuntime } from "./goals/steward-coordinator.ts";
 import { stewardDigest } from "./goals/steward-input.ts";
@@ -242,6 +244,8 @@ export interface CreateKernelOptions {
   workspace: WorkspaceRef;
   /** Settings/agents store the config service and run assembler read from. */
   configStore: ConfigStore;
+  /** Optional file-host execution policy binding for admitted runs. */
+  isolationService?: IsolationService;
   /** Host-owned config service; skips constructing the default service when supplied. */
   configService?: ConfigService;
   /** Host-owned secret service; skips both the default service and file secret store. */
@@ -468,6 +472,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   };
   const executeRun: RunExecutor =
     opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
+  const executeGoalRun: RunExecutor = (args) =>
+    executeWithIsolationBinding(opts.isolationService, args, executeRun);
   if (levelEnabled(logger, "debug")) {
     logger.debug(
       {
@@ -548,6 +554,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       assembleRunRequest,
       store: createWorkflowStore({ dir: globalDir, owner: scope.owner }),
       readSettings: () => readWorkflowsSettings(opts.configStore),
+      ...(opts.isolationService === undefined ? {} : { isolationService: opts.isolationService }),
       ...(opts.readWorkflowDefinitions === undefined
         ? {}
         : { readWorkflowDefinitions: opts.readWorkflowDefinitions }),
@@ -566,6 +573,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       runManagerWorkflow: (params) => workflows.runManagerWorkflow(params),
       lifecycle,
       logger: runLogger,
+      ...(opts.isolationService === undefined ? {} : { isolationService: opts.isolationService }),
       ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const runs =
@@ -879,6 +887,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const config =
     opts.configService ??
     createConfigService(opts.configStore, {
+      ...(opts.isolationService === undefined
+        ? {}
+        : { isolationAvailability: opts.isolationService.availability }),
       /**
        * Composed exactly as `executeRun` composes the registry it validates
        * against: the engine's built-ins, the host registry's declarations, and
@@ -1068,7 +1079,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
             ? (merged.providers as ProviderConfig[])
             : [],
         deps: runDeps,
-        executeRun,
+        executeRun: executeGoalRun,
         settings: goals.agent ?? {},
         workTokenLimit,
         promptCacheTtl: ttl,
@@ -1147,7 +1158,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
                 ? (merged.providers as ProviderConfig[])
                 : [],
             deps: runDeps,
-            executeRun,
+            executeRun: executeGoalRun,
           });
           return runtime.run({
             ...input,

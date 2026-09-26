@@ -29,6 +29,14 @@ When the process dies before the batch path completes, `recoverOrphans` folds th
 `interrupted` record (`packages/trace/src/json-trace-store.ts`,
 `packages/trace/src/journal-recovery.ts`).
 
+A completed coding-tool call preserves its requested and effective isolation,
+backend, policy, fallback and attempt identity from the recorded detail into
+the durable `tool_call` event. Production: `ToolCallDetail` in
+`packages/capability/src/trace-kinds.ts`, `BuiltinTraceEvent` in
+`packages/capability/src/trace-events.ts`, and `mapEntry` in
+`packages/trace/src/trace-mapper.ts`. Test: `persists the effective isolation
+mode and attempt identity` in `packages/trace/tests/unit/trace-mapper.test.ts`.
+
 Goal Steward evaluations use ordinary persisted executions with their own IDs and continuation
 contexts. The work capability records `goal_steward_review` completion metadata through the open
 trace vocabulary; no builtin event or engine dependency is added. Production:

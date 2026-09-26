@@ -23,15 +23,15 @@ The table and Mermaid source belong to the generator and must stay exactly as em
 
 <!-- prettier-ignore-start -->
 <!-- package-graph:start -->
-Packages: 17; internal edges: 46; optional edges: 3.
+Packages: 18; internal edges: 47; optional edges: 3.
 
 | Package | Role | Direct internal dependencies | Internal consumers |
 | --- | --- | --- | ---: |
 | `capability` | foundation | — | 12 |
-| `code` | application | `kernel`, `paths`, `protocol` | 0 |
+| `code` | application | `kernel`, `protocol` | 0 |
 | `goal` | product-capability | `capability`, `loop` | 1 |
 | `hooks` | execution-service | `capability`, `tools` | 1 |
-| `kernel` | host-implementation | `capability`, `goal`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tools`, `trace`, `workflows` | 1 |
+| `kernel` | host-implementation | `capability`, `goal`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `sandbox`, `skills`, `tools`, `trace`, `workflows` | 1 |
 | `llm` | execution-service | `capability` | 2 |
 | `loop` | engine | `capability`, `hooks` (optional), `llm`, `mcp-client`, `paths`, `skills` (optional), `supervision`, `tools` (optional), `trace` | 4 |
 | `mcp-client` | execution-service | `capability`, `paths` | 2 |
@@ -39,6 +39,7 @@ Packages: 17; internal edges: 46; optional edges: 3.
 | `paths` | foundation | — | 9 |
 | `plan` | product-capability | `capability`, `paths` | 1 |
 | `protocol` | host-contract | — | 2 |
+| `sandbox` | execution-service | `paths` | 1 |
 | `skills` | execution-service | `capability`, `paths` | 2 |
 | `supervision` | execution-service | `capability` | 2 |
 | `tools` | execution-service | `paths` | 3 |
@@ -62,6 +63,7 @@ flowchart LR
     hooks["@clarvis/hooks"]
     llm["@clarvis/llm"]
     mcp_client["@clarvis/mcp-client"]
+    sandbox["@clarvis/sandbox"]
     skills["@clarvis/skills"]
     supervision["@clarvis/supervision"]
     tools["@clarvis/tools"]
@@ -83,7 +85,6 @@ flowchart LR
     code["@clarvis/code"]
   end
   code --> kernel
-  code --> paths
   code --> protocol
   goal --> capability
   goal --> loop
@@ -98,6 +99,7 @@ flowchart LR
   kernel --> paths
   kernel --> plan
   kernel --> protocol
+  kernel --> sandbox
   kernel --> skills
   kernel --> tools
   kernel --> trace
@@ -119,6 +121,7 @@ flowchart LR
   memory --> paths
   plan --> capability
   plan --> paths
+  sandbox --> paths
   skills --> capability
   skills --> paths
   supervision --> capability

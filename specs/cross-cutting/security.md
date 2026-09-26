@@ -1,5 +1,33 @@
 # Filesystem policy, secrets, redaction, environment filtering and trust
 
+The global `isolation` preference applies to built-in tools and their child
+processes only. It does not confine providers, hooks, MCP servers, kernel
+persistence or the operator shell. A Host fallback is authorized by the global
+selection and loses Sandbox filesystem, workspace read-only and network
+restrictions for that operation; the result must identify Host as effective.
+Workspace settings cannot select this preference, even after trust approval,
+and are ignored without a new approval prompt. A valid global settings edit by
+an agent affects future runs, not the admitted tree. Production:
+`operatorLayers` in `packages/kernel/src/config/file-config-store.ts`,
+`createIsolationService` in
+`packages/kernel/src/execution/isolation-service.ts`, and
+`CoordinatedToolExecutor` in
+`packages/tools/src/execution/coordinator.ts`. Test:
+`packages/kernel/tests/integration/isolation-settings.test.ts`,
+`packages/kernel/tests/unit/isolation-service.test.ts`, and
+`packages/tools/tests/unit/execution-coordinator.test.ts`.
+
+Native Sandbox permits ordinary host filesystem reads, including sibling
+repositories and installed tools, without a per-tool catalog. It restricts writes
+to explicit grants, masks private global state, and denies the configured private
+home paths and their canonical aliases. This does not discover every sensitive
+file on the host. The exact read exclusions and writable exceptions are owned by
+[the native execution contract](../execution/sandbox.md). Production:
+`createExecutionPolicy`, `BubblewrapBackend.prepare`, and `seatbeltProfile` in
+`packages/sandbox/src/`. Test:
+`packages/sandbox/tests/integration/host-tools-native.test.ts` and
+`packages/sandbox/tests/integration/linux-native.test.ts`.
+
 > Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
 
@@ -26,7 +54,9 @@ run's machinery is allowed to *emit*. It has five related parts:
 
 1. **Filesystem authority** — `workspaceRoot` anchors relative tool paths
    (`packages/tools/src/lib/paths.ts`), while absolute paths retain their meaning. Host process
-   permissions determine access.
+   permissions determine access in the default Host mode. A trusted Sandbox policy can instead
+   launch file handlers and commands through the native boundary
+   (`packages/sandbox/src/policy.ts`, `packages/tools/src/execution/sandbox.ts`).
 2. **Redaction** — one module, `packages/capability/src/sanitize.ts`, owns every secret pattern in the
    repository, and publishes **two** rule sets: one for content that is replayed verbatim (a trace's
    tool arguments and results) and one, with more reach and more false positives, for free text bound
@@ -917,7 +947,7 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | --- | --- | --- |
 | `@clarvis/hooks` → `@clarvis/capability` | runtime, static | `import { extractEnvRefs } from "@clarvis/capability"` (`packages/hooks/src/env.ts`); declared in `packages/hooks/package.json` |
 | `@clarvis/tools` → `@clarvis/paths` | runtime, static | `workspaceStatePaths` for `stateRoot` (`packages/tools/src/config.ts`); `TMP_GLOB`/`writeFileDurable` in `packages/tools/src/lib/atomic.ts` |
-| `@clarvis/tools` → *nothing else internal* | — | `packages/tools/package.json` lists only `@clarvis/paths`; the package therefore **cannot** call `sanitize*` |
+| `@clarvis/tools` → `@clarvis/sandbox` | runtime, static | `prepareLaunch` in `packages/tools/src/lib/execution-session.ts` wraps shell children and `SandboxToolExecutor` in `packages/tools/src/execution/sandbox.ts` wraps the file worker. Test: `packages/tools/tests/integration/native-sandbox.test.ts` |
 | `@clarvis/kernel` → `@clarvis/paths` | runtime, static | `globalPaths(...).keysFile` / `.workspaceTrustFile`, `writeFileAtomicSync` (`packages/kernel/src/secrets/secret-store.ts`, `packages/kernel/src/config/workspace-trust.ts`) |
 | `@clarvis/kernel` → `@clarvis/protocol` | type-only for `SecretService` | `import type { SecretService }` (`packages/kernel/src/secrets/secret-store.ts`) |
 | `@clarvis/kernel/config/workspace-trust` → `@clarvis/loop/host` | runtime, static | `readJsonFile` (`packages/kernel/src/config/workspace-trust.ts`) |

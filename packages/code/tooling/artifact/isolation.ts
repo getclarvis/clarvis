@@ -11,7 +11,7 @@ import {
   unixSocketPathFits,
   type GlobalPaths,
   type ShortTemporaryRoot,
-} from "@clarvis/paths";
+} from "@clarvis/kernel/paths";
 
 const RESERVED_ENVIRONMENT_KEYS = new Set([
   "HOME",

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, readdir } from "node:fs/promises";
+import { chmod, lstat, readFile, readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
 import {
@@ -37,6 +37,7 @@ export interface ReleaseManifestFile {
   path: string;
   size: number;
   sha256: string;
+  mode?: number;
 }
 
 /** The integrity and identity contract embedded in every portable archive. */
@@ -55,7 +56,7 @@ export function isReleaseSourceMapPath(value: string): boolean {
 
 /** Decide whether generated text embeds a source map as a data URL. */
 export function containsInlineSourceMap(value: string): boolean {
-  return /sourceMappingURL\s*=\s*data:/i.test(value);
+  return /(?:\/\/[#@]|\/\*[#@])\s*sourceMappingURL\s*=\s*data:/i.test(value);
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -100,7 +101,7 @@ export function parseReleaseManifest(
     record.target !== expected.target ||
     !Array.isArray(record.files) ||
     record.files.length === 0 ||
-    record.files.length > 4_096
+    record.files.length > 20_000
   ) {
     throw new Error("release manifest identity or shape is invalid");
   }
@@ -119,12 +120,19 @@ export function parseReleaseManifest(
       Number(file.size) > 512 * 1024 * 1024 ||
       typeof file.sha256 !== "string" ||
       !/^[0-9a-f]{64}$/.test(file.sha256) ||
+      (file.mode !== undefined &&
+        (!Number.isInteger(file.mode) || Number(file.mode) < 0 || Number(file.mode) > 0o777)) ||
       seen.has(file.path)
     ) {
       throw new Error("release manifest contains an invalid file entry");
     }
     seen.add(file.path);
-    files.push({ path: file.path, size: Number(file.size), sha256: file.sha256 });
+    files.push({
+      path: file.path,
+      size: Number(file.size),
+      sha256: file.sha256,
+      ...(file.mode === undefined ? {} : { mode: Number(file.mode) }),
+    });
   }
   files.sort((left, right) => left.path.localeCompare(right.path));
   if (releaseRequiresClarvisDocs(expected.version)) {
@@ -168,6 +176,15 @@ function confinedPath(root: string, portablePath: string): string {
   return candidate;
 }
 
+/** Empty, unreadable regular files are represented by their known empty digest. */
+async function releaseFileBytes(path: string): Promise<Buffer> {
+  const info = await lstat(path);
+  if ((info.mode & 0o7777) !== 0) return readFile(path);
+  if (!info.isFile() || info.size !== 0)
+    throw new Error("unreadable release file must be empty and regular");
+  return Buffer.alloc(0);
+}
+
 /** Compute the deterministic manifest entries for every regular file under a staged payload. */
 export async function manifestFiles(root: string): Promise<ReleaseManifestFile[]> {
   const files: ReleaseManifestFile[] = [];
@@ -180,14 +197,22 @@ export async function manifestFiles(root: string): Promise<ReleaseManifestFile[]
     if (isReleaseSourceMapPath(portablePath)) {
       throw new Error(`release payload contains a source map: ${portablePath}`);
     }
-    const bytes = await readFile(path);
+    const bytes = await releaseFileBytes(path);
     files.push({
       path: portablePath,
       size: bytes.byteLength,
       sha256: createHash("sha256").update(bytes).digest("hex"),
+      mode: (await lstat(path)).mode & 0o777,
     });
   }
   return files;
+}
+
+/** Restore verified regular-file permissions after extractors that discard tar modes. */
+export async function restoreReleaseModes(root: string, manifest: ReleaseManifest): Promise<void> {
+  for (const file of manifest.files) {
+    if (file.mode !== undefined) await chmod(confinedPath(root, file.path), file.mode);
+  }
 }
 
 /** Verify a staged payload has exactly the regular files and hashes declared by its manifest. */
@@ -208,7 +233,7 @@ export async function verifyReleaseTree(root: string, manifest: ReleaseManifest)
   }
   for (const file of manifest.files) {
     const path = confinedPath(root, file.path);
-    const bytes = await readFile(path);
+    const bytes = await releaseFileBytes(path);
     if (bytes.byteLength !== file.size) throw new Error(`release file size mismatch: ${file.path}`);
     const digest = createHash("sha256").update(bytes).digest("hex");
     if (digest !== file.sha256) throw new Error(`release file checksum mismatch: ${file.path}`);

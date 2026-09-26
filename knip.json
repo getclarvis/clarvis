@@ -4,6 +4,7 @@
     "interface": true,
     "type": true
   },
+  "ignoreBinaries": ["cc", "openssl", "ps"],
   "workspaces": {
     ".": {
       "entry": [
@@ -24,11 +25,15 @@
         "src/bin.ts",
         "tests/helpers/goal-live-worker.ts",
         "tests/fixtures/local-host-peer.ts",
+        "tests/fixtures/release-native-canary.ts",
         "tests/fixtures/local-host-process.ts"
       ]
     },
     "packages/protocol": {
       "entry": ["tests/contract/public-contract.fixture.ts"]
+    },
+    "packages/tools": {
+      "entry": ["src/execution/worker.ts"]
     }
   }
 }

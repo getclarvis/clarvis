@@ -1,5 +1,27 @@
 # Settings service, config stores, the shipped agent fleet and overlays
 
+## Global isolation preference
+
+`kernelSettingsSchema` registers a strict `isolation` block with Host,
+read-write workspace and enabled network defaults. Only the global file
+contributes it. A workspace block is ignored silently, including in a trusted
+workspace; it neither changes the effective policy nor triggers trust review.
+Global partial updates merge individual isolation fields so switching to Host
+retains the Sandbox workspace and network preferences. `getIsolationStatus`
+exposes the global preference, platform backend and observed availability;
+`unverified` means no native attempt under the configured network preference
+has established readiness yet. Availability observations are tracked separately
+for enabled and disabled network policies.
+
+Production: `isolationSettingsSpec` in
+`packages/kernel/src/config/isolation-settings.ts`, `operatorLayers` in
+`packages/kernel/src/config/file-config-store.ts`, and `createConfigService`
+in `packages/kernel/src/config/config-service.ts`, with network-scoped
+observations in `createIsolationService` in
+`packages/kernel/src/execution/isolation-service.ts`. Test:
+`packages/kernel/tests/integration/isolation-settings.test.ts` and
+`packages/kernel/tests/integration/capability-settings-schema.test.ts`.
+
 > Implemented at `packages/kernel/src/config/**`, `packages/kernel/tests/**`,
 > `packages/protocol/src/config.ts` and the loop/paths modules they call. Every claim below is
 > anchored to a file and a named symbol or test. Open questions are collected in the final section.

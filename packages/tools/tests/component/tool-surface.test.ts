@@ -65,6 +65,13 @@ describe("the advertised tool surface", () => {
     );
   });
 
+  it("does not invite a Host recovery token on an ordinary shell call", () => {
+    const shell = listTools(makeConfig(root)).find((tool) => tool.name === "shell")!;
+    const properties = shell.inputSchema.properties as Record<string, unknown>;
+    expect(properties).not.toHaveProperty("execution_strategy");
+    expect(properties).not.toHaveProperty("recovery_token");
+  });
+
   it("refuses a removed tool exactly as it refuses a typo", async () => {
     const config = makeConfig(root);
     for (const gone of [...REMOVED, "does_not_exist"]) {

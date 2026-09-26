@@ -16,11 +16,12 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { releaseRuntimeExecutableName, type ReleaseTarget } from "../update-contract.ts";
 import {
   parseReleaseManifest,
+  restoreReleaseModes,
   releaseRequiresClarvisDocs,
   verifyReleaseTree,
 } from "./release-manifest.ts";
 
-const MAX_MANIFEST_BYTES = 1024 * 1024;
+const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_VERSION_OUTPUT_BYTES = 8 * 1024;
 
 /** A managed installation resolved from the stable launcher environment. */
@@ -152,6 +153,7 @@ export async function verifyStagedRelease(
   const manifestText = await readSmallText(join(root, "release.json"), MAX_MANIFEST_BYTES);
   const manifest = parseReleaseManifest(JSON.parse(manifestText), expected);
   await verifyReleaseTree(root, manifest);
+  await restoreReleaseModes(root, manifest);
   const runtime = runtimePath(root);
   await chmod(runtime, 0o755);
   const child = Bun.spawn([runtime, launcherPath(root), "--version"], {

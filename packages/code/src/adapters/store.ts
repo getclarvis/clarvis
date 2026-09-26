@@ -1738,6 +1738,21 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         ) {
           remove(ns(span.span_id));
         } else if (span.kind === "tool" && event.type === "tool_call") {
+          if (event.execution?.fallback) {
+            const reason = event.execution.reason;
+            const label =
+              reason === "sandbox_unavailable"
+                ? "sandbox unavailable"
+                : reason === "sandbox_setup_failed"
+                  ? "sandbox setup failed"
+                  : "sandbox denied the operation";
+            upsert(ns("isolation-host-fallback"), () => ({
+              kind: "annotation",
+              status: "ok",
+              tone: "warn",
+              text: `Host fallback: ${label}. Sandbox restrictions did not apply to this operation.`,
+            }));
+          }
           const index = upsert(ns(span.span_id), () => ({
             kind: "tool_call",
             status: "running",

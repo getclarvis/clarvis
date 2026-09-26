@@ -1290,7 +1290,7 @@ The following are derived directly from this document's own source and its tests
     `TranscriptStoreDeps.describeToolCall` is injected rather than imported
     (`packages/code/src/adapters/store.ts`).
 
-52. **Every `@clarvis/kernel` import in this scope uses one of the six sanctioned entrypoints**
+52. **Every `@clarvis/kernel` import in this scope uses one of the eight sanctioned entrypoints**
     (INV-251) — full statement owned by [hosts/code-bootstrap.md](code-bootstrap.md) §5. In
     scope: `@clarvis/kernel/policy` (the imports in `packages/code/src/adapters/event-span.ts` and
     `packages/code/src/adapters/session-store.ts`), `@clarvis/kernel/config`
@@ -1416,7 +1416,7 @@ The following are derived directly from this document's own source and its tests
 | `@clarvis/kernel/policy` | `packages/code/src/adapters/event-span.ts` (`isIngestPending` behind `memoryIngestIsPending`), `packages/code/src/adapters/session-store.ts` (`sanitizeText`) | value imports; both are shared classification rules with a single kernel owner |
 | `@clarvis/kernel/config` | `packages/code/src/adapters/kernel-run-client.ts` (`resolveAgentsByName`), `packages/code/src/adapters/execution-safety.ts` (`parseModelRef`, `PLANS_DEFAULTS`) | value imports |
 | `@clarvis/kernel/bootstrap` | `packages/code/src/adapters/workspace-client-manager.ts` (`connectLocalKernel`) | type-only options plus a dynamic value import; `WorkspaceClientManager` connects to the independent workspace host |
-| `@clarvis/paths` | `packages/code/src/adapters/file-prompt-history.ts` (`DIR_MODE`, `FILE_MODE`, `workspaceStatePaths`) | value import — the only place in this scope that names a path |
+| `@clarvis/kernel/paths` | `packages/code/src/adapters/file-prompt-history.ts` (`DIR_MODE`, `FILE_MODE`, `workspaceStatePaths`) | value import — the only place in this scope that names a path |
 | `solid-js` / `solid-js/store` | `packages/code/src/run-host.ts`, `packages/code/src/adapters/store.ts`, `packages/code/src/adapters/activity-store.ts`, `packages/code/src/adapters/active-agent.ts`, `packages/code/src/adapters/connection-state.ts` | reactive primitives; `batch` is load-bearing (invariant 38) |
 | `node:crypto` | `packages/code/src/adapters/store.ts` (`createHash` for `transcriptTextFingerprint`) | value import |
 | `node:fs` | `packages/code/src/adapters/file-prompt-history.ts`, `packages/code/src/adapters/stream-metrics.ts` | value imports |
@@ -1451,7 +1451,7 @@ Three architecture tests hold the direction:
   and `MemoryIngestNotice` live in `core/run-types.ts` and are merely re-exported from
   `packages/code/src/adapters/run-types.ts`, and why `PromptHistory` is a `core` interface with a `file-prompt-history`
   adapter behind its `PromptHistoryPersistence` port (`packages/code/src/core/prompt-history.ts`).
-- Only six `@clarvis/kernel` entrypoints, and no lower package —
+- Only eight `@clarvis/kernel` entrypoints, and no lower package —
   `packages/code/tests/architecture/dependency-boundary.test.ts`.
 
 ### 7.5 Coverage policy touching this scope

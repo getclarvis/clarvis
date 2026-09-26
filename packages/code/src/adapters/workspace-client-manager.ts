@@ -4,7 +4,7 @@ import type {
   RemoteSshKernelOptions,
   RuntimePlacementNotice,
 } from "@clarvis/kernel/bootstrap";
-import { ownerFromWorkspace } from "@clarvis/paths";
+import { ownerFromWorkspace } from "@clarvis/kernel/paths";
 import type { KernelClient, LocalHostStatus, WorkspaceRef } from "@clarvis/protocol";
 import { detachObserved } from "../core/tasks.ts";
 import { resolveLocalKernelArtifact } from "./local-kernel-artifact.ts";

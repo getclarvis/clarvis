@@ -29,6 +29,10 @@ import type {
 } from "@clarvis/loop";
 import type { EventStreamOptions } from "./core/event-stream.ts";
 import { createFileConfigStore } from "./config/file-config-store.ts";
+import {
+  createIsolationService,
+  executeWithIsolationBinding,
+} from "./execution/isolation-service.ts";
 import { DEFAULT_ENTRY_AGENT } from "./config/builtin-agents/index.ts";
 import type { SettingsSnapshot } from "./config/config-store.ts";
 import {
@@ -383,6 +387,13 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
     logger: componentLogger("config"),
   });
+  const isolationService = createIsolationService({
+    store: configStore,
+    workspaceRoot: opts.workspaceRoot,
+    globalRoot: globalDir,
+    ...(opts.systemDocsSourceRoot === undefined ? {} : { productRoot: opts.systemDocsSourceRoot }),
+    ...(opts.configurationHome === undefined ? {} : { homeRoot: opts.configurationHome }),
+  });
   extensionProfileManager.bindRuntime({
     readWorkspaceTrust: () => configStore.readSettings().workspace_trust ?? { state: "inert" },
     approveWorkspace: () => {
@@ -403,7 +414,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const executeExtensionProfileRun = (args: ExecuteRunArgs): Promise<ExecuteRunOutcome> =>
     withRunLease(acquireExtensionProfileRunLease, async () => {
       const { executeRun } = await import("@clarvis/loop");
-      return await executeRun(args);
+      return await executeWithIsolationBinding(isolationService, args, executeRun);
     });
   reportConfigScopes(componentLogger("config"), configStore.readSettings(), pluginContributions);
   const secretStore = createFileSecretStore(
@@ -670,6 +681,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       ...(systemDocs === undefined ? {} : { systemSkillProvider: systemDocs.provider }),
       skillBootstraps: pluginSkillBootstraps,
       resolveSecretNames: loadSecretNames,
+      resolveAgentExecution: isolationService.resolveExecution,
       resolveHooks: loadHooks,
       hookCredentialNames: managedSecretNames,
       mcpAuthorization: {
@@ -749,6 +761,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             project: gitWorkspace.project,
             workspace: gitWorkspace.workspace,
             configStore,
+            isolationService,
             extensionProfileService: extensionProfileManager.service,
             activePlugins: () => extensionProfileManager.activePlugins(),
             assemblerOptions: {

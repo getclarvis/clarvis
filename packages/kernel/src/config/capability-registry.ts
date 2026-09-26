@@ -4,6 +4,7 @@ import { memorySettingsSpec, type MemorySettingsBlock } from "@clarvis/memory/se
 import { goalsSettingsSpec, type GoalsSettingsBlock } from "@clarvis/goal/settings";
 import { plansSettingsSpec, type PlansSettingsBlock } from "@clarvis/plan/settings";
 import { workflowsSettingsSpec, type WorkflowsSettingsBlock } from "@clarvis/workflows";
+import { isolationSettingsSpec, type IsolationSettings } from "./isolation-settings.ts";
 
 /**
  * The capabilities this kernel hosts that declare their own `settings.json`
@@ -21,6 +22,7 @@ kernelCapabilityRegistry.register(memorySettingsSpec);
 kernelCapabilityRegistry.register(plansSettingsSpec);
 kernelCapabilityRegistry.register(goalsSettingsSpec);
 kernelCapabilityRegistry.register(workflowsSettingsSpec);
+kernelCapabilityRegistry.register(isolationSettingsSpec);
 
 /**
  * Compose the kernel's schema authority with host extensions for every owned
@@ -64,4 +66,5 @@ export type KernelSettingsFile = LoopSettingsFile & {
   plans?: PlansSettingsBlock;
   goals?: GoalsSettingsBlock;
   workflows?: WorkflowsSettingsBlock;
+  isolation?: IsolationSettings;
 };

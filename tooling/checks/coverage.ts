@@ -38,6 +38,7 @@ const PACKAGE_THRESHOLDS = {
   paths: { functions: 1, lines: 1 },
   plan: { functions: 0.95, lines: 0.97 },
   protocol: { functions: 1, lines: 1 },
+  sandbox: { functions: 0.8, lines: 0.85 },
   skills: { functions: 1, lines: 1 },
   supervision: { functions: 0.98, lines: 1 },
   tools: { functions: 0.98, lines: 0.98 },
@@ -114,6 +115,8 @@ const NO_COUNTER_ALLOWLIST = {
   ],
   hooks: [],
   kernel: [
+    // Pure named re-exports: path behavior is measured in @clarvis/paths.
+    "src/paths.ts",
     // Type-only: internal subscription adapter and persistence contracts.
     "src/subscriptions/types.ts",
     // Type-only: options and lifecycle contracts used by the creation port.
@@ -149,6 +152,10 @@ const NO_COUNTER_ALLOWLIST = {
     "src/run-contract.ts",
     "src/types.ts",
   ],
+  sandbox: [
+    // Type-only backend and launch contracts.
+    "src/backend.ts",
+  ],
   skills: [
     // Type-only.
     "src/types.ts",
@@ -160,6 +167,10 @@ const NO_COUNTER_ALLOWLIST = {
   tools: [
     // Type-only.
     "src/tools/types.ts",
+    "src/execution/port.ts",
+    // Child-process entry: native integration tests execute the source worker,
+    // which Bun does not attribute back to the parent coverage process.
+    "src/execution/worker.ts",
     // Pure re-export barrel for the narrow shell subpath.
     "src/shell-entry.ts",
   ],

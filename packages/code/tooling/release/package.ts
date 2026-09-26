@@ -9,11 +9,12 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -28,7 +29,7 @@ import {
   isReleaseSourceMapPath,
   manifestFiles,
 } from "../../src/update/release-manifest.ts";
-import { assertRuntimePackageRoot, runtimePackageCandidates } from "./runtime-package-discovery.ts";
+import { assertRuntimePackageRoot } from "./runtime-package-discovery.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const repositoryRoot = join(packageRoot, "..", "..");
@@ -47,6 +48,7 @@ const nativePackages: Record<ReleaseTarget, string> = {
   "linux-arm64": "@opentui/core-linux-arm64",
   "linux-x64": "@opentui/core-linux-x64",
 };
+const sourcePackages = new Set<string>();
 
 function dependencyNames(value: unknown): string[] {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
@@ -67,59 +69,109 @@ async function packageManifest(name: string): Promise<PackageManifest> {
   return value;
 }
 
+async function nestedDependencyNames(root: string): Promise<string[]> {
+  const found = new Set<string>();
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const path = join(directory, entry.name);
+      if (entry.name === "node_modules") {
+        const scan = async (packages: string): Promise<void> => {
+          for (const child of await readdir(packages, { withFileTypes: true })) {
+            if (!child.isDirectory()) continue;
+            const childPath = join(packages, child.name);
+            if (child.name.startsWith("@")) {
+              await scan(childPath);
+              continue;
+            }
+            const manifest = await readFile(join(childPath, "package.json"), "utf8").catch(
+              () => undefined,
+            );
+            if (manifest !== undefined) {
+              for (const name of dependencyNames(
+                (JSON.parse(manifest) as PackageManifest).dependencies,
+              ))
+                found.add(name);
+            }
+            await visit(childPath);
+          }
+        };
+        await scan(path);
+      }
+    }
+  };
+  await visit(root);
+  return [...found];
+}
+
 async function runtimeClosure(target: ReleaseTarget): Promise<Map<string, PackageManifest>> {
-  const pending = [
-    "@opentui/core",
-    "web-tree-sitter",
-    nativePackages[target],
-    ...(await discoveredRuntimePackages()),
-  ];
+  const pending = ["@opentui/core", "web-tree-sitter", "ajv", "diff", nativePackages[target]];
+  for (const name of await readdir(join(repositoryRoot, "packages"))) {
+    const manifestPath = join(repositoryRoot, "packages", name, "package.json");
+    const content = await readFile(manifestPath, "utf8").catch(() => undefined);
+    if (content === undefined) continue;
+    const manifest = JSON.parse(content) as PackageManifest;
+    if (typeof manifest.name !== "string" || !manifest.name.startsWith("@clarvis/")) continue;
+    sourcePackages.add(manifest.name);
+    pending.push(...dependencyNames(manifest.dependencies));
+  }
   const closure = new Map<string, PackageManifest>();
   while (pending.length > 0) {
     const name = pending.shift();
     if (name === undefined || closure.has(name)) continue;
+    if (sourcePackages.has(name)) continue;
     const manifest = await packageManifest(name);
     if (manifest.name !== name) throw new Error(`dependency identity mismatch for ${name}`);
     closure.set(name, manifest);
     for (const dependency of dependencyNames(manifest.dependencies)) {
-      if (!closure.has(dependency)) pending.push(dependency);
+      if (!closure.has(dependency) && !sourcePackages.has(dependency)) pending.push(dependency);
+    }
+    for (const dependency of await nestedDependencyNames(packageDirectory(name))) {
+      if (!closure.has(dependency) && !sourcePackages.has(dependency)) pending.push(dependency);
     }
   }
   return closure;
 }
 
-async function discoveredRuntimePackages(): Promise<string[]> {
-  const found = new Set<string>();
-  const dist = join(packageRoot, "dist");
-  for (const name of await readdir(dist)) {
-    if (!name.endsWith(".js")) continue;
-    const source = await readFile(join(dist, name), "utf8");
-    for (const candidate of runtimePackageCandidates(source)) {
-      if (
-        (await stat(packageDirectory(candidate)).catch(() => undefined))?.isDirectory() === true
-      ) {
-        found.add(candidate);
+async function copySource(payload: string): Promise<string | undefined> {
+  let denyFile: string | undefined;
+  for (const qualified of [...sourcePackages].sort()) {
+    const name = qualified.slice("@clarvis/".length);
+    const original = join(repositoryRoot, "packages", name);
+    const sourceTarget = join(payload, "packages", name);
+    await mkdir(sourceTarget, { recursive: true });
+    await copyFile(join(original, "package.json"), join(sourceTarget, "package.json"));
+    await cp(join(original, "src"), join(sourceTarget, "src"), {
+      recursive: true,
+      dereference: true,
+    });
+    if (name === "code") continue;
+    const target = join(payload, "node_modules", "@clarvis", name);
+    await mkdir(target, { recursive: true });
+    await copyFile(join(original, "package.json"), join(target, "package.json"));
+    await cp(join(original, "src"), join(target, "src"), {
+      recursive: true,
+      dereference: true,
+    });
+    if (name === "sandbox") {
+      await cp(join(repositoryRoot, "packages", name, "assets"), join(target, "assets"), {
+        recursive: true,
+        dereference: true,
+        filter: (source) => basename(source) !== "deny-file",
+      });
+      if (process.platform === "linux") {
+        denyFile = join(target, "assets", "native", "deny-file");
+        await writeFile(denyFile, "");
+        await chmod(denyFile, 0o000);
       }
     }
+    if (name === "tools")
+      await cp(join(repositoryRoot, "packages", name, "assets"), join(target, "assets"), {
+        recursive: true,
+        dereference: true,
+      });
   }
-  return [...found].sort();
-}
-
-async function copySource(payload: string): Promise<void> {
-  const files = ["cli.ts", "cli-args.ts", "cli-entry.ts", "update-contract.ts"];
-  for (const name of files) {
-    const destination = join(payload, "packages", "code", "src", name);
-    await mkdir(dirname(destination), { recursive: true });
-    await copyFile(join(packageRoot, "src", name), destination);
-  }
-  await cp(join(packageRoot, "src", "update"), join(payload, "packages", "code", "src", "update"), {
-    recursive: true,
-    dereference: true,
-  });
-  await cp(join(packageRoot, "dist"), join(payload, "packages", "code", "dist"), {
-    recursive: true,
-    dereference: true,
-  });
+  await copyFile(join(repositoryRoot, "bun.lock"), join(payload, "bun.lock"));
   const docsDestination = join(
     payload,
     "packages",
@@ -136,6 +188,10 @@ async function copySource(payload: string): Promise<void> {
     { recursive: true },
   );
   await copyFile(join(repositoryRoot, "package.json"), join(payload, "package.json"));
+  await copyFile(
+    join(repositoryRoot, "package.json"),
+    join(payload, "node_modules", "package.json"),
+  );
   await copyFile(join(repositoryRoot, "LICENSE"), join(payload, "LICENSE"));
   await copyFile(
     join(repositoryRoot, "THIRD_PARTY_NOTICES.md"),
@@ -156,6 +212,9 @@ async function copySource(payload: string): Promise<void> {
     join(repositoryRoot, "third-party", "vercel-ai-sdk", "LICENSE"),
     join(payload, "third-party", "vercel-ai-sdk", "LICENSE"),
   );
+  if (process.platform === "linux" && denyFile === undefined)
+    throw new Error("portable Linux release has no sandbox deny file");
+  return denyFile;
 }
 
 async function buildSystemDocsPublisher(payload: string): Promise<void> {
@@ -231,21 +290,59 @@ async function assertNoInlineSourceMaps(directory: string): Promise<void> {
   }
 }
 
-async function createArchive(stage: string, archivePath: string): Promise<void> {
+async function createArchive(
+  stage: string,
+  archivePath: string,
+  denyFile: string | undefined,
+): Promise<void> {
   const tar = Bun.which("tar");
-  if (tar === null) throw new Error("release packaging requires tar");
+  const gzip = Bun.which("gzip");
+  if (tar === null || gzip === null) throw new Error("release packaging requires tar and gzip");
   const environment: Record<string, string> = {
     PATH: process.env.PATH ?? "",
     LC_ALL: "C",
     LANG: "C",
   };
-  const child = Bun.spawn([tar, "-czf", archivePath, "-C", stage, "clarvis"], {
-    env: environment,
-    stdin: "ignore",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  if ((await child.exited) !== 0) throw new Error("tar failed to create the release archive");
+  const rawArchive = join(stage, "payload.tar");
+  const sourceMask = join(stage, "deny-mask");
+  const archiveDenyFile = denyFile === undefined ? undefined : relative(stage, denyFile);
+  await writeFile(sourceMask, "");
+  const commands = [
+    [
+      tar,
+      "-cf",
+      rawArchive,
+      ...(archiveDenyFile === undefined ? [] : [`--exclude=${archiveDenyFile}`]),
+      "-C",
+      stage,
+      "clarvis",
+    ],
+    ...(archiveDenyFile === undefined
+      ? []
+      : [
+          [
+            tar,
+            "-rf",
+            rawArchive,
+            "--mode=000",
+            `--transform=s|^deny-mask$|${archiveDenyFile}|`,
+            "-C",
+            stage,
+            "deny-mask",
+          ],
+        ]),
+    [gzip, "-n", "-f", rawArchive],
+  ];
+  for (const command of commands) {
+    const child = Bun.spawn(command, {
+      env: environment,
+      stdin: "ignore",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if ((await child.exited) !== 0) throw new Error("release archive command failed");
+  }
+  await rename(`${rawArchive}.gz`, archivePath);
 }
 
 async function main(): Promise<void> {
@@ -265,10 +362,10 @@ async function main(): Promise<void> {
   const archivePath = join(outputRoot, archiveName);
   try {
     await mkdir(payload, { recursive: true });
-    await copySource(payload);
+    const closure = await runtimeClosure(target);
+    const denyFile = await copySource(payload);
     await copyRuntime(payload);
     await buildSystemDocsPublisher(payload);
-    const closure = await runtimeClosure(target);
     await copyDependencies(payload, closure);
     await removeSourceMaps(payload);
     await assertNoInlineSourceMaps(payload);
@@ -284,7 +381,7 @@ async function main(): Promise<void> {
     }
     await writeFile(join(payload, "release.json"), `${JSON.stringify(release, null, 2)}\n`);
     await rm(archivePath, { force: true });
-    await createArchive(stage, archivePath);
+    await createArchive(stage, archivePath, denyFile);
     const digest = createHash("sha256")
       .update(await Bun.file(archivePath).bytes())
       .digest("hex");

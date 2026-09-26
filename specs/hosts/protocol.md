@@ -1,5 +1,18 @@
 # The transport-agnostic kernel to UI contract
 
+The config service exposes `getIsolationStatus` over the ordinary typed
+operation catalog; it returns the global preference, platform backend and
+observed availability without exposing environment or secret paths. `tool_call`
+may carry structured execution data, validated by the strict run-event codec.
+The effective mode is per operation because Host fallback does not change the
+saved Sandbox preference. Production: `ConfigService` and `IsolationStatus` in
+`packages/protocol/src/config.ts`, `RunEvent` in
+`packages/protocol/src/runs.ts`, `OPERATIONS.config` in
+`packages/kernel/src/transport/operations.ts`, and `RUN_EVENT_SCHEMAS` in
+`packages/kernel/src/transport/run-event-codec.ts`. Test:
+`packages/kernel/tests/integration/isolation-settings.test.ts` and
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
+
 > Implemented at `packages/protocol/src/**` plus
 > `packages/kernel/src/transport/operations.ts` as the consumer table. Nontrivial claims below carry
 > checkable source or test evidence, preferably at the owning symbol. Open questions are collected
@@ -998,7 +1011,7 @@ Every consumer reaches it **only as a type import**, verified directly (§5, inv
 | Consumer | Value imports | Type imports | Forcing mechanism |
 | --- | --- | --- | --- |
 | `@clarvis/kernel` | 0 | 91 source/test files currently import the public barrel, all with `import type` | `packages/kernel/tsconfig.json` maps `@clarvis/protocol` to the package's own **source**, so `tsc` checks the implementation directly against these interfaces |
-| `@clarvis/code` | 0 | 110 source/test files currently import the public barrel, all with `import type` | `packages/code/tests/architecture/dependency-boundary.test.ts` pins `code`'s Clarvis-namespaced manifest dependencies to `@clarvis/kernel`, `@clarvis/paths`, and `@clarvis/protocol` |
+| `@clarvis/code` | 0 | 110 source/test files currently import the public barrel, all with `import type` | `packages/code/tests/architecture/dependency-boundary.test.ts` pins `code`'s Clarvis-namespaced manifest dependencies to `@clarvis/kernel` and `@clarvis/protocol` |
 
 `code`'s dependency-boundary test permits `@clarvis/protocol` while forbidding
 `@clarvis/loop` and every engine-layer package.

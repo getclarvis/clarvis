@@ -234,20 +234,26 @@ export async function executeAgentToolCall(
     });
   };
 
-  const { isError, text, images, diff, abortUnsettled, executionAborted } = await toolset.dispatch(
-    call.name,
-    callArgs,
-    signal,
-    onOutput,
-    control === undefined ? undefined : recordStarted,
-    runSignal,
-  );
+  const { isError, text, images, diff, execution, abortUnsettled, executionAborted } =
+    await toolset.dispatch(
+      call.name,
+      callArgs,
+      signal,
+      onOutput,
+      control === undefined ? undefined : recordStarted,
+      runSignal,
+    );
   terminal = true;
   const interrupted =
     executionAborted === true &&
     !abortUnsettled &&
     wasOperatorInterrupted(runSignal ?? signal, signal);
-  const resultText = interrupted ? `Shell interrupted by the operator.\n${text}` : text;
+  const executionNote =
+    execution === undefined
+      ? ""
+      : `\n[Execution: ${execution.effective_mode}${execution.fallback ? ` fallback (${execution.reason ?? "sandbox unavailable"})` : ""}; requested ${execution.requested_mode}.]`;
+  const resultText =
+    (interrupted ? `Shell interrupted by the operator.\n${text}` : text) + executionNote;
   const errText = interrupted || isError ? resultText : null;
   const productive = !isError && !interrupted;
   const sessionId = yieldedSessionId(call.name, text, isError);
@@ -266,6 +272,7 @@ export async function executeAgentToolCall(
     tool_evidence: toolEvidence(call.name, resultText, errText),
     error: errText,
     ...(diff !== undefined ? { diff } : {}),
+    ...(execution !== undefined ? { execution } : {}),
     ...(interrupted ? { interruption: { source: "operator" as const } } : {}),
     ...(sessionId !== undefined && control !== undefined
       ? { control: { tool_execution_id: control.toolExecutionId, actions: control.actions } }

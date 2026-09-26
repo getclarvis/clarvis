@@ -120,3 +120,4 @@ export {
 export type { PluginBootstrapSkill } from "./runtime/capabilities/skills-settings.ts";
 export { createLogger, type CreateLoggerOptions, type Logger } from "./logger.ts";
 export { VERSION } from "./version.ts";
+export type { AgentExecutionResolver } from "./runtime/capabilities/tools.ts";

@@ -512,6 +512,21 @@ export type RunEvent =
       result?: string;
       error?: string;
       diff?: string;
+      execution?: {
+        requested_mode: "host" | "sandbox";
+        effective_mode: "host" | "sandbox";
+        backend: "host" | "bubblewrap" | "seatbelt";
+        policy_id: string;
+        fallback: boolean;
+        reason?: string;
+        attempt_id?: string;
+        attempts?: readonly {
+          attempt_id: string;
+          mode: "host" | "sandbox";
+          execution_started: boolean;
+          reason?: string;
+        }[];
+      };
       /**
        * Why this call ended without success when the operator interrupted it.
        *

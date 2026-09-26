@@ -1,5 +1,5 @@
 import { createKernelEnvironment, type CreateFileKernelOptions } from "@clarvis/kernel/bootstrap";
-import { globalPaths, workspacePaths, workspaceStatePaths } from "@clarvis/paths";
+import { globalPaths, workspacePaths, workspaceStatePaths } from "@clarvis/kernel/paths";
 import { readStartupKeySources } from "./startup-key-sources.ts";
 
 /** Inputs shared by local discovery hosting and the SSH-owned stdio entry. */

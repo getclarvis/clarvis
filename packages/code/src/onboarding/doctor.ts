@@ -1,6 +1,6 @@
 import type { Accessor } from "solid-js";
 import type { SubscriptionScheme, SubscriptionState } from "@clarvis/protocol";
-import { CLARVIS_DIR, globalPaths } from "@clarvis/paths";
+import { CLARVIS_DIR, globalPaths } from "@clarvis/kernel/paths";
 import type { Scope, SettingsAdapter } from "../adapters/settings.ts";
 import { modelResolves, planRetentionLabel, plansState } from "../adapters/execution-safety.ts";
 import { agentReadiness, type AgentFile, type EnvView } from "../adapters/agent-files.ts";

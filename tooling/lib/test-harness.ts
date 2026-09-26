@@ -216,15 +216,20 @@ export const GATE_PHASES = [
 ];
 
 /**
- * Check that the root build emits both the library graph and the terminal application.
+ * Check that the root build emits the library graph, native assets, worker and terminal application.
  *
  * @param scripts - the root manifest's `scripts` map.
  * @returns one failure per missing or reordered build step.
  */
 export function checkRootBuild(scripts) {
   const failures = [];
-  if (scripts?.["build:packages"] !== "tsc -b") {
-    failures.push("`build:packages` must be exactly `tsc -b`");
+  if (
+    scripts?.["build:packages"] !==
+    "tsc -b && bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets"
+  ) {
+    failures.push(
+      "`build:packages` must build the solution graph, sandbox assets, then tools worker",
+    );
   }
   if (scripts?.build !== "bun run build:packages && bun run build:code") {
     failures.push(

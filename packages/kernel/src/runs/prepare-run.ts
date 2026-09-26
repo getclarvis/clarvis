@@ -12,6 +12,7 @@ import { snapshotRunConfiguration, type RunConfigurationSource } from "./configu
 import type { KernelRunService, RunRequestAssembler, PreparedRunExecution } from "./run-service.ts";
 import { createSettingsRunAssembler, type SettingsAssemblerOptions } from "./settings-assembler.ts";
 import type { GoalCreationExecutionPolicy, GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import { resolveIsolationSettings } from "../config/isolation-settings.ts";
 
 /** Host-only admission result; start is single-use and preserves the prepared execution identity. */
 export interface PreparedKernelRun {
@@ -53,6 +54,7 @@ export function prepareKernelRun(
   });
   let execution: PreparedRunExecution | undefined;
   const snapshot = snapshotRunConfiguration(options.configStore);
+  const isolation = resolveIsolationSettings(snapshot.readSettings().scopes.global?.isolation);
   const assemble =
     options.assembleRunRequest ??
     createSettingsRunAssembler(snapshot, {
@@ -89,11 +91,13 @@ export function prepareKernelRun(
     };
     execution = {
       kind: "workflow",
+      isolation,
       start: () => options.startWorkflow({ ...request, agent }, prepared),
     };
   } else {
     execution = {
       kind: "ordinary",
+      isolation,
       rawBody,
       ...(goal === undefined ? {} : { goal }),
       ...(goalCreation === undefined ? {} : { goalCreation }),

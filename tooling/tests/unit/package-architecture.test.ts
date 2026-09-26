@@ -38,7 +38,7 @@ function workspacePackageNames(): string[] {
 describe("package architecture policy", () => {
   it("assigns every workspace package exactly one role", () => {
     const packages = workspacePackageNames();
-    expect(packages).toHaveLength(17);
+    expect(packages).toHaveLength(18);
     expect(packageRoleRegistryErrors(packages)).toEqual([]);
     expect(Object.keys(PACKAGE_ROLES).sort()).toEqual(packages);
     for (const packageName of packages) expect(packageRoleOf(packageName)).toBeDefined();
@@ -53,7 +53,6 @@ describe("package architecture policy", () => {
   it("allows only the explicitly owned application dependencies", () => {
     expect(allowedInternalDependenciesFor("@clarvis/code")).toEqual([
       "@clarvis/kernel",
-      "@clarvis/paths",
       "@clarvis/protocol",
     ]);
     expect(packageDependencyViolation("@clarvis/code", "@clarvis/loop")).toContain(

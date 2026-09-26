@@ -34,15 +34,15 @@ applications                   host implementation              composed graph
                                        ├──> @clarvis/loop ──> execution services
                                        └──> foundations + @clarvis/protocol
 
-additional direct application-owned edges
+additional direct application-owned edge
 
-@clarvis/code ─────> @clarvis/protocol, @clarvis/paths
+@clarvis/code ─────> @clarvis/protocol
 ```
 
-This is deliberately not `code -> kernel -> every symbol`. The kernel is the local host
-implementation and composition root, not a generic barrel. Clients and the implementation both
-depend on the transport-neutral protocol; applications may also depend directly on a foundation
-when they own the corresponding concern. The kernel publishes seven owned entrypoints today
+The kernel is the local host implementation and composition root. Clients and the implementation both
+depend on the transport-neutral protocol. Code obtains its launch and persistence path vocabulary
+through the bounded `@clarvis/kernel/paths` facade; it has no direct foundation package edge.
+The kernel publishes eight owned entrypoints today
 (`packages/kernel/package.json`, `exports`), and its architecture test prevents the root from
 becoming a barrel for lower packages
 (`packages/kernel/tests/architecture/public-surface.test.ts`, `kernel public surface`).
@@ -63,14 +63,14 @@ Every workspace has one primary architectural role:
 | --- | --- | --- | --- |
 | foundation | `capability`, `paths` | Stable vocabulary, ports and filesystem ownership used by higher layers | No internal package dependency |
 | host contract | `protocol` | Transport-neutral DTOs and the `KernelClient` service contract | No internal package dependency |
-| execution service | `llm`, `mcp-client`, `supervision`, `trace`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; a same-role edge only when one service genuinely builds on another, currently `hooks -> tools` |
+| execution service | `llm`, `mcp-client`, `supervision`, `trace`, `sandbox`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; same-role composition edges are `hooks -> tools` and `tools -> sandbox` |
 | engine | `loop` | Embeddable execution and orchestration policy | Foundations and execution services; `hooks`, `skills` and `tools` remain optional |
 | product capability | `memory`, `plan`, `goal`, `workflows` | Independently owned features composed by a host | Foundations; `goal`, `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
 | host implementation | `kernel` | Implements `protocol`, composes the engine and product capabilities, and owns local host policy | Host contract and any lower package it actually composes |
-| application | `code` | User-facing terminal application | `kernel`, `protocol`, and only those foundations whose concerns the application itself owns |
+| application | `code` | User-facing terminal application | `kernel` and `protocol` only |
 
-The current manifest instantiates the application row: Code declares only Kernel,
-Paths and Protocol (`packages/code/package.json`, `dependencies`). Kernel declares its
+The current manifest instantiates the application row: Code declares only Kernel
+and Protocol (`packages/code/package.json`, `dependencies`). Kernel declares its
 composition dependencies directly rather than hiding them behind a lower barrel
 (`packages/kernel/package.json`, `dependencies`). Loop declares its execution services and keeps
 Hooks, Skills and Tools optional (`packages/loop/package.json`, `optionalDependencies`). Protocol
@@ -214,10 +214,11 @@ validates every imported workspace package with `packageDependencyViolation`, an
 owned Kernel entrypoints (`packages/code/tests/architecture/dependency-boundary.test.ts`,
 `code dependency boundary`).
 
-An application may depend directly on a foundation only for an application-owned concern.
-Code resolves its launch and state paths directly. Routing those types through Kernel would make
-the composition root a facade,
-not reduce coupling.
+The application cannot depend directly on a foundation. Code's path access goes through the
+curated `@clarvis/kernel/paths` entrypoint (`packages/kernel/src/paths.ts`) so the host owns the
+vocabulary offered to the application. Test: `code dependency boundary` in
+`packages/code/tests/architecture/dependency-boundary.test.ts` and `kernel public surface` in
+`packages/kernel/tests/architecture/public-surface.test.ts`.
 
 ### 4.3 Engine and capability direction
 
@@ -273,9 +274,9 @@ Production: `tooling/lib/package-graph.ts` (`analyzePackageGraph`).
 Test: `tooling/tests/unit/package-graph.test.ts` (`analyzePackageGraph`).
 
 **INV-PA4. Code depends on no Clarvis implementation package below Kernel; its only Clarvis package
-dependencies are Kernel, Paths and Protocol.**
+dependencies are Kernel and Protocol.**
 
-Production: `tooling/lib/package-architecture.ts` (`APPLICATION_FOUNDATIONS` and role matrix);
+Production: `tooling/lib/package-architecture.ts` (role matrix);
 `packages/code/package.json` (`dependencies`).
 
 Test: `packages/code/tests/architecture/dependency-boundary.test.ts` (`code dependency boundary`).
@@ -292,7 +293,7 @@ Production: `packages/code/src/index.tsx`, `packages/code/src/runtime.tsx`,
 Test: `packages/code/tests/architecture/architecture-boundary.test.ts`
 (`confines concrete kernel imports to composition and adapter boundaries`).
 
-**INV-PA7. Kernel exposes only its seven owned entrypoints and its root is not a generic re-export
+**INV-PA7. Kernel exposes only its eight owned entrypoints and its root is not a generic re-export
 barrel for lower packages. Protocol remains dependency-free.**
 
 Production: `packages/kernel/package.json` (`exports`); `packages/kernel/src/index.ts`;
@@ -351,7 +352,7 @@ applications
   code
       |-- protocol                     contract used by clients and implementation
       |-- kernel                       local implementation and composition
-      `-- owned foundation concerns    paths where justified
+      `-- no direct foundation edge
 
 host implementation
   kernel
@@ -386,7 +387,7 @@ package separates them inside the package:
   `@clarvis/kernel` entrypoint;
 - presentation receives normalized view models, effective defaults and derived policy through
   Code-owned adapters instead of parsing Kernel configuration itself;
-- Paths access remains at bootstrap, onboarding or persistence adapters, not in framework-free core
+- The `@clarvis/kernel/paths` facade remains at bootstrap, onboarding or persistence adapters, not in framework-free core
   or generic presentation;
 - a future remote client factory can replace local bootstrap without changing the run host, feature
   controllers or views.

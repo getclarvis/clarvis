@@ -1,4 +1,8 @@
-import { type GlobalPaths, type WorkspacePaths, type WorkspaceStatePaths } from "@clarvis/paths";
+import {
+  type GlobalPaths,
+  type WorkspacePaths,
+  type WorkspaceStatePaths,
+} from "@clarvis/kernel/paths";
 import type { ProfileInfo } from "./run-types.ts";
 
 /** A grant the built-in agent editor knows how to present. */

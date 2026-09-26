@@ -42,6 +42,7 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
   const calls: string[] = [];
   return {
     calls,
+    openIsolationPicker: () => calls.push("openIsolationPicker"),
     cancelRun: () => {
       calls.push("cancelRun");
       return false;

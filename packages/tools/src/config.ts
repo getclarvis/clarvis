@@ -3,6 +3,8 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
 import { workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
+import type { ToolIsolationBackend, ToolIsolationPolicy } from "./execution/isolation-port.ts";
+import type { ToolExecutionPort } from "./execution/port.ts";
 
 /**
  * The fully resolved, validated runtime configuration threaded through every
@@ -11,6 +13,12 @@ import { workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
  * capability probes have been run, so handlers may consume it as-is.
  */
 export interface RuntimeConfig {
+  /** Optional trusted execution port; absent preserves the in-process Host handler. */
+  readonly executionPort?: ToolExecutionPort;
+  /** Host-built process boundary applied to new shell sessions. */
+  readonly executionPolicy?: ToolIsolationPolicy;
+  /** Platform implementation for a sandbox policy; never selected by tool arguments. */
+  readonly sandboxBackend?: ToolIsolationBackend;
   /** Absolute path of the workspace root; all relative paths resolve under it. */
   workspaceRoot: string;
 
@@ -192,6 +200,12 @@ function assertTimeoutOrder(min: number, max: number, minLabel: string, maxLabel
  * constant (limits) or a safe default (`readOnly` false) inside {@link resolveConfig}.
  */
 export interface AgentToolsOptions {
+  /** Trusted port for validated native tool operations. */
+  executionPort?: ToolExecutionPort;
+  /** Trusted process policy for commands. Defaults to existing Host behavior. */
+  executionPolicy?: ToolIsolationPolicy;
+  /** Native backend for sandboxed commands. */
+  sandboxBackend?: ToolIsolationBackend;
   /** The workspace root; validated to exist and be a directory. */
   workspaceRoot: string;
   /** Trusted composition port; omitted paths use the ordinary process roots. */
@@ -271,6 +285,12 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
   if (!options.workspaceRoot) {
     throw new StartupError("No workspace root: options.workspaceRoot is required.");
   }
+  if (
+    options.executionPolicy?.mode === "sandbox" &&
+    (!options.executionPort || !options.sandboxBackend)
+  ) {
+    throw new StartupError("Sandbox execution requires both a native tool port and backend.");
+  }
   const workspaceRoot = validateWorkspace(options.workspaceRoot);
   const statePaths = Object.freeze({
     ...(options.statePaths ?? workspaceStatePaths(workspaceRoot)),
@@ -315,6 +335,9 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
 
   return {
     workspaceRoot,
+    executionPort: options.executionPort,
+    executionPolicy: options.executionPolicy,
+    sandboxBackend: options.sandboxBackend,
     logger,
     maxOutputBytes: requireMin(
       options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,

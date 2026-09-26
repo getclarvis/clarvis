@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
-import { UNIX_SOCKET_PATH_BUDGET_BYTES, ancestorTrust } from "@clarvis/paths";
+import { UNIX_SOCKET_PATH_BUDGET_BYTES, ancestorTrust } from "@clarvis/kernel/paths";
 
 import {
   createSmokeContext,

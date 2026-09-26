@@ -70,6 +70,7 @@ export function ListPicker<T>(props: {
   footerExtra?: string;
   footerFg?: string;
   size?: "sm" | "lg";
+  responsiveNavigation?: boolean;
   base?: string;
   /** Optional fixed content above the filter/list, accounted for by {@link introRows}. */
   intro?: JSX.Element;
@@ -264,6 +265,7 @@ export function ListPicker<T>(props: {
             usableWidth={() =>
               floatContentWidth(dims().width, props.size ?? "lg") - Bun.stringWidth(footer())
             }
+            responsive={props.responsiveNavigation}
           />
         ) : undefined
       }

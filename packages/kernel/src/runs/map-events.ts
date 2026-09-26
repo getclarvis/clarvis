@@ -525,6 +525,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         result: ev.result,
         ...(ev.error !== null ? { error: ev.error } : {}),
         ...(ev.diff !== undefined ? { diff: ev.diff } : {}),
+        ...(ev.execution !== undefined ? { execution: ev.execution } : {}),
         ...(ev.interruption !== undefined ? { interruption: ev.interruption } : {}),
         ...(ev.control !== undefined ? { control: ev.control } : {}),
       };

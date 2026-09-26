@@ -61,6 +61,7 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
     },
     config: {
       getSettings: record("config.getSettings"),
+      getIsolationStatus: record("config.getIsolationStatus"),
       previewSettingsRepair: record("config.previewSettingsRepair"),
       repairSettings: record("config.repairSettings"),
       approveWorkspace: record("config.approveWorkspace"),

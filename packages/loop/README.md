@@ -266,12 +266,15 @@ implicit host bridge.
 
 Built-ins cover:
 
-- coding tools execute shell and file operations on the host with its process permissions.
+- coding tools default to Host; a host-supplied run binding can route shell and file
+  operations through a native Sandbox policy with per-operation Host recovery.
 - one owner-only scratch root per run, allocated by `@clarvis/paths` as a short, exclusive,
   account-owned directory and advertised as `TMPDIR`, `TEMP` and `TMP`, plus the host's existing system
   temporary roots available to commands. Shortness is what keeps a tool's own
   socket address inside the operating system's limit when `CLARVIS_HOME`, the workspace path or the run
-  id is deep; the system roots are compatibility access only and are never removed by Clarvis. A verified
+  id is deep; in Sandbox, worker configuration receives only the scratch root and mounted system
+  temporary roots (`/tmp`, and `/private/tmp` on macOS). Host-only temporary directories cannot
+  prevent worker startup. The system roots are compatibility access only and are never removed by Clarvis. A verified
   directory created through `mktemp -d` remains owned by that command; the loop removes only its own scratch after tracked processes have physically exited;
 - skills, including package-scoped helper disclosure. The loop passes each selected skill's
   directory to the tool context and captures bodies at dependency construction. Host monitors

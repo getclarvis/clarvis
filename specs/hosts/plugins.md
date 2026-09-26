@@ -1718,7 +1718,7 @@ contributes no roots — but still contributes agents, hooks and MCP servers.
 | `packages/kernel/src/adapters/git/plugin-fetcher.ts` | `ports/process-runner.ts` | Git and npm run through the injected `ProcessRunner`, never `child_process` directly |
 | `packages/kernel/src/plugins/plugin-service.ts` | `adapters/process/node-process-runner.ts` | default `ProcessRunner` when the host supplies none — the same adapter class `createGitPluginFetcher` is handed by injection |
 | `packages/code/src/adapters/marketplace.ts` | `@clarvis/kernel/config` | `marketplaceSchema` (which is `@clarvis/loop`'s, re-exported twice) |
-| `packages/code/src/adapters/marketplace.ts` | `@clarvis/paths` | `MARKETPLACE_FILE`, `agentsMarketplaceFile(s)`, `isAgentsMarketplaceFile` |
+| `packages/code/src/adapters/marketplace.ts` | `@clarvis/kernel/paths` | `MARKETPLACE_FILE`, `agentsMarketplaceFile(s)`, `isAgentsMarketplaceFile` |
 
 `hook-dialects.ts`'s own docstring records why the translation is in the kernel and not in the two
 places it might have gone: the engine's manifest schema is on an eager import path "where filesystem

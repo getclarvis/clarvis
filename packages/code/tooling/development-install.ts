@@ -340,7 +340,7 @@ function repositoryHookIsConfigured(): boolean {
 }
 
 async function cleanEffectiveGlobalState(): Promise<void> {
-  const { globalRoot } = await import("@clarvis/paths");
+  const { globalRoot } = await import("@clarvis/kernel/paths");
   const userHome = process.env.HOME ?? homedir();
   const target = globalRoot();
   const removed = await cleanDevelopmentState(target, userHome);

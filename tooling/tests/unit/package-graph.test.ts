@@ -83,7 +83,7 @@ describe("analyzePackageGraph", () => {
     ]);
   });
 
-  test("enforces role policy across declared and imported edge kinds", () => {
+  test("enforces runtime role policy while allowing test-only development dependencies", () => {
     const cases = [
       {
         field: "dependencies",
@@ -126,9 +126,10 @@ describe("analyzePackageGraph", () => {
       writeFileSync(join(root, "packages", "a", edge.tree, "edge.ts"), edge.source);
 
       const report = analyzePackageGraphWithArchitecture(root);
-      expect(report.errors).toContain(
-        "@clarvis/code: @clarvis/code (application) may not depend on @clarvis/loop (engine)",
-      );
+      const violation =
+        "@clarvis/code: @clarvis/code (application) may not depend on @clarvis/loop (engine)";
+      if (edge.field === "devDependencies") expect(report.errors).not.toContain(violation);
+      else expect(report.errors).toContain(violation);
     }
   });
 

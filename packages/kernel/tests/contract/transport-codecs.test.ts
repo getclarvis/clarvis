@@ -55,6 +55,30 @@ it("decodes minimal durable announcement identity and rejects partial arguments 
   expect(decodeRunEvent({ ...event, attempt: 0 })).toBeNull();
 });
 
+it("round-trips the effective execution boundary on a tool result", () => {
+  const event: RunEvent = {
+    type: "tool_call",
+    at: 3,
+    agent: "lead",
+    tool: "read_file",
+    server: "",
+    ok: true,
+    execution: {
+      requested_mode: "sandbox",
+      effective_mode: "host",
+      backend: "host",
+      policy_id: "policy",
+      fallback: true,
+      reason: "sandbox_unavailable",
+      attempt_id: "attempt",
+    },
+  };
+  expect(decodeRunEvent(event)).toEqual(event);
+  expect(
+    decodeRunEvent({ ...event, execution: { ...event.execution, backend: "pretend" } }),
+  ).toBeNull();
+});
+
 interface RequestRecord {
   method: string;
   params: unknown;

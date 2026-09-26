@@ -51,7 +51,7 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `knip` | `knip` | `package.json` (`scripts.knip`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
-| `test` | `test:tooling` followed by 17 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
+| `test` | `test:tooling` followed by 18 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
 | `release:prepare` | `bun run tooling/release/prepare.ts <version>` | `package.json` (`scripts.release:prepare`) |
@@ -419,12 +419,13 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 | capability | 8 | – | – | – |
 | code | 5 | – | 4 (`src/cli.ts`, `src/index.tsx`, `src/local-host.ts`, `src/runtime.tsx`) | – (former `src/adapters/kernel-capabilities-client.ts` entry removed) |
 | hooks | – | – | – | – (empty array) |
-| kernel | 5 | – | 1 (`src/bin.ts`) | – |
+| kernel | 7 | 2 (`src/logger.ts`, `src/paths.ts`) | 1 (`src/bin.ts`) | – |
 | loop | – | 4 (`host`, `lib`, `workflows`, `workspace`) | – | – (former `src/version.ts` and `src/settings/marketplace-schema.ts` entries removed) |
 | memory | 4 | – | – | – |
+| sandbox | 1 (`src/backend.ts`) | – | – | – |
 | skills | 1 | – | – | – |
 | supervision | – | 1 | – | – |
-| tools | 4 | 1 (`src/shell-entry.ts`) | – | – |
+| tools | 2 | 1 (`src/shell-entry.ts`) | 1 (`src/execution/worker.ts`) | – |
 | trace | 1 | – | – | – |
 | workflows | 1 | 1 | – | – |
 
@@ -437,6 +438,10 @@ Test: [local-host-lifecycle.test.ts](../../packages/kernel/tests/integration/loc
 exercises the real composition in-process; [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
 proves separate-process ownership. Distributed companion loading uses the
 [artifact qualification](distribution-and-updates.md) and live TUI evidence, independently of LCOV.
+
+Kernel's `src/paths.ts` is also a pure named re-export facade; its behavior is measured in
+`@clarvis/paths`, while Kernel's public-surface architecture test pins the entrypoint. It is
+classified explicitly in `NO_COUNTER_ALLOWLIST` rather than lowering a coverage threshold.
 
 The **barrel** reason turns on the *form* of the re-exports rather than on the word. All four `loop`
 entries are the package's entry-point barrels, and each spells its statements as a named list —
@@ -535,7 +540,7 @@ Production modules that carry this shape document it locally, including
 | # | Phase | Internal fan-out | What it can catch |
 | --- | --- | --- | --- |
 | 1 | `format:check` | `--parallel` across workspaces, then root Prettier | package formatting plus root tooling and repository workflows |
-| 2 | `build` | `build:packages`, then `build:code` | library emit and `.d.ts` for the reference graph, then the TUI bundle |
+| 2 | `build` | `build:packages`, then `build:code` | library emit and `.d.ts`, native sandbox and worker assets, then the TUI bundle |
 | 3 | `typecheck` | `--parallel` across workspaces, then `typecheck:tooling` | every package's `tsconfig.json`, all of which `include` `tests`, plus root tooling |
 | 4 | `lint:eslint` | `--parallel` across workspaces, then `lint:tooling` | package lint plus the root tooling ESLint project |
 | 5 | `lint:intent` | strictly serial, 10 links | `test:tooling`, then source policy, test determinism, package graph, spec hygiene, test harness, Bun-version consistency, the no-Python-source check, import-extension policy and release readiness |
@@ -1041,7 +1046,7 @@ only the owner-specific default").
 
 13. **INV-310 (preload half) — a test process never writes into the developer's real
     `CLARVIS_HOME`.** Rule:
-    `tooling/test-runtime/clarvis-home-preload.ts`, wired at `bunfig.toml` and in seventeen package bunfigs.
+    `tooling/test-runtime/clarvis-home-preload.ts`, wired at `bunfig.toml` and in eighteen package bunfigs.
     ~~**Unpinned** — nothing asserts the preload is registered where it is needed, and eleven package
     bunfigs omit it.~~ **Pinned**, and the count was the finding. `checkPackageHarness`
     requires a `preload` entry ending in `clarvis-home-preload.ts` in every non-type-only package bunfig

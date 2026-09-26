@@ -141,6 +141,8 @@ export interface ToolCallDetail {
   tool_evidence?: ToolEvidenceDetail;
   error: string | null;
   diff?: string;
+  /** Host-owned execution identity for the completed attempt. */
+  execution?: ToolExecutionDetail;
   /**
    * Operator interruption of this invocation. Present only when the child
    * signal aborted while the run remained live. Implies a non-null `error`.
@@ -148,6 +150,23 @@ export interface ToolCallDetail {
   interruption?: { source: "operator" };
   /** Live command session that outlived this tool call. */
   control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
+}
+
+/** Requested and effective isolation of one coding-tool call. */
+export interface ToolExecutionDetail {
+  requested_mode: "host" | "sandbox";
+  effective_mode: "host" | "sandbox";
+  backend: "host" | "bubblewrap" | "seatbelt";
+  policy_id: string;
+  fallback: boolean;
+  reason?: string;
+  attempt_id?: string;
+  attempts?: readonly {
+    attempt_id: string;
+    mode: "host" | "sandbox";
+    execution_started: boolean;
+    reason?: string;
+  }[];
 }
 
 /**

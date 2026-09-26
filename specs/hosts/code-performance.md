@@ -1203,7 +1203,7 @@ The implemented gate in section 8.3 requires that no **production-policy** case 
 per 100 post-GC cycles, its regression slope must not remain
 monotonically positive across successive batches, and node/keymap/timeline counts must return
 exactly to baseline. Deliberate remount comparators may exceed the memory candidate only to preserve
-attribution and must have a paired production case. The final manual gate is a bundled 120x32 PTY
+attribution and must have a paired production case. The final manual gate is a source-release 120x32 PTY
 pass through every reachable surface, followed by a multi-run process-
 tree soak. The work is complete only when every confirmed slope is flat or an explicitly accepted
 upstream residual is documented with a lower operational bound and watchdog coverage.

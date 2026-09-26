@@ -51,7 +51,10 @@ export const shellSession: ToolDef = {
     properties: {
       action: { type: "string", enum: ["poll", "stop", "list"] },
       session_id: { type: "string", description: "Opaque ID returned by shell." },
-      cursor: { type: "string", description: "Opaque next_cursor returned by a previous poll." },
+      cursor: {
+        type: "string",
+        description: "Opaque next_cursor returned by a previous poll; omit on the first poll.",
+      },
       yield_time_ms: {
         type: "integer",
         minimum: 0,
@@ -64,22 +67,6 @@ export const shellSession: ToolDef = {
       {
         if: { properties: { action: { enum: ["poll", "stop"] } } },
         then: { required: ["session_id"] },
-      },
-      {
-        if: { properties: { action: { const: "stop" } } },
-        then: { not: { anyOf: [{ required: ["cursor"] }, { required: ["yield_time_ms"] }] } },
-      },
-      {
-        if: { properties: { action: { const: "list" } } },
-        then: {
-          not: {
-            anyOf: [
-              { required: ["session_id"] },
-              { required: ["cursor"] },
-              { required: ["yield_time_ms"] },
-            ],
-          },
-        },
       },
     ],
   },
@@ -112,7 +99,7 @@ export const shellSession: ToolDef = {
         status: confirmed ? "stopped" : "termination_unconfirmed",
       });
     }
-    const cursor = args.cursor as string | undefined;
+    const cursor = args.cursor === "" ? undefined : (args.cursor as string | undefined);
     const yieldMs = (args.yield_time_ms as number | undefined) ?? 0;
     await session.waitForChange(cursor, yieldMs, signal);
     return JSON.stringify(shellSessionView(session, cursor, config.maxOutputBytes));

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { SandboxSetupError } from "@clarvis/sandbox";
 import { fsError, serializeError, ToolError } from "../../src/errors.ts";
 
 function errno(code: string | undefined, message: string): NodeJS.ErrnoException {
@@ -43,6 +44,21 @@ describe("fsError code mapping", () => {
 });
 
 describe("serializeError", () => {
+  it("identifies a sandbox setup failure before any child ran", () => {
+    const error = new SandboxSetupError("sandbox_setup_failed", "missing deny mount").withBoundary(
+      "bubblewrap",
+      "policy-1",
+    );
+    expect(JSON.parse(serializeError(error))).toEqual({
+      error: "sandbox_setup_failed",
+      message: "missing deny mount",
+      execution_started: false,
+      execution_mode: "sandbox",
+      execution_backend: "bubblewrap",
+      policy_id: "policy-1",
+    });
+  });
+
   it("serializes a ToolError with its code, message and fields", () => {
     const s = serializeError(new ToolError("no_match", "nothing here", { pattern: "x" }));
     expect(JSON.parse(s)).toEqual({ error: "no_match", message: "nothing here", pattern: "x" });

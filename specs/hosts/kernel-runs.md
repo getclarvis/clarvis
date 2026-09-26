@@ -1,5 +1,23 @@
 # Starting a run, assembling its request, and projecting its events
 
+## Run-bound tool isolation
+
+The file host binds the global isolation preference to owner and execution ID
+before starting a run. `prepareKernelRun` captures it with the configuration
+snapshot; direct starts read the global preference at admission. Workflow
+leaders inherit the manager binding. Tools activation resolves that identity
+once and fails explicitly if it is missing; configuration edits cannot widen an
+active tree. The binding is released when the run closes, including failed
+starts. Terminal `tool_call` events project structured requested and effective
+execution modes with fallback information.
+
+Production: `prepareKernelRun` in `packages/kernel/src/runs/prepare-run.ts`,
+`createRunService` in `packages/kernel/src/runs/run-service.ts`,
+`createWorkflowsService` in `packages/kernel/src/workflows/workflows-service.ts`,
+and `engineEventToProto` in `packages/kernel/src/runs/map-events.ts`. Test:
+`packages/kernel/tests/unit/isolation-service.test.ts` and
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
+
 > Implemented at `packages/kernel/src/runs/**`. Every claim below is anchored to a file and a named symbol or test.
 > Open questions are collected in the final section.
 
@@ -1086,7 +1104,7 @@ store owns the full schema".
 | `packages/kernel/src/workflows/workflows-service.ts` | `createManagedRun` | `runManagerWorkflow` is the second producer of a `RunHandle`, with `observe` and `settle` |
 | `packages/kernel/src/transport/client.ts` | `coalesceRunEvents`, `isDroppableRunEvent`, `sizeOfRunEvent`, `DEFAULT_RUN_EVENT_BUFFER*` | the remote client re-applies the same backpressure policy locally |
 | `packages/code/src/adapters/event-span.ts` | `deriveRunEventSpan` | the TUI groups its transcript by the kernel's span ids |
-| `packages/kernel/src/index.ts`, focused subpath modules, and `packages/kernel/package.json` | the exported surface | pinned to six entrypoints by `packages/kernel/tests/architecture/public-surface.test.ts` |
+| `packages/kernel/src/index.ts`, focused subpath modules, and `packages/kernel/package.json` | the exported surface | pinned to eight entrypoints by `packages/kernel/tests/architecture/public-surface.test.ts` |
 
 ### 7.3 Direction-forcing facts
 

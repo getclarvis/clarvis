@@ -11,7 +11,7 @@ import type { MessageContent } from "@clarvis/protocol";
  * `contentToText` (`packages/capability/src/message-content.ts`), which
  * operates on that package's own `MessageContent`/`ContentPart` types rather
  * than `@clarvis/protocol`'s. `@clarvis/code` may depend only on
- * `@clarvis/kernel`, `@clarvis/protocol` and `@clarvis/paths` — never
+ * `@clarvis/kernel` and `@clarvis/protocol` — never
  * `@clarvis/capability`, not even for a type — so the two implementations
  * cannot share a module or a test import. Each package's own test suite
  * (this file's `tests/message-content.test.ts` and capability's

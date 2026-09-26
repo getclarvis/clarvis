@@ -119,6 +119,39 @@ describe("trace-mapper — tool projection", () => {
       truncated: false,
     });
   });
+
+  it("persists the effective isolation mode and attempt identity", () => {
+    const execution = {
+      requested_mode: "sandbox" as const,
+      effective_mode: "host" as const,
+      backend: "host" as const,
+      policy_id: "policy",
+      fallback: true,
+      reason: "sandbox_denied",
+      attempt_id: "host-attempt",
+      attempts: [
+        { attempt_id: "sandbox-attempt", mode: "sandbox" as const, execution_started: true },
+        { attempt_id: "host-attempt", mode: "host" as const, execution_started: true },
+      ],
+    };
+    const entry: TraceEntry = {
+      at: 3,
+      kind: "tool_call",
+      detail: {
+        agent: "lead",
+        iteration_ref: 1,
+        started_at: 1,
+        ended_at: 3,
+        name: "shell",
+        arguments: {},
+        result: "done",
+        error: null,
+        execution,
+      },
+    };
+    const event = byType(mapTrace([entry], ANCHOR).events, "tool_call")[0]!;
+    expect(JSON.parse(JSON.stringify(event)).execution).toEqual(execution);
+  });
 });
 
 describe("trace-mapper — mapping, anchoring, ordering", () => {

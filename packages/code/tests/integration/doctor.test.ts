@@ -56,7 +56,7 @@ function settingsFrom(
 import { createCodeConfigStore, type CodeConfig } from "../../src/adapters/code-config.ts";
 import { docToAgentFile, readEnvView, type AgentFile } from "../../src/adapters/agent-files.ts";
 import type { ClarvisDirs } from "../../src/adapters/agents.ts";
-import { globalPaths, workspacePaths } from "@clarvis/paths";
+import { globalPaths, workspacePaths } from "@clarvis/kernel/paths";
 
 interface ScopeDirs {
   global: string;

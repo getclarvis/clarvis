@@ -67,6 +67,7 @@ import {
   type WorkflowStore,
 } from "./workflow-store.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
+import type { IsolationService } from "../execution/isolation-service.ts";
 import { generateWorkflowTitle } from "./workflow-title.ts";
 
 const WORKFLOW_RUN_DEPS = {
@@ -88,6 +89,7 @@ export interface WorkflowsServiceConfig {
   deps: ExecuteRunDeps;
   /** Placement-neutral loop executor used by manager and leader runs. */
   executeRun?: RunExecutor;
+  isolationService?: IsolationService;
   /** Owner scope every run and record is keyed under. */
   owner: string;
   /** Workspace label stamped on each {@link WorkflowRecord}. */
@@ -270,6 +272,19 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
     const assemble = prepared?.assembleRunRequest ?? assembleRunRequest;
 
     const managerRunId = params.execution_id ?? generateExecutionId();
+    const scopedRunDeps: WorkflowRunDeps = {
+      ...runDeps,
+      async executeRun(args) {
+        const runId = (args.rawBody as { execution_id?: unknown } | null)?.execution_id;
+        const leaderId = typeof runId === "string" && runId !== managerRunId ? runId : undefined;
+        if (leaderId !== undefined) cfg.isolationService?.inherit(owner, managerRunId, leaderId);
+        try {
+          return await runDeps.executeRun(args);
+        } finally {
+          if (leaderId !== undefined) cfg.isolationService?.release(owner, leaderId);
+        }
+      },
+    };
 
     const maxConcurrency = settings.max_concurrency;
     const maxTotalLeaders = settings.max_total_leaders;
@@ -521,7 +536,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           })) as RunRequestBody;
         const workflowContext: WorkflowCtx = {
           deps: workflowDeps,
-          runDeps,
+          runDeps: scopedRunDeps,
           owner,
           semaphore,
           ledger,
@@ -604,7 +619,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           externalSignal: context.signal,
           elicit: mux.manager,
         };
-        const runTask = runDeps.executeRun(managerArgs);
+        const runTask = scopedRunDeps.executeRun(managerArgs);
         const [run] = await Promise.allSettled([runTask, titleTask]);
         if (run.status === "rejected") throw run.reason;
         const outcome = run.value;

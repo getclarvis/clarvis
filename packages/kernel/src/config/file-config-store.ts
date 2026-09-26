@@ -742,7 +742,11 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
             settings: trustGated?.settings ?? permanentlyGated.settings,
             withheld: [...new Set([...permanentlyGated.withheld, ...(trustGated?.withheld ?? [])])],
           };
-    const workspaceForMerge = gated?.settings ?? workspace.value;
+    const workspaceSettings = gated?.settings ?? workspace.value;
+    const workspaceForMerge =
+      workspaceSettings === undefined
+        ? undefined
+        : (({ isolation: _isolation, ...other }) => other)(workspaceSettings);
     const scopes: SettingsScope[] = [];
     if (global.value !== undefined)
       scopes.push({ origin: "operator", settings: asEngine(global.value) });
@@ -1012,6 +1016,10 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
      *   exactly the fields its own write had just re-approved.
      */
     writeSettings: (scope, data) => {
+      if (scope === "workspace") {
+        const { isolation: _isolation, ...other } = data;
+        data = other;
+      }
       const path = requireScope(scope, settingsPath(scope));
       const content = `${JSON.stringify(data, null, 2)}\n`;
       withOperatorWrite(
@@ -1033,9 +1041,12 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
      *   and writes nothing, which is how validation failure stays a no-op.
      */
     mutateSettings: (scope, expectedRevision, mutate) =>
-      rewriteUnderLease(scope, expectedRevision, (document, path) =>
-        mutate(settingsFromDocument(document, scope, path)),
-      ),
+      rewriteUnderLease(scope, expectedRevision, (document, path) => {
+        const next = mutate(settingsFromDocument(document, scope, path));
+        if (scope !== "workspace") return next;
+        const { isolation: _isolation, ...other } = next;
+        return other;
+      }),
     /**
      * All file agents across scopes, plus plugin-shipped agents for the enabled
      * plugins.

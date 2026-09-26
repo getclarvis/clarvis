@@ -11,7 +11,7 @@ import { readEnvView } from "../../src/adapters/agent-files.ts";
 import type { SettingsAdapter } from "../../src/adapters/settings.ts";
 import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
 import type { Interaction } from "../../src/keys/interaction.ts";
-import { globalPaths } from "@clarvis/paths";
+import { globalPaths } from "@clarvis/kernel/paths";
 import { fakeDebugSession } from "../helpers/fake-debug-session.ts";
 
 interface FakeCmd {
@@ -128,6 +128,7 @@ function harness(): {
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
+      openIsolationPicker: () => calls.push("isolation-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
       quit: () => calls.push("quit"),

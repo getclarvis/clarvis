@@ -28,6 +28,20 @@ describe("independent CI workflow", () => {
   test("rejects missing commands, restoration, receipt and unsafe workflow mutations", () => {
     const mutations: ((workflow: CiWorkflow) => void)[] = [
       (workflow) => {
+        workflow.jobs.coverage.steps = workflow.jobs.coverage.steps.filter(
+          (step) =>
+            step.run !==
+            "if test -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi",
+        );
+      },
+      (workflow) => {
+        workflow.jobs.coverage.steps = workflow.jobs.coverage.steps.filter(
+          (step) =>
+            step.run !==
+            "bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets",
+        );
+      },
+      (workflow) => {
         workflow.jobs.checks.steps = workflow.jobs.checks.steps.filter(
           (step) => step.run !== "bun run test:cache",
         );
@@ -90,16 +104,31 @@ describe("independent CI workflow", () => {
     }
   });
 
-  test("keeps macOS keyboard scope and the release consumer's public contexts", () => {
+  test("keeps macOS native and keyboard scope and the release consumer's public contexts", () => {
     const workflow = parsed();
     const keyboard =
       "bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts";
-    expect(workflow.jobs["keyboard-macos"]["runs-on"]).toBe("macos-14");
+    expect(workflow.jobs["sandbox-macos-intel"]["runs-on"]).toBe("macos-15-intel");
     expect(
-      workflow.jobs["keyboard-macos"].steps.flatMap((step) => (step.run ? [step.run] : [])),
+      workflow.jobs["sandbox-macos-intel"].steps.flatMap((step) => (step.run ? [step.run] : [])),
     ).toEqual([
       "bun --version && bun --revision",
       "bun install --frozen-lockfile",
+      "bun run build:packages",
+      "bun --filter @clarvis/sandbox test:native",
+      "bun --filter @clarvis/tools test:native",
+    ]);
+    expect(workflow.jobs["keyboard-macos"]["runs-on"]).toBe("macos-15");
+    expect(workflow.jobs["keyboard-macos"].needs).toEqual(["sandbox-macos-intel"]);
+    expect(
+      workflow.jobs["keyboard-macos"].steps.flatMap((step) => (step.run ? [step.run] : [])),
+    ).toEqual([
+      'test "$INTEL_RESULT" = success',
+      "bun --version && bun --revision",
+      "bun install --frozen-lockfile",
+      "bun run build:packages",
+      "bun --filter @clarvis/sandbox test:native",
+      "bun --filter @clarvis/tools test:native",
       "bun --filter @clarvis/tools test",
       keyboard,
     ]);

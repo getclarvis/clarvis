@@ -6,14 +6,14 @@
 
 ## 1. Purpose
 
-This subsystem is everything that turns 17 workspace source directories into something runnable and keeps them
+This subsystem is everything that turns 18 workspace source directories into something runnable and keeps them
 consistent while they change: one Bun workspace (`package.json`, `workspaces`) with a single root
 lockfile (`bun.lock` is the only lockfile in the tree), a two-layer TypeScript configuration (a `tsc -b`
 solution over per-package `composite` emit projects, `tsconfig.json`), one shared ESLint/Prettier
 configuration applied through each package's shim (`eslint.config.base.js`), a Knip pass run
 once from the root (`package.json`, `scripts.knip`), a locally-enforced pre-commit gate
 (`.githooks/pre-commit`),
-independent Linux CI gates plus the retained macOS job (`.github/workflows/ci.yml`), a four-target portable
+independent Linux CI gates plus macOS ARM64 and Intel jobs (`.github/workflows/ci.yml`), a four-target portable
 release matrix delegated to [distribution and updates](distribution-and-updates.md), and a separate
 bundling path for the one package that is never emitted by `tsc` — the terminal UI
 (`packages/code/tooling/artifact/build.ts`). The root `build` command composes those two paths sequentially,
@@ -35,8 +35,8 @@ all manifests, `@types/bun`, the resolved lockfile entry and an attributable
 version/revision line in every remote job. The checker is part of `lint:intent`, so a partial runtime
 upgrade cannot reach the pre-commit test phase.
 
-The second is that the distributable TUI is a **bundle with runtime-shaped invariants that no unit
-test can observe**, because the unit suite imports `src/` by path
+The second is that the development TUI bundle has runtime-shaped invariants that no unit
+test can observe, because the unit suite imports `src/` by path
 (`packages/code/tooling/artifact/smoke.ts`). Bundling is therefore guarded by three separate
 mechanisms: pure assertion functions run inside the build itself
 (`packages/code/tooling/artifact/contract.ts`), a unit test over those same functions
@@ -63,10 +63,10 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | Script | Command | Source |
 | --- | --- | --- |
 | `build` | `build:packages && build:code` | `package.json` (`scripts.build`) |
-| `build:packages` | `tsc -b` | `package.json` (`scripts.build:packages`) |
+| `build:packages` | `tsc -b`, then sandbox native assets and the tools worker bundle | `package.json` (`scripts.build:packages`) |
 | `build:watch` | `tsc -b --watch` | `package.json` (`scripts.build:watch`) |
 | `clean` | `tsc -b --clean && bun --workspaces clean` | `package.json` (`scripts.clean`) |
-| `test` | `test:tooling`, followed by 17 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
+| `test` | `test:tooling`, followed by 18 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
 | `typecheck` | workspace typechecks followed by `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
@@ -163,7 +163,7 @@ Every export entry has the same three-condition shape, `bun` first:
 
 (`packages/capability/package.json`; the same shape recurs in every library manifest). The application package publishes no `exports` and is reached through its `bin`
 (`packages/code/package.json`). Kernel points at built `dist/bin.js`; Code points at TypeScript source
-(`src/cli.ts`), which then dispatches to the bundle at runtime (§4.6).
+(`src/cli.ts`), which dynamically loads TypeScript source at runtime (§4.6).
 
 `@clarvis/skills` is the only manifest carrying `"overrides": { "esbuild": "^0.25.0" }` plus
 `repository`/`homepage`/`bugs` metadata (`packages/skills/package.json`).
@@ -236,7 +236,7 @@ its `src`, tests, artifact builders and benchmarks,
 
 Root `bunfig.toml` sets `[install] linker = "hoisted"` and a `[test]` block with
 `preload = ["./tooling/test-runtime/clarvis-home-preload.ts"]`, `coverageReporter = ["text","lcov"]`,
-`coverageDir = "coverage"`, `coverageSkipTestFiles = true`. Every one of the 17 workspace packages
+`coverageDir = "coverage"`, `coverageSkipTestFiles = true`. Every one of the 18 workspace packages
 has its own `bunfig.toml` repeating those three coverage keys plus
 `coveragePathIgnorePatterns = ["../**"]` (e.g. `packages/capability/bunfig.toml`). Every package
 that runs `bun test` also preloads the shared home redirector; only the type-only `protocol` package
@@ -296,7 +296,7 @@ NOT add a `schedule:` or `push:` trigger".
 
 | Variable | Read at | Effect |
 | --- | --- | --- |
-| `CLARVIS_CODE_SOURCE=1` | `packages/code/src/cli.ts` | launcher runs `src/index.tsx` instead of `dist/index.js` |
+| `CLARVIS_CODE_SOURCE=1` | development tooling | legacy hint; the launcher always runs `src/index.tsx` |
 | `SMOKE_TIMEOUT_MS` | `packages/code/tooling/artifact/smoke.ts` | smoke timeout, default `90_000` |
 | `BENCH_N`, `BENCH_POLL_MS`, `BENCH_TIMEOUT_MS`, `BENCH_MAX_LOAD` | `packages/code/tooling/benchmarks/first-paint.ts` | benchmark sample size, poll, timeout, per-core load refusal (default `0.35`) |
 | `GITHUB_STEP_SUMMARY` | `tooling/checks/ci-coverage.ts`, `tooling/checks/ci-artifacts.ts` | package outcomes, retry notes and build-transfer measurements |
@@ -420,8 +420,9 @@ its consumers with no build. Under `tsc`, the same specifier resolves through `t
 ### 4.2 Root build composition and `tsc -b`
 
 `bun run build` runs `build:packages` and then `build:code` sequentially (`package.json`,
-`scripts.build`). The first phase is `tsc -b` against the root solution file (`scripts.build:packages`),
-and the second invokes `@clarvis/code`'s Bun bundle. The solution declares
+`scripts.build`). The first phase runs `tsc -b` against the root solution file,
+then builds the native sandbox assets and the source tools worker manifest
+(`scripts.build:packages`). The second invokes `@clarvis/code`'s Bun bundle. The solution declares
 `"files": []` and 17 `references` — every package that has a `tsconfig.build.json`
 (`tsconfig.json`). `@clarvis/code` is absent; `tsconfig.json` states it "is Bun-only (runs from
 source, never emits) and is intentionally excluded", and indeed `packages/code` has no
@@ -511,7 +512,7 @@ Linux gates use separate runners and depend only on a completed shared build:
 | `lint` | build | restore, `lint:eslint` |
 | `knip` | build | restore, `knip` |
 | `checks` | build | restore, separate `format:check`, `lint:intent`, `test:cache` steps |
-| `coverage` | build | restore, native Linux preparation, sequential coverage supervisor |
+| `coverage` | build | restore, install Bubblewrap for native sandbox canaries, sequential coverage supervisor |
 | `linux` | all six gates above | fail-closed required-result aggregation |
 
 Every host Bun job installs the exact mise version, records `bun --version && bun --revision`,
@@ -519,11 +520,11 @@ and installs its own dependencies with `bun install --frozen-lockfile`. Installa
 Only `build` emits the shared Linux build, including the Code bundle; upload follows both build and
 smoke success. Its consumers restore that build before checking it and never silently rebuild.
 Finite timeouts remain conservative: 15 minutes
-for build and ordinary Linux gates, 30 for coverage, and 5 for aggregation. The macOS job retains its existing bound. No required job or step uses `continue-on-error` or an optional gate condition.
+for build and ordinary Linux gates, 30 for coverage, 5 for aggregation, and 10 for each macOS job. No required job or step uses `continue-on-error`.
 
 
 The public required contexts remain exactly `linux` and `keyboard policy (macos)`.
-The release workflow consumes these literal names. `linux` has `always()` and all seven Linux
+The release workflow consumes these literal names. `linux` has `always()` and all six Linux
 needs; it installs nothing and downloads nothing. Its Bash step receives `toJSON(needs)` through
 an environment variable, then jq requires exactly one JSON object, the exact dependency key set,
 and `result == "success"` for every entry. Failure, cancellation, skip, missing/unknown results,
@@ -538,9 +539,15 @@ remove each gate/dependency and fixtures executing the actual YAML Bash body;
 [Bun version tests](../../tooling/tests/unit/bun-version.test.ts), per-job setup/evidence validation.
 The validator reuses `workflowSecurityFailures`; other workflows retain their existing policies.
 
-**`keyboard-macos`**, `macos-14`, records the Bun version/revision, runs the complete `@clarvis/tools` suite and keyboard policy tests. It publishes
-the stable `keyboard policy (macos)` status context required by both permanent-branch rulesets.
-Production: `.github/workflows/ci.yml` (`jobs.keyboard-macos`).
+**`sandbox-macos-intel`** uses `macos-15-intel` to build the library packages
+and run both native sandbox suites on x64. **`keyboard-macos`** uses ARM64
+`macos-15`, repeats the native suites, runs the complete `@clarvis/tools` suite
+and keyboard policy tests. Its stable `keyboard policy (macos)` status runs
+with `always()` and explicitly requires the Intel job's success before it can
+pass, so both architectures gate the existing permanent-branch context.
+Production: `.github/workflows/ci.yml` (`jobs.sandbox-macos-intel` and
+`jobs.keyboard-macos`). Test: `ciWorkflowFailures` in
+`tooling/lib/ci-workflow.ts` and `tooling/tests/unit/ci-workflow.test.ts`.
 
 All host Bun jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public
@@ -548,6 +555,16 @@ repository on push to `main` and `develop` and pull request; the earlier account
 historical evidence in [Known issues](../known-issues.md), not current workflow behavior.
 
 ### 4.5 Shared build identity and coverage supervision
+
+Generated sandbox assets and the source-worker manifest are ignored by Git. The Linux coverage job
+generates these platform-local assets after restoring the shared TypeScript build; it installs
+Bubblewrap and a C compiler first. Ubuntu's AppArmor restriction on unprivileged user namespaces
+must be disabled on the disposable CI runner before executing the native canaries; Bubblewrap still
+creates the sandbox namespaces and applies Clarvis's seccomp filter. This does not rebuild the shared
+declarations or Code bundle.
+Production: `.github/workflows/ci.yml` (`jobs.coverage`), `.gitignore`, and each owning package's
+`build:assets` script. Test: `ciWorkflowFailures` in `tooling/lib/ci-workflow.ts` and the missing
+coverage-prerequisite regression in `tooling/tests/unit/ci-workflow.test.ts`.
 
 The build tar contains exclusively workspace `dist` directories, their internal incremental files,
 and `ci-build-manifest.json`. The manifest records schema, actual `git rev-parse HEAD`, run ID,
@@ -868,9 +885,9 @@ Test: `tooling/checks/test-harness.ts` checks the root bunfig and every package 
 `tooling/tests/unit/test-harness.test.ts` pins parsing, missing-preload failure, and the
 type-only exception.
 
-**BUILD-16.** `code` reaches `@clarvis/kernel` only through its six published entrypoints and imports
+**BUILD-16.** `code` reaches `@clarvis/kernel` only through its eight published entrypoints and imports
 no lower implementation package, in `src/` **and** `tests/`.
-Production: `packages/code/package.json` declares exactly `@clarvis/kernel`, `@clarvis/paths`,
+Production: `packages/code/package.json` declares exactly `@clarvis/kernel` and
 `@clarvis/protocol`.
 Test: `packages/code/tests/architecture/dependency-boundary.test.ts` (entrypoints and role-valid
 packages) (manifest dependency set).
@@ -883,11 +900,10 @@ Production: `packages/code/src/cli.ts` (fast-path imports and dynamic applicatio
 Test: `packages/code/tests/architecture/cli-fast-path.test.ts` (`cli fast path`, static closure,
 dynamic application loading, and root-manifest-only cases).
 
-**BUILD-18 (INV-312).** The launcher prefers the bundle, `CLARVIS_CODE_SOURCE=1` overrides it in both
-directions, and a missing bundle produces an explanatory error naming the build command, `bun run
-setup`, and the source-mode escape.
-Production: `packages/code/src/cli-entry.ts`.
-Test: `packages/code/tests/unit/cli-entry.test.ts`.
+**BUILD-18 (INV-312).** The production launcher loads the TypeScript application and remote-host
+entries directly. A missing development bundle cannot change its selected runtime.
+Production: `packages/code/src/cli.ts`.
+Test: `packages/code/tests/architecture/cli-fast-path.test.ts`.
 
 **BUILD-21.** The CI retry accepts only Code exits 132/134/139, with three additional attempts, and
 never retries 130/143 or another package. Production: `tooling/lib/ci-coverage.ts`, `runCiCoverage`
@@ -1053,7 +1069,7 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 | Bun ≥ 1.4.0 | `engines` in all 20 manifests; exact `mise.toml`; `check:bun-version` in `lint:intent` | runtime |
 | `typescript` ^6 | root devDependency; imported as a **library** by four repository-tooling modules (`tooling/lib/source-policy.ts`, `tooling/lib/package-graph.ts`, `tooling/checks/import-extensions.ts`, `tooling/tests/architecture/stream-metrics-drift.test.ts`) and five package architecture tests (three under `packages/code/tests/architecture/`, two under `packages/loop/tests/architecture/`) | static value import |
 | `@opentui/solid/bun-plugin` | `packages/code/tooling/artifact/build.ts` — the build cannot produce the artifact without it | static value import |
-| `@clarvis/paths` | `packages/code/tooling/artifact/pty.ts` and `packages/code/tooling/artifact/smoke.ts` use `globalPaths` so the fixture layout cannot drift from the vocabulary; `tooling/test-runtime/clarvis-home-preload.ts` uses `HOME_ENV` | static value import |
+| `@clarvis/kernel/paths` | `packages/code/tooling/artifact/isolation.ts` uses shared path vocabulary through the host facade; `tooling/test-runtime/clarvis-home-preload.ts` reaches `@clarvis/paths` independently for its fixture | static value import |
 | GNU tar | `tooling/lib/ci-artifacts.ts` creates strict USTAR; restoration uses validated bytes and filesystem APIs | external process |
 | Bash and jq | `.github/workflows/ci.yml`, required Linux aggregation and its executable fixtures | external process |
 | `script(1)` or `tmux` | `packages/code/tooling/artifact/pty.ts` | external process |

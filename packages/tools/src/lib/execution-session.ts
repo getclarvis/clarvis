@@ -420,17 +420,36 @@ export class ExecutionSessionManager {
     const resolvedShell = request.shell ?? resolveShell();
     const env = { ...process.env };
     for (const name of request.config.secretEnvNames ?? []) delete env[name];
+    if (request.config.executionPolicy?.mode === "sandbox") {
+      env.HOME = request.config.executionPolicy.homeRoot;
+      env.CLARVIS_HOME = request.config.executionPolicy.globalRoot;
+    }
     const temporaryRoot = request.config.temporaryRoots[0];
     if (temporaryRoot !== undefined) {
       env.TMPDIR = temporaryRoot;
       env.TEMP = temporaryRoot;
       env.TMP = temporaryRoot;
     }
-    const spec = {
+    const shellSpec = {
       file: resolvedShell.file,
       args: shellArgs(resolvedShell, request.command),
       options: { cwd: request.cwd, env },
     };
+    const prepared = request.config.executionPolicy
+      ? request.config.sandboxBackend?.prepare(request.config.executionPolicy, {
+          file: shellSpec.file,
+          args: shellSpec.args,
+          cwd: shellSpec.options.cwd,
+          env: shellSpec.options.env as Record<string, string>,
+        })
+      : undefined;
+    const spec = prepared
+      ? {
+          file: prepared.file,
+          args: [...prepared.args],
+          options: { cwd: prepared.cwd, env: prepared.env },
+        }
+      : shellSpec;
     const detached = ownProcessGroup();
     request.config.logger.debug(
       {
@@ -440,6 +459,7 @@ export class ExecutionSessionManager {
         detached,
         cwd: request.cwd,
         timeout_ms: request.timeoutMs,
+        execution_mode: prepared?.backend ?? "host",
       },
       "a shell command is being spawned under the run-owned process manager",
     );

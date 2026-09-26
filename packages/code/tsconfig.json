@@ -25,7 +25,7 @@
       "@clarvis/kernel/config": ["../kernel/src/config.ts"],
       "@clarvis/kernel/policy": ["../kernel/src/policy.ts"],
       "@clarvis/kernel/local": ["../kernel/src/local.ts"],
-      "@clarvis/paths": ["../paths/src/index.ts"],
+      "@clarvis/kernel/paths": ["../kernel/src/paths.ts"],
       "@clarvis/protocol": ["../protocol/src/index.ts"],
       "@clarvis/loop": ["../loop/src/lib.ts"],
       "@clarvis/loop/capabilities/tools": ["../loop/src/capabilities-tools.ts"],

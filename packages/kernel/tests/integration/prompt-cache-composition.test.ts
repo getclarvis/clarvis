@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { executeRun, type ExecuteRunArgs } from "@clarvis/loop";
+import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import { AiSdkAdapter } from "@clarvis/llm/adapter";
 import { withTransportRetry } from "@clarvis/llm";
 import { createMemory } from "@clarvis/memory";
@@ -145,17 +146,25 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
     let seed: ExecuteRunArgs | undefined;
     const memory = createMemory({
       store: createInMemoryMemoryStore(),
-      indexer: () =>
-        seed && {
+      indexer: () => {
+        if (!seed) return undefined;
+        const indexerDeps = {
+          ...seed.deps,
+          capabilities: (seed.deps.capabilities ?? []).map((capability) =>
+            capability.name === "tools" ? createAgentToolsCapability() : capability,
+          ),
+        };
+        return {
           owner: seed.owner,
-          deps: seed.deps,
-          passDeps: seed.deps,
+          deps: indexerDeps,
+          passDeps: indexerDeps,
           modelRef: "fixture/cache-model",
           providers: [
             { name: "fixture", kind: "openai-compatible", base_url: "https://fixture.invalid/v1" },
           ],
           executeRun,
-        },
+        };
+      },
     });
     const factory: MemoryFactory = {
       forOwner: () => memory,

@@ -6,7 +6,7 @@ import {
   agentsMarketplaceFiles,
   isAgentsMarketplaceFile,
   MARKETPLACE_FILE,
-} from "@clarvis/paths";
+} from "@clarvis/kernel/paths";
 import { marketplaceSchema, type Marketplace, type MarketplaceEntry } from "@clarvis/kernel/config";
 import { errorText } from "./errors.ts";
 import type { SettingsAdapter } from "./settings.ts";

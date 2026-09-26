@@ -51,6 +51,9 @@
       "path": "../tools/tsconfig.build.json"
     },
     {
+      "path": "../sandbox/tsconfig.build.json"
+    },
+    {
       "path": "../workflows/tsconfig.build.json"
     },
     {

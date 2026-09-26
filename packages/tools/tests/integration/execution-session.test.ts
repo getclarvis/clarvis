@@ -205,6 +205,27 @@ describe("ExecutionSessionManager", () => {
     expect((await callTool("shell", { command }, a)).isError).toBe(true);
   });
 
+  it("accepts an empty cursor as the initial shell session page", async () => {
+    const { root, command } = fixture("process.stdout.write('first-page');");
+    const manager = new ExecutionSessionManager();
+    managers.push(manager);
+    const config = makeConfig(root, { sessionManager: manager });
+    const session = await manager.launch({
+      config,
+      agent: config.sessionAgent,
+      command,
+      cwd: root,
+    });
+    await session.completed;
+    const first = await callTool(
+      "shell_session",
+      { action: "poll", session_id: session.id, cursor: "" },
+      config,
+    );
+    expect(first.isError).toBe(false);
+    expect(first.json.stdout).toBe("first-page");
+  });
+
   it("reports an expired byte cursor over bounded captured streams", async () => {
     const { root, command } = fixture(
       "process.stdout.write('x'.repeat(300000)); process.stderr.write('tail\\n');",

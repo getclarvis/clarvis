@@ -34,7 +34,7 @@ import type {
 import { TOKEN_ORDER } from "../../src/theme/model.ts";
 import { fakeDebugSession } from "../helpers/fake-debug-session.ts";
 import { SUBAGENT_ORDER } from "../../src/theme/tokens.ts";
-import { globalPaths, workspacePaths } from "@clarvis/paths";
+import { globalPaths, workspacePaths } from "@clarvis/kernel/paths";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -173,6 +173,7 @@ function baseDeps(
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
+      openIsolationPicker: () => calls.push("isolation-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
       quit: () => calls.push("quit"),

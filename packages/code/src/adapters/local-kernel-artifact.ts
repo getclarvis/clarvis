@@ -38,30 +38,48 @@ async function hashTree(root: string, digest: ReturnType<typeof createHash>): Pr
 
 let artifact: Promise<LocalKernelArtifact> | undefined;
 
-/** Resolve the companion shipped beside the running bundle, or the explicit source entry. */
+/** Resolve the owning package from either source modules or a development bundle. */
+async function codePackageRoot(): Promise<string> {
+  let directory = dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 5; depth++) {
+    const manifest = await readFile(join(directory, "package.json"), "utf8").catch(() => undefined);
+    if (manifest !== undefined) {
+      const value: unknown = JSON.parse(manifest);
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        "name" in value &&
+        value.name === "@clarvis/code"
+      ) {
+        return directory;
+      }
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  throw new Error("Code source package root is unavailable");
+}
+
+/** Resolve the source companion shipped with the application. */
 export function resolveLocalKernelArtifact(): Promise<LocalKernelArtifact> {
   artifact ??= (async () => {
-    const source = import.meta.url.endsWith(".ts");
-    const entry = await realpath(
-      fileURLToPath(new URL(source ? "../local-host.ts" : "./local-host.js", import.meta.url)),
-    );
+    const entry = await realpath(join(await codePackageRoot(), "src", "local-host.ts"));
     const digest = createHash("sha256").update(process.version).update(Bun.version);
-    if (source) {
-      const repository = join(dirname(entry), "..", "..", "..");
-      digest.update(await readFile(join(repository, "bun.lock")));
-      for (const name of (await readdir(join(repository, "packages"))).sort()) {
-        const root = join(repository, "packages", name);
-        let manifest: Buffer;
-        try {
-          manifest = await readFile(join(root, "package.json"));
-        } catch (error) {
-          if ((error as { code?: string }).code === "ENOENT") continue;
-          throw error;
-        }
-        digest.update(name).update("\0").update(manifest);
-        await hashTree(join(root, "src"), digest);
+    const repository = join(dirname(entry), "..", "..", "..");
+    digest.update(await readFile(join(repository, "bun.lock")));
+    for (const name of (await readdir(join(repository, "packages"))).sort()) {
+      const root = join(repository, "packages", name);
+      let manifest: Buffer;
+      try {
+        manifest = await readFile(join(root, "package.json"));
+      } catch (error) {
+        if ((error as { code?: string }).code === "ENOENT") continue;
+        throw error;
       }
-    } else await hashTree(dirname(entry), digest);
+      digest.update(name).update("\0").update(manifest);
+      await hashTree(join(root, "src"), digest);
+    }
     return {
       command: [await realpath(process.execPath), entry] as const,
       artifactId: `clarvis:${productVersion()}:${digest.digest("hex")}`,

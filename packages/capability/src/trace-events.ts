@@ -9,7 +9,7 @@ import type {
 } from "./run.ts";
 import type { ExecutionStatus } from "./execution-status.ts";
 import type { FinalizationDisposition } from "./finalization.ts";
-import type { ToolEvidenceDetail } from "./trace-kinds.ts";
+import type { ToolEvidenceDetail, ToolExecutionDetail } from "./trace-kinds.ts";
 import type { ElicitNoResponseReason } from "./elicit.ts";
 
 /**
@@ -97,6 +97,7 @@ export type BuiltinTraceEvent =
       tool_evidence?: ToolEvidenceDetail;
       error: string | null;
       diff?: string;
+      execution?: ToolExecutionDetail;
       interruption?: { source: "operator" };
       control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
     }

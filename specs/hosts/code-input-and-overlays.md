@@ -219,6 +219,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ListPicker<T>(props)` | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`) |
 | `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `packages/code/src/views/overlays/ListPicker.tsx` |
 | `AgentProfilePicker(props)` | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/AgentProfilePicker.tsx` |
+| `IsolationPicker(props)` | `ListPicker` of Host/Sandbox with workspace and network subpickers | `packages/code/src/views/overlays/IsolationPicker.tsx` |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
 | `DiffViewer(props)` | Full-screen changed-file tree and per-file reader for every mutation in the active transcript; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
 | `PlanOverlay(props)` | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |
@@ -634,6 +635,11 @@ A caller's `verbs` bound to a key that a generic
 row-traversal command would otherwise claim (e.g. `tab`) take precedence, because `registerLevel`
 folds `verbs` after `nav` in the same `LevelSpec` (`spec`, keybinding resolution order is owned
 by [hosts/code-keyboard.md](code-keyboard.md)).
+The optional `responsiveNavigation` wraps reachable actions inside the card; `IsolationPicker`
+uses it so workspace and network remain visible at 80 columns. Their preview values are also
+mouse targets that open the same subpickers as W and N. Production: `ListPicker` and
+`IsolationPicker` in their overlay source files. Test:
+`packages/code/tests/integration/app-shell-render.test.tsx` and the focused PTY journey.
 
 An optional `active` accessor gates both the picker's own key layer and its
 `FilterField`'s focus: while `active` reads `false`, the registration effect tears down the

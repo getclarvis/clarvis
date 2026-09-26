@@ -676,6 +676,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
 
   const config: ConfigService = {
     getSettings: () => requireKernel().config.getSettings(),
+    getIsolationStatus: () => requireKernel().config.getIsolationStatus(),
     previewSettingsRepair: (scope) => requireKernel().config.previewSettingsRepair(scope),
     repairSettings: (scope, expectedRevision) =>
       requireKernel().config.repairSettings(scope, expectedRevision),

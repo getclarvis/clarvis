@@ -21,6 +21,23 @@ import {
 const workflowsBlock = { default_model: "compat/m", workflows: { max_concurrency: 8 } };
 
 describe("kernelSettingsSchema", () => {
+  it("accepts only the three bounded global isolation preferences", () => {
+    expect(
+      (kernelSettingsSchema.parse({ isolation: {} }) as unknown as { isolation?: unknown })
+        .isolation,
+    ).toEqual({});
+    const parsed = kernelSettingsSchema.parse({
+      isolation: { mode: "sandbox", workspace: "read-only", network: "disabled" },
+    }) as unknown as { isolation?: unknown };
+    expect(parsed.isolation).toEqual({
+      mode: "sandbox",
+      workspace: "read-only",
+      network: "disabled",
+    });
+    for (const isolation of [{ mode: "container" }, { network: "offline" }, { approval: true }]) {
+      expect(kernelSettingsSchema.safeParse({ isolation }).success).toBe(false);
+    }
+  });
   it("admits bounded goal defaults only through the kernel settings registry", () => {
     const block = { goals: { max_net_tokens: 6000 } };
     expect(settingsSchema.safeParse(block).success).toBe(false);

@@ -1703,7 +1703,7 @@ Degradation that is **silent by design**: a tool whose result the parser cannot 
 | `core/transcript/**` → `core/marks.ts` | runtime | `packages/code/src/core/transcript/presenters.ts` — the only import in the whole core-transcript tree |
 | `core/**` ↛ `solid-js` / `@opentui/*` / `adapters` / `theme` / `ui` / `views` | forbidden | `packages/code/tests/architecture/architecture-boundary.test.ts` |
 | `adapters/**` ↛ `ui` / `views` | forbidden | `packages/code/tests/architecture/architecture-boundary.test.ts` |
-| `adapters/tool-identity.ts` → `@clarvis/kernel/policy` | runtime, value | `packages/code/src/adapters/tool-identity.ts`; the kernel entrypoint is one of the six sanctioned ones (INV-251) |
+| `adapters/tool-identity.ts` → `@clarvis/kernel/policy` | runtime, value | `packages/code/src/adapters/tool-identity.ts`; the kernel entrypoint is one of the eight sanctioned ones (INV-251) |
 | `adapters/event-span.ts` → `@clarvis/kernel/policy` | runtime re-export + type | `packages/code/src/adapters/event-span.ts` |
 | `adapters/{plan,workflow}-projection.ts` → `@clarvis/protocol` | **type-only** | `packages/code/src/adapters/plan-projection.ts`, `packages/code/src/adapters/workflow-projection.ts` (`import type`) |
 | `adapters/message-content.ts` → `@clarvis/protocol` | **type-only** | `packages/code/src/adapters/message-content.ts` |

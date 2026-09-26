@@ -796,7 +796,7 @@ catalog case).
   `packages/code/src/views/config/providers/model-level.tsx` imports `cacheModeOf`/`derivePromptCacheMode` the same
   way. What the TUI does not import is the kernel's **catalog construction logic** itself, which is a
   **structural duplication forced by the package boundary** (per the repository's own rule that
-  `code` reaches the engine only through `@clarvis/kernel`'s six entrypoints + `@clarvis/protocol`
+  `code` reaches the engine only through `@clarvis/kernel`'s eight entrypoints + `@clarvis/protocol`
   for anything beyond scalar helpers), not an oversight — but it means `resolveModelPrice`'s
   exact/fill algorithm, and `seed`/`safeName` (§4.13), exist in two source files that must be kept in
   step by hand (the TUI's version diverges from the kernel's in both directions — §4.4).

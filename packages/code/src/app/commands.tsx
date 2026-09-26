@@ -82,7 +82,12 @@ export interface AppCommandDeps {
   ui: CommandUi;
   effects: Pick<
     InteractionEffects,
-    "openAgentPicker" | "openMemoryPicker" | "openDiff" | "openPlan" | "quit"
+    | "openAgentPicker"
+    | "openMemoryPicker"
+    | "openIsolationPicker"
+    | "openDiff"
+    | "openPlan"
+    | "quit"
   >;
   session: {
     list: () => SessionMeta[];
@@ -327,6 +332,20 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     hintPriority: 47,
     hintGroup: "navigation",
     run: () => effects.openMemoryPicker(),
+  });
+
+  commands.registerAction({
+    name: "isolation.picker",
+    enabled: () => !deps.runActive(),
+    title: "Isolation",
+    desc: "Choose Host or Sandbox and edit global workspace and network preferences for subsequent runs",
+    surface: "internal",
+    group: "navigate",
+    actionSurfaces: ["footer", "full-help"],
+    footerLabel: "isolation",
+    hintPriority: 48,
+    hintGroup: "navigation",
+    run: () => effects.openIsolationPicker(),
   });
 
   commands.registerAction({

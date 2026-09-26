@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectKernelClient, createStdioTransport } from "@clarvis/kernel";
-import { globalPaths } from "@clarvis/paths";
+import { globalPaths } from "@clarvis/kernel/paths";
 import { encodeRemoteKernelArguments } from "../../src/adapters/remote-kernel-arguments.ts";
 
 async function closeProcess(

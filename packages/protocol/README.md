@@ -76,6 +76,17 @@ adapter using the same RPC framing.
 
 ## Services
 
+`SettingsData.isolation` is a typed global preference for built-in tools.
+`ConfigService.getIsolationStatus` reports that preference separately from
+backend availability. A `tool_call` event may include `execution` with the
+requested and effective mode, backend, policy, fallback reason and attempt
+identity; the transport codec validates it. Production: `SettingsData`,
+`IsolationStatus` and `RunEvent` in `packages/protocol/src/config.ts` and
+`packages/protocol/src/runs.ts`, and `OPERATIONS.config` in
+`packages/kernel/src/transport/operations.ts`. Test:
+`packages/kernel/tests/integration/isolation-settings.test.ts` and
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
+
 File-tool configuration uses ordinary runs; file calls have no configuration approval path.
 Host-owned authority is separate from model-provided parameters and saved transcript content.
 `LocalHostStatus.skills_revision` notifies attached clients when the host publishes a skill catalog

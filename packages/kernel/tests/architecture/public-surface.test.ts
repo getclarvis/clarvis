@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 
 describe("kernel public surface", () => {
-  it("publishes only the seven owned entrypoints", () => {
+  it("publishes only the eight owned entrypoints", () => {
     const manifest = JSON.parse(
       readFileSync(join(import.meta.dir, "..", "..", "package.json"), "utf8"),
     ) as { exports: Record<string, unknown> };
@@ -13,6 +13,7 @@ describe("kernel public surface", () => {
       "./config",
       "./local",
       "./logger",
+      "./paths",
       "./policy",
       "./system-docs",
     ]);

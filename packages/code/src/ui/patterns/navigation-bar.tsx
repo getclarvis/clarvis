@@ -243,6 +243,7 @@ function NavigationBarForInteraction(props: {
   actionFilter?: (action: ActiveAction) => boolean;
   actionTransform?: (action: ActiveAction) => ActiveAction;
   usableWidth?: Accessor<number>;
+  responsive?: boolean;
 }): JSX.Element {
   const dimensions = useTerminalDimensions();
   return (
@@ -250,6 +251,7 @@ function NavigationBarForInteraction(props: {
       environment={props.interaction.keyboardEnvironment ?? (() => FALLBACK_ENVIRONMENT)}
       width={() => dimensions().width}
       usableWidth={props.usableWidth}
+      responsive={props.responsive}
       actionFilter={props.actionFilter}
       actionTransform={props.actionTransform}
     />
@@ -271,6 +273,7 @@ export function InteractionNavigationBar(props: {
    *   space it does not have and the row is clipped.
    */
   usableWidth?: Accessor<number>;
+  responsive?: boolean;
 }): JSX.Element {
   if (
     typeof (props.interaction.keymap as Partial<Interaction["keymap"]>).getCommandEntries !==
@@ -287,6 +290,7 @@ export function InteractionNavigationBar(props: {
         actionFilter={props.actionFilter}
         actionTransform={props.actionTransform}
         usableWidth={props.usableWidth}
+        responsive={props.responsive}
       />
     </KeymapProvider>
   );

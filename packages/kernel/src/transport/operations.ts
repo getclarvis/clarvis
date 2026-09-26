@@ -355,6 +355,12 @@ export const OPERATIONS = {
     },
   }),
   config: serviceOperations<ConfigService>({
+    getIsolationStatus: {
+      method: "config.getIsolationStatus",
+      metadata: read(),
+      encode: () => ({}),
+      invoke: (services) => services.config.getIsolationStatus(),
+    },
     getSettings: {
       method: "config.getSettings",
       metadata: read(),

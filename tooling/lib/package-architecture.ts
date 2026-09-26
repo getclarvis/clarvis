@@ -21,6 +21,7 @@ export const PACKAGE_ROLES = {
   "@clarvis/mcp-client": "execution-service",
   "@clarvis/supervision": "execution-service",
   "@clarvis/trace": "execution-service",
+  "@clarvis/sandbox": "execution-service",
   "@clarvis/tools": "execution-service",
   "@clarvis/hooks": "execution-service",
   "@clarvis/skills": "execution-service",
@@ -65,10 +66,6 @@ const PACKAGE_EDGE_EXCEPTIONS = new Set([
   "@clarvis/workflows\0@clarvis/loop",
   "@clarvis/workflows\0@clarvis/supervision",
 ]);
-
-const APPLICATION_FOUNDATIONS: Readonly<Record<string, readonly string[]>> = {
-  "@clarvis/code": ["@clarvis/paths"],
-};
 
 /** Human-facing plural label used by the generated role-grouped graph. */
 export function packageRoleLabel(role: PackageRole): string {
@@ -120,7 +117,6 @@ export function packageDependencyViolation(consumer: string, provider: string): 
   }
 
   if (consumerRole === "application" && providerRole === "foundation") {
-    if ((APPLICATION_FOUNDATIONS[consumer] ?? []).includes(provider)) return undefined;
     return `${consumer} (application) does not own foundation dependency ${provider}`;
   }
 

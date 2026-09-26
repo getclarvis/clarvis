@@ -212,7 +212,7 @@
     {
       "mechanism": "timer",
       "file": "packages/kernel/tests/integration/file-kernel.test.ts",
-      "identity": "timer|describe:createFileKernel \u2014 skills roots from plugins/it:withdraws plugin skill drift without rejecting the next run|setTimeout(() => reject(new Error(\"skill drift watcher did not fire\")), 10_000)|0",
+      "identity": "timer|describe:createFileKernel — skills roots from plugins/it:withdraws plugin skill drift without rejecting the next run|setTimeout(() => reject(new Error(\"skill drift watcher did not fire\")), 10_000)|0",
       "package_owner": "@clarvis/kernel",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -356,7 +356,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|0",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -364,7 +364,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|1",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|1",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -372,7 +372,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|0",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -380,7 +380,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|1",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|1",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -388,7 +388,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|2",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|2",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -420,7 +420,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/host-capability.test.ts",
-      "identity": "positive-wait|describe:executeRun \u2014 capability run-end/it:awaits every capability's durable run-end work before resolving|Bun.sleep(5)|0",
+      "identity": "positive-wait|describe:executeRun — capability run-end/it:awaits every capability's durable run-end work before resolving|Bun.sleep(5)|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -428,7 +428,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/host-capability.test.ts",
-      "identity": "positive-wait|describe:executeRun \u2014 capability run-end/it:stops waiting once the run-end budget elapses, and says so|Bun.sleep(400)|0",
+      "identity": "positive-wait|describe:executeRun — capability run-end/it:stops waiting once the run-end budget elapses, and says so|Bun.sleep(400)|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -644,7 +644,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/trace/tests/integration/json-trace-store.test.ts",
-      "identity": "subprocess|describe:json-trace-store \u2014 delete/it:rejects a cross-process insert while the new generation is still being deleted|Bun.spawn( [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "identity": "subprocess|describe:json-trace-store — delete/it:rejects a cross-process insert while the new generation is still being deleted|Bun.spawn( [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
       "package_owner": "@clarvis/trace",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
@@ -800,6 +800,158 @@
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
       "reason": "Kills a real isolated host after a durable settlement milestone and restarts it twice to verify canonical accounting and physical admission recovery without another execution."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/host-tools-native.test.ts",
+      "identity": "subprocess|module|spawnSync(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, encoding: \"utf8\", timeout: 5000, })|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Runs an unknown host tool through the physical sandbox; the timeout is only a fuse while exit, output and filesystem assertions establish the result."
+    },
+    {
+      "mechanism": "listener",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "listener|module|server.listen(0, \"127.0.0.1\", resolve)|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Local TCP listener is the physical peer for the sandbox network-enabled canary."
+    },
+    {
+      "mechanism": "listener",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "listener|module|server.listen(0, \"127.0.0.1\", resolve)|1",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Disposable local TLS listener proves hostname resolution and certificate validation inside the native boundary."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawn(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: [\"ignore\", \"pipe\", \"pipe\"], timeout: 5000, })|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real compiler or sandbox child is required to verify OS process and mount enforcement."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawn(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: [\"ignore\", \"pipe\", \"pipe\"], timeout: 5000, })|1",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real sandboxed curl process proves local TLS and hostname resolution with network enabled."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawnSync( \"openssl\", [ \"req\", \"-x509\", \"-newkey\", \"rsa:2048\", \"-nodes\", \"-keyout\", key, \"-out\", certificate, \"-days\", \"1\", \"-subj\", \"/CN=localhost\", ], { encoding: \"utf8\", timeout: 5000 }, )|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Host OpenSSL generates an ephemeral certificate for the local TLS boundary canary."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawnSync( \"cc\", [ \"-std=c11\", \"-O2\", \"-Wall\", \"-Wextra\", \"-Werror\", \"tests/fixtures/linux-seccomp-probe.c\", \"-o\", binary, ], { cwd: process.cwd(), encoding: \"utf8\" }, )|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real compiler or sandbox child is required to verify OS process and mount enforcement."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawnSync( \"cc\", [ \"-std=c11\", \"-O2\", \"-Wall\", \"-Wextra\", \"-Werror\", \"tests/fixtures/linux-seccomp-probe.c\", \"-o\", binary, ], { cwd: process.cwd(), encoding: \"utf8\" }, )|1",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real compiler or sandbox child is required to verify OS process and mount enforcement."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawnSync(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, encoding: \"utf8\", timeout: 5000, })|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real compiler or sandbox child is required to verify OS process and mount enforcement."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawnSync(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, encoding: \"utf8\", timeout: 5000, })|1",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real compiler or sandbox child is required to verify OS process and mount enforcement."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { cwd: spec.cwd, env: spec.env, encoding: \"utf8\", timeout: 5000, })|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real compiler or sandbox child is required to verify OS process and mount enforcement."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/macos-native.test.ts",
+      "identity": "subprocess|module|spawnSync(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, encoding: \"utf8\", timeout: 5000, })|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real Seatbelt child is required to verify native filesystem enforcement on macOS."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/macos-native.test.ts",
+      "identity": "subprocess|module|spawnSync(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, encoding: \"utf8\", timeout: 5000, })|1",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real Seatbelt child is required to verify redirected global state enforcement on macOS."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/tools/tests/integration/native-sandbox.test.ts",
+      "identity": "subprocess|workerTree|spawnSync(\"ps\", [\"-e\", \"-o\", \"pid=,ppid=\"], { encoding: \"utf8\" })|0",
+      "package_owner": "@clarvis/tools",
+      "classification": "boundary-canary",
+      "reason": "Read-only process inventory observes worker descendants after physical cancellation."
+    },
+    {
+      "mechanism": "listener",
+      "file": "packages/sandbox/tests/integration/macos-native.test.ts",
+      "identity": "listener|module|server.listen(0, \"127.0.0.1\", resolve)|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Disposable local TLS listener proves network-enabled Seatbelt behavior without public internet."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/macos-native.test.ts",
+      "identity": "subprocess|module|spawn(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: [\"ignore\", \"pipe\", \"pipe\"], timeout: 5000, })|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real sandbox-exec child proves Seatbelt network and TLS behavior for each policy."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/macos-native.test.ts",
+      "identity": "subprocess|module|spawnSync( \"openssl\", [ \"req\", \"-x509\", \"-newkey\", \"rsa:2048\", \"-nodes\", \"-keyout\", key, \"-out\", certificate, \"-days\", \"1\", \"-subj\", \"/CN=localhost\", ], { encoding: \"utf8\", timeout: 5000 }, )|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Host OpenSSL generates an ephemeral certificate for the local TLS boundary canary."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/macos-native.test.ts",
+      "identity": "subprocess|module|spawnSync(\"/usr/bin/git\", [\"--version\"], { encoding: \"utf8\", timeout: 5000, })|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Read-only host Git probe distinguishes a runner installation failure from a Seatbelt denial."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/tools/tests/contract/worker-protocol.test.ts",
+      "identity": "subprocess|test:worker protocol admits only versioned, schema-valid file operations|spawn( process.execPath, [resolve(import.meta.dir, \"../../src/execution/worker.ts\")], { cwd: resolve(import.meta.dir, \"../..\"), env: { PATH: process.env.PATH ?? \"\", HOME: root, TMPDIR: scratch, CLARVIS_HOME: root }, stdio: [\"pipe\", \"pipe\", \"pipe\"], timeout: 5000, }, )|0",
+      "package_owner": "@clarvis/tools",
+      "classification": "boundary-canary",
+      "reason": "Real Bun worker stdio boundary verifies versioned frames and refusal of shell operations."
     }
   ]
 }

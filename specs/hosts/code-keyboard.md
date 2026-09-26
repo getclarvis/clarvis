@@ -339,6 +339,7 @@ The following commands and candidates (`packages/code/src/keys/interaction.ts`,
 | `agent.picker` | `shift+tab` | `overlay==none` |
 | `review.picker` | `<leader>g` | `overlay==none` |
 | `memory.picker` | `<leader>m` | `overlay==none` |
+| `isolation.picker` | `<leader>i` | `overlay==none`; no active run |
 | `activity.toggle` | `<leader>s` | `overlay==none` |
 | `tool.interruptFocused` | `<leader>t` | eligible focused shell |
 | `plan.open` | `<leader>p` | `overlay in (none, plan)` |
@@ -1092,7 +1093,7 @@ text.
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`, `DEFAULT_WHEN`),
 `packages/code/src/adapters/renderer-bootstrap.ts` (`buildRendererConfig`),
 `packages/code/src/views/config/KeyboardView.tsx` (`PROBES`, `KeyboardDiagnostic`),
-`packages/code/src/app/commands.tsx` (`agent.picker`, `memory.picker`),
+`packages/code/src/app/commands.tsx` (`agent.picker`, `memory.picker`, `isolation.picker`),
 `packages/code/src/views/InputDock.tsx` (`prompt.editor.open`, `prompt.editor.close`),
 `packages/code/src/app/layout.ts` (`createLayoutController`, `openSecondary`, `secondaryOrigin`), and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `openActivitySidebar`,

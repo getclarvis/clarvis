@@ -142,9 +142,9 @@ Hosts without goal authority report explicit unavailability. The
 [goal contract](../../specs/capabilities/goals.md) owns these boundaries; complete local/remote,
 real-provider and installed-artifact qualification requires separate journey evidence.
 
-Its three workspace dependencies are `@clarvis/kernel`, `@clarvis/protocol` and
-`@clarvis/paths` — the last only to locate the workspace and global roots before a
-kernel exists to ask. It never reaches the engine directly.
+Its two workspace dependencies are `@clarvis/kernel` and `@clarvis/protocol`.
+The application obtains launch and persistence path vocabulary through the bounded
+`@clarvis/kernel/paths` entrypoint. It never reaches the engine or a foundation package directly.
 
 The kernel API is intentionally segmented: the root is reserved for central services/errors, and
 `bootstrap`, `config`, `policy`, and `local` enter only through the application root, bootstrap, or
@@ -267,7 +267,10 @@ credentials, sessions, and workspace data remain untouched.
 release index from `getclarvis/clarvis-releases`, selects only a newer version allowed by the current
 channel, requires GitHub's `sha256:` asset digest and exact target-specific URL, verifies the
 internal manifest, smokes the staged runtime, preserves the previous version, and activates the
-candidate last. The interactive TUI of a managed portable installation also performs a read-only
+candidate last. The manifest records validated POSIX file modes; after Bun extracts an update, Code restores those
+modes following content verification so the sandbox's deny mask remains unreadable. Release smoke
+requires an actual native Sandbox `write_file` and `shell` run and rejects a Host fallback.
+The interactive TUI of a managed portable installation also performs a read-only
 release check after `app.boot.painted`, at most once per process and once per 24-hour global cache.
 It uses GitHub `ETag` revalidation, times out after five seconds, and only reports a release that the
 same channel/target/asset policy accepts. The check never acquires `update.lock`, downloads an asset,
@@ -574,8 +577,14 @@ the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
 Memory starts off on a fresh installation. Ctrl+X M saves the global on/off choice across
 workspaces and restarts; subsequent runs use that choice until it is changed.
+Ctrl+X I opens Host/Sandbox isolation; W and N edit its workspace and tool-network preferences.
+Those choices persist through the connected kernel and apply to future runs. Sandbox can recover
+an unavailable operation on Host automatically, which is shown in the transcript.
+Sandbox preserves host tool availability and ordinary filesystem reads, including
+other repositories, while limiting writes and denying explicit private paths.
+Its read-only mounts do not imply that all files outside the workspace are hidden.
 Application actions use Ctrl+X: M for Memory,
-P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
+I for Isolation, P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
 plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
 the navigation band names the sequence the user actually holds and lists the continuations the
@@ -958,7 +967,7 @@ background. Shutdown waits for pending writes, and persistence failures are
 shown in the status line. Session switches invalidate older asynchronous resume
 operations, so a slow resume cannot replace a newer session.
 
-Transcript exports pass the raw owner id to `@clarvis/paths`; the export
+Transcript exports pass the raw owner id through the kernel path facade; the export
 directory builder encodes it at the path boundary, so an owner id cannot select
 a directory outside the global `exports/` tree.
 
@@ -1335,45 +1344,34 @@ workspace `.clarvis` content remains out of scope. This destructive option is de
 release installer continues to preserve global state on uninstall. Bare `--clear` exits after
 cleanup; combine `--clear --empty-workspace` to clean and immediately start a fresh test workspace.
 
-This package is outside the monorepo's `tsc -b` reference graph — Bun executes the TypeScript and
-TSX source directly and nothing is emitted for consumers — but it **does** have a package build:
-`bun --filter @clarvis/code build` (`packages/code/tooling/artifact/build.ts`) produces the distributable bundle. From the
-repository root, `bun run build` runs the TypeScript library graph and then this bundle; use
-`bun run build:code` when only the TUI changed.
-`bun run clean` removes package build outputs, including the Code bundle, before a fresh build.
+This package is outside the monorepo's `tsc -b` reference graph. The `clarvis`
+launcher at `src/cli.ts` answers fast-path flags and then loads TypeScript/TSX sources,
+including the local or remote host. The portable release ships those sources and their
+runtime dependencies. No production entry loads a `dist` bundle. The package build remains
+a development artifact and a build-gate check; `bun run clean` removes it.
 
-**That bundle is what `clarvis` runs.** `bin` points at `src/cli.ts`, which
-is a launcher: it answers `--help`/`--version` itself and otherwise loads
-`dist/index.js`. Running the sources costs ~2.5 s per launch — Bun transpiles the
-847-file graph and applies the Solid JSX transform through Babel every time — and
-the build pays that once. Consequences worth knowing:
+The source entry has a higher cold-start cost because Bun transforms the Solid TSX modules
+on launch. The development bundle still exercises lazy boundaries and asset contracts:
 
-- **A missing `dist/` is an error, not a silent fallback.** `dist/` is gitignored,
-  so a fresh clone has none until `bun run setup` (which now builds), `bun run build`, or the
-  targeted `bun run build:code`. The launcher names the fix rather than failing as an
-  opaque module-resolution error.
-- **After editing `src/`, the global command keeps running the old bundle.** Use
-  `bun run start` / `bun run dev` for the inner loop, rebuild with `bun run build` or
-  `bun run build:code`, or set `CLARVIS_CODE_SOURCE=1` to force the sources.
-- **The bundle is package-local, not standalone by itself.** `packages/code/tooling/artifact/build.ts` keeps
+- **The development bundle is package-local, not standalone by itself.** `packages/code/tooling/artifact/build.ts` keeps
   `@opentui/core`, its platform-native packages, and `pino` external, so renderer and logging workers
   remain relative to their owning package instead of embedding the build host's `node_modules` path.
   The build rejects generated JavaScript containing the checkout root. Checkout setup provides the
-  ordinary package dependency graph. Public release packaging assembles that same bundle with a
-  pruned target-native dependency closure and an included Bun runtime; application source does not
-  address the resulting `node_modules` layout directly.
+  ordinary package dependency graph. Public release packaging assembles the TypeScript source
+  graph with a target-native dependency closure and an included Bun runtime; application source
+  does not address the resulting dependency layout directly.
 - **The artifact is intentionally split.** Bun's `splitting: true` preserves the source graph's
   dynamic imports as sibling `chunk-*.js` files. The AI SDK adapter, provider implementations, Diff,
   Plan, settings panels and domain hubs stay out of the startup entrypoint until their capability or
   route is first mounted. `lazyView` gives command views one Solid-owned loading boundary and cached
-  module without duplicating lifecycle code. The build and artifact smoke reject an entrypoint that
-  absorbs representative lazy boundaries, and derive generated chunk basenames so every native release job enforces the same graph contract.
+  module without duplicating lifecycle code. The development build and artifact smoke reject an
+  entrypoint that absorbs representative lazy boundaries; portable releases run the source modules.
 - **Local maps are detached; installed and portable maps are omitted.** Bun eagerly loads an external `.map`
   found beside its runtime `.js`; with this artifact that erased most of the splitting gain. The
   ordinary package/root build moves maps to `dist/maps/` for offline diagnostics and the smoke
   rejects adjacent maps. `bun run setup` uses `build:install`, which emits no maps before linking the
-  package, so the installed command carries only runtime JavaScript and assets. Portable packaging
-  also removes source maps shipped inside runtime dependencies and rejects any remaining `.map`
+  package for local artifact checks; the installed command enters TypeScript source. Portable packaging
+  removes source maps shipped inside runtime dependencies and rejects any remaining `.map`
   before archive creation. The checkout installer
   removes the former `clarvis-code` bin only when it is the symlink owned by this package, then
   unregisters and relinks the package. This avoids both a stale global alias and deleting an

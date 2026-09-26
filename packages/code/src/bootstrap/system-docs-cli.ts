@@ -69,7 +69,7 @@ export async function publishSelectedSystemDocs(input: Request): Promise<string>
   );
   if (input.kind === "release") {
     const text = await readFile(join(input.root, "release.json"), "utf8");
-    if (text.length > 1024 * 1024) throw new Error("release manifest is too large");
+    if (text.length > 4 * 1024 * 1024) throw new Error("release manifest is too large");
     const manifest = parseReleaseManifest(JSON.parse(text), {
       version: input.version,
       target: input.target as ReleaseTarget,

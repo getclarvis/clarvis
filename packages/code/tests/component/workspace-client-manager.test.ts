@@ -3,7 +3,7 @@ import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "bun:test";
-import { ownerFromWorkspace } from "@clarvis/paths";
+import { ownerFromWorkspace } from "@clarvis/kernel/paths";
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
 import { connectOrLaunchLocalKernel } from "@clarvis/kernel/bootstrap";
 import type { KernelClient } from "@clarvis/protocol";

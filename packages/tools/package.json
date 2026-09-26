@@ -34,31 +34,33 @@
     },
     "./package.json": "./package.json"
   },
-  "files": [
-    "dist",
-    "README.md"
-  ],
+  "files": ["src", "assets", "README.md"],
   "engines": {
     "bun": ">=1.4.0"
   },
   "scripts": {
-    "build": "tsc -b tsconfig.build.json",
+    "build": "tsc -b tsconfig.build.json && bun run build:assets",
+    "build:assets": "bun tooling/build-worker.ts",
     "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
     "test": "bun test --timeout 60000",
     "test:unit": "bun test tests/unit --timeout 60000",
     "test:component": "bun test tests/component --timeout 60000",
     "test:contract": "bun test tests/contract --timeout 60000",
     "test:integration": "bun test tests/integration --timeout 60000",
+    "test:native": "CLARVIS_NATIVE_SANDBOX_TEST=1 bun test tests/integration/native-sandbox.test.ts --timeout 60000",
     "test:architecture": "bun test tests/architecture --timeout 60000",
-    "test:coverage": "bun test --timeout 60000 --coverage",
+    "test:coverage": "CLARVIS_NATIVE_SANDBOX_TEST=1 bun test --timeout 60000 --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" \"tooling/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"tooling/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"tooling/**/*.ts\""
   },
   "dependencies": {
     "@clarvis/paths": "workspace:*",
     "ajv": "^8.20.0",
     "diff": "^9.0.0"
+  },
+  "devDependencies": {
+    "@clarvis/sandbox": "workspace:*"
   }
 }

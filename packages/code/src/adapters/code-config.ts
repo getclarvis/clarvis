@@ -1,4 +1,4 @@
-import { writeFileAtomicSync } from "@clarvis/paths";
+import { writeFileAtomicSync } from "@clarvis/kernel/paths";
 import { z } from "zod";
 import { readJsonFile } from "@clarvis/kernel/config";
 import { createSignal, type Accessor } from "solid-js";

@@ -29,7 +29,6 @@
       },
       "dependencies": {
         "@clarvis/kernel": "workspace:*",
-        "@clarvis/paths": "workspace:*",
         "@clarvis/protocol": "workspace:*",
         "@opentui/core": "0.5.9",
         "@opentui/keymap": "0.5.9",
@@ -73,6 +72,7 @@
         "@clarvis/paths": "workspace:*",
         "@clarvis/plan": "workspace:*",
         "@clarvis/protocol": "workspace:*",
+        "@clarvis/sandbox": "workspace:*",
         "@clarvis/skills": "workspace:*",
         "@clarvis/tools": "workspace:*",
         "@clarvis/trace": "workspace:*",
@@ -148,6 +148,12 @@
     "packages/protocol": {
       "name": "@clarvis/protocol",
     },
+    "packages/sandbox": {
+      "name": "@clarvis/sandbox",
+      "dependencies": {
+        "@clarvis/paths": "workspace:*",
+      },
+    },
     "packages/skills": {
       "name": "@clarvis/skills",
       "dependencies": {
@@ -170,6 +176,9 @@
         "@clarvis/paths": "workspace:*",
         "ajv": "^8.20.0",
         "diff": "^9.0.0",
+      },
+      "devDependencies": {
+        "@clarvis/sandbox": "workspace:*",
       },
     },
     "packages/trace": {
@@ -286,6 +295,8 @@
     "@clarvis/plan": ["@clarvis/plan@workspace:packages/plan"],
 
     "@clarvis/protocol": ["@clarvis/protocol@workspace:packages/protocol"],
+
+    "@clarvis/sandbox": ["@clarvis/sandbox@workspace:packages/sandbox"],
 
     "@clarvis/skills": ["@clarvis/skills@workspace:packages/skills"],
 

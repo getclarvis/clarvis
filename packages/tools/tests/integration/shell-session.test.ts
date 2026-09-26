@@ -16,13 +16,7 @@ describe("shell and shell_session", () => {
     const root = makeWorkspace();
     try {
       const config = makeConfig(root);
-      for (const args of [
-        { action: "poll" },
-        { action: "stop" },
-        { action: "stop", session_id: "ses_missing", cursor: "old" },
-        { action: "list", session_id: "ses_missing" },
-        { action: "list", yield_time_ms: 1 },
-      ]) {
+      for (const args of [{ action: "poll" }, { action: "stop" }]) {
         expect((await callTool("shell_session", args, config)).json.error).toBe("invalid_input");
       }
     } finally {
@@ -54,6 +48,15 @@ describe("shell and shell_session", () => {
       expect((await callTool("shell_session", { action: "list" }, owner)).json.sessions).toEqual([
         expect.objectContaining({ session_id: id, running: true }),
       ]);
+      expect(
+        (
+          await callTool(
+            "shell_session",
+            { action: "list", session_id: id, cursor: "", yield_time_ms: 0 },
+            owner,
+          )
+        ).json.sessions,
+      ).toEqual([expect.objectContaining({ session_id: id, running: true })]);
       expect((await callTool("shell_session", { action: "list" }, owner)).text).not.toContain(
         "session.cjs",
       );
@@ -82,7 +85,11 @@ describe("shell and shell_session", () => {
       const cursor = stderrPage.json.next_cursor as string;
       const replay = await callTool("shell_session", { action: "poll", session_id: id }, owner);
       expect(replay.json.next_cursor).toBe(cursor);
-      const stopped = await callTool("shell_session", { action: "stop", session_id: id }, owner);
+      const stopped = await callTool(
+        "shell_session",
+        { action: "stop", session_id: id, cursor: "", yield_time_ms: 0 },
+        owner,
+      );
       expect(stopped.json).toMatchObject({ stopped: true, termination_confirmed: true });
       expect(
         (await callTool("shell_session", { action: "stop", session_id: id }, owner)).json.stopped,

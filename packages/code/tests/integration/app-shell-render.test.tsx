@@ -26,6 +26,7 @@ import { createActivityStore } from "../../src/adapters/activity-store.ts";
 import { createPromptHistory } from "../../src/core/prompt-history.ts";
 import { fakeDebugSession } from "../helpers/fake-debug-session.ts";
 import { createMemoryModeStore } from "../../src/adapters/memory-mode.ts";
+import { createIsolationModeStore, isolationChoice } from "../../src/adapters/isolation-mode.ts";
 import type { Platform } from "../../src/adapters/platform.ts";
 import type { SettingsAdapter } from "../../src/adapters/settings.ts";
 import type { ActiveAgentStore } from "../../src/adapters/active-agent.ts";
@@ -150,6 +151,7 @@ const HEALTHY_DEFAULT_MODEL = "acme/model-x";
 
 function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
   let savedMemoryEnabled: boolean | undefined;
+  let savedIsolation: NonNullable<ReturnType<SettingsAdapter["read"]>>["isolation"];
   const effective = () => {
     const k = knobs();
     const memoryEnabled = savedMemoryEnabled ?? k.memoryEnabled;
@@ -157,6 +159,7 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
       providers: k.providers ?? HEALTHY_PROVIDERS,
       default_model: "defaultModel" in k ? k.defaultModel : HEALTHY_DEFAULT_MODEL,
       memory: memoryEnabled === undefined ? undefined : { enabled: memoryEnabled },
+      isolation: savedIsolation,
       runtime: k.runtime,
       plans: k.plans ?? { mode: "on", retention: "keep" },
     };
@@ -183,6 +186,10 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
       if (patch.memory?.enabled !== undefined) {
         expect(scope).toBe("global");
         savedMemoryEnabled = patch.memory.enabled;
+      }
+      if (patch.isolation !== undefined) {
+        expect(scope).toBe("global");
+        savedIsolation = { ...savedIsolation, ...patch.isolation };
       }
     },
     validateProviders: () => ({ ok: knobs().providersValid ?? true }),
@@ -242,6 +249,7 @@ function baseFleet(
         writeKeySource: () => {},
       } as never),
     memoryMode: createMemoryModeStore(),
+    isolationMode: createIsolationModeStore(isolationChoice()),
     preview: {
       source: () => ({}),
       draft: () => null,
@@ -268,6 +276,12 @@ function baseBackend(over: Partial<AppBackend> = {}): AppBackend {
   const [probe] = createSignal<BackendProbe>({ status: "reachable", profileCount: 1 });
   return {
     connection,
+    isolationStatus: async () => ({
+      configured: isolationChoice(),
+      backend: "bubblewrap",
+      availability: "available",
+      scope: "builtin_tools",
+    }),
     probe,
     client: {
       listTools: async () => [],
@@ -1812,6 +1826,51 @@ test("Ctrl+X M saves Memory On and keeps it selected when the picker reopens", a
   press(t, "escape");
   await captureUntil(t, "New task");
   t.renderer.destroy();
+});
+
+test("Ctrl+X I edits Sandbox preferences before activation and persists the selected mode", async () => {
+  let isolation!: AppFleet["isolationMode"];
+  const build = defaultProps({});
+  const t = await mountApp((renderer) => {
+    const props = build(renderer);
+    isolation = props.fleet.isolationMode;
+    return props;
+  });
+  try {
+    await captureUntil(t, "New task");
+    press(t, "x", { ctrl: true });
+    press(t, "i");
+    const main = await captureUntil(t, "Select isolation");
+    expect(main).toContain("Host");
+    expect(main).toContain("Sandbox");
+    press(t, "down");
+    await t.renderOnce();
+    press(t, "w");
+    await captureUntil(t, "Sandbox workspace");
+    press(t, "up");
+    press(t, "return");
+    await captureUntil(t, "Select isolation");
+    expect(isolation.choice()).toEqual({
+      mode: "host",
+      workspace: "read-only",
+      network: "enabled",
+    });
+    press(t, "n");
+    await captureUntil(t, "Sandbox network");
+    press(t, "down");
+    press(t, "return");
+    await captureUntil(t, "Select isolation");
+    expect(isolation.choice().network).toBe("disabled");
+    press(t, "return");
+    await captureUntil(t, "New task");
+    expect(isolation.choice()).toEqual({
+      mode: "sandbox",
+      workspace: "read-only",
+      network: "disabled",
+    });
+  } finally {
+    t.renderer.destroy();
+  }
 });
 
 test("a literal sharp s remains composer text", async () => {
@@ -4015,7 +4074,7 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
     await t.mockInput.typeText("draft preserved");
     await t.renderOnce();
     const initial = t.captureCharFrame();
-    for (const text of ["Memory:", "[M] memory", "[E] expand editor"])
+    for (const text of ["Memory:", "[M] memory", "[I] isolation", "[E] editor"])
       expect(initial).toContain(text);
     for (const [key, title] of [["m", "Select memory"]] as const) {
       press(t, "x", { ctrl: true });

@@ -43,7 +43,7 @@ import type { Logger, LLMProvider, ModelExecutionResolver } from "@clarvis/capab
 import type { ExecuteRunDeps } from "./execute-run.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { Capability, RunCapabilityContext } from "@clarvis/capability";
-import type { SecretNamesResolver } from "./capabilities/tools.ts";
+import type { AgentExecutionResolver, SecretNamesResolver } from "./capabilities/tools.ts";
 import type { PluginBootstrapSkill } from "./capabilities/skills-settings.ts";
 import { createAskUserCapability } from "./capabilities/ask-user.ts";
 import { agentToolCaps } from "./tools/builtin/grants.ts";
@@ -184,6 +184,8 @@ export interface BuildRunDepsOptions {
   /** Host port naming the environment variables that hold credentials, so the
    * tools capability can withhold them from every command it spawns. */
   resolveSecretNames?: SecretNamesResolver;
+  /** Resolve the host-owned tool boundary once for each admitted run. */
+  resolveAgentExecution?: AgentExecutionResolver;
   /** Opt out of built-in capabilities to run leaner (and to allow the
    * corresponding optional package to be absent). Omitted = all on. */
   builtins?: BuiltinCapabilityToggles;
@@ -579,6 +581,7 @@ export async function buildExecuteRunDeps({
   reservedSystemSkillName,
   skillBootstraps,
   resolveSecretNames,
+  resolveAgentExecution,
   resolveHooks,
   hookCredentialNames,
   builtins,
@@ -811,6 +814,7 @@ export async function buildExecuteRunDeps({
       createAgentToolsCapability({
         ...(statePaths === undefined ? {} : { statePaths }),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
+        ...(resolveAgentExecution !== undefined ? { resolveExecution: resolveAgentExecution } : {}),
       }),
     );
   }

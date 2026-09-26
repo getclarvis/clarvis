@@ -3,8 +3,8 @@
 ## Purpose
 
 `@clarvis/tools` exposes a fixed catalog of coding tools. `dispatch` validates a cloned argument
-object against the selected tool's schema, invokes its handler on the host and bounds the result.
-There is no command approval or file mutation review gate in this dispatcher. Relative file paths
+object against the selected tool's schema, invokes its configured execution port and bounds the result.
+The default port invokes the handler on Host. There is no command approval or file mutation review gate in this dispatcher. Relative file paths
 use the workspace as their base; absolute paths remain absolute. Host filesystem permissions
 determine actual access.
 
@@ -43,7 +43,9 @@ Production: `toolDescriptors`, `readOnlyTools` and `selectSurface` in
 `resolveConfig` requires an existing directory for `workspaceRoot`, validates numeric ceilings. A toolset owns a session manager unless the host supplies one. `readOnly` defaults
 to false. Limits cover text and shell output, input file and image sizes, traversal, mutation
 bytes, diff input, metadata, shell duration, sessions and regular-expression scan time.
-`secretEnvNames` is host supplied and removed from spawned command environments. `stateRoot`
+`secretEnvNames` is host supplied and removed from spawned command environments. A Sandbox policy
+requires an execution port and backend; workspace filesystem access is separate from `readOnly`,
+which selects the advertised tool surface. `stateRoot`
 stores run machinery; it is not a separate tool read gate.
 
 Production: `RuntimeConfig`, `AgentToolsOptions` and `resolveConfig` in
@@ -55,14 +57,21 @@ Production: `RuntimeConfig`, `AgentToolsOptions` and `resolveConfig` in
 Unknown or unavailable tools return `not_found`; invalid arguments return `invalid_input`.
 The caller's argument object is not mutated. Text parts from tools that do not self-bound are
 clamped to `maxOutputBytes`; metadata is clamped to `maxToolMetaBytes` and retains a bounded
-`diff` prefix when possible. File operations invoke local handlers. `close` releases run-owned
+`diff` prefix when possible. When a diff exceeds the metadata budget, the actual
+execution mode, backend, policy and typed diagnostic take priority over its preview.
+Sandbox failures with an issued policy retain structured execution identity in
+the error result metadata as well as the serialized error text. Error metadata
+uses the same byte budget; oversized attempt detail is dropped before policy
+identity.
+File operations invoke local handlers. `close` releases run-owned
 command sessions.
 
 Production: `dispatch`, `boundParts` and `boundMeta` in
 [core.ts](../../packages/tools/src/core.ts), `serializeError` in
 [errors.ts](../../packages/tools/src/errors.ts), and `createAgentTools` in
 [index.ts](../../packages/tools/src/index.ts). Test:
-[core.test.ts](../../packages/tools/tests/component/core.test.ts) and
+[core.test.ts](../../packages/tools/tests/component/core.test.ts),
+[native-sandbox.test.ts](../../packages/tools/tests/integration/native-sandbox.test.ts), and
 [api.test.ts](../../packages/tools/tests/integration/api.test.ts).
 
 ## Invariants and coupling
@@ -73,12 +82,15 @@ Production: `dispatch`, `boundParts` and `boundMeta` in
 - A validated tool call does not pass through a Shell Guard or Judge. Production: `dispatch` in
   [core.ts](../../packages/tools/src/core.ts). Test:
   [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
-- Shell and file tools execute on the host. Production: `dispatch` in
-  [core.ts](../../packages/tools/src/core.ts) and `ExecutionSessionManager.launch` in
+- Host is the default; an injected Sandbox port and backend wrap file handlers and new shell
+  sessions. Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts),
+  `SandboxToolExecutor` in [sandbox.ts](../../packages/tools/src/execution/sandbox.ts), and
+  `ExecutionSessionManager.launch` in
   [execution-session.ts](../../packages/tools/src/lib/execution-session.ts). Test:
   [core.test.ts](../../packages/tools/tests/component/core.test.ts) and
-  [execution-session.test.ts](../../packages/tools/tests/integration/execution-session.test.ts).
+  [native-sandbox.test.ts](../../packages/tools/tests/integration/native-sandbox.test.ts).
 
 Read behavior belongs to [tools-read.md](tools-read.md),
 mutations to [tools-mutation.md](tools-mutation.md), and shell sessions to
 [tools-shell-and-sessions.md](tools-shell-and-sessions.md).
+Native launch policy belongs to [sandbox.md](sandbox.md).

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -11,6 +11,7 @@ import {
   manifestFiles,
   parseReleaseManifest,
   releaseRequiresClarvisDocs,
+  restoreReleaseModes,
   verifyReleaseTree,
 } from "../../src/update/release-manifest.ts";
 
@@ -49,6 +50,62 @@ test("manifest generation and verification cover exactly every regular payload f
   }
 });
 
+test("an empty zero-permission file is verified without reading its contents", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clarvis-release-unreadable-"));
+  try {
+    const mask = join(root, "mask");
+    await writeFile(mask, "");
+    await chmod(mask, 0);
+    const files = await manifestFiles(root);
+    const manifest = parseReleaseManifest(
+      {
+        schema: 1,
+        repository: "getclarvis/clarvis-releases",
+        version: earlierCandidate,
+        target: "linux-x64",
+        files,
+      },
+      { version: earlierCandidate, target: "linux-x64" },
+    );
+    await expect(verifyReleaseTree(root, manifest)).resolves.toBeUndefined();
+    await chmod(mask, 0o600);
+    await writeFile(mask, "changed");
+    await expect(verifyReleaseTree(root, manifest)).rejects.toThrow("size mismatch");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("restores native asset permissions after archive extraction loses file modes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clarvis-release-modes-"));
+  try {
+    const mask = join(root, "deny-file");
+    const helper = join(root, "launcher");
+    await writeFile(mask, "");
+    await writeFile(helper, "helper");
+    await chmod(mask, 0);
+    await chmod(helper, 0o755);
+    const manifest = parseReleaseManifest(
+      {
+        schema: 1,
+        repository: "getclarvis/clarvis-releases",
+        version: earlierCandidate,
+        target: "linux-x64",
+        files: await manifestFiles(root),
+      },
+      { version: earlierCandidate, target: "linux-x64" },
+    );
+    await chmod(mask, 0o644);
+    await chmod(helper, 0o644);
+    await verifyReleaseTree(root, manifest);
+    await restoreReleaseModes(root, manifest);
+    expect((await lstat(mask)).mode & 0o777).toBe(0);
+    expect((await lstat(helper)).mode & 0o777).toBe(0o755);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("manifest parsing rejects duplicate, self-referential and malformed file entries", () => {
   const base = {
     schema: 1,
@@ -65,6 +122,9 @@ test("manifest parsing rejects duplicate, self-referential and malformed file en
   ).toThrow("invalid file entry");
   expect(() =>
     parseReleaseManifest({ ...base, files: [{ ...file, sha256: "bad" }] }, base as never),
+  ).toThrow("invalid file entry");
+  expect(() =>
+    parseReleaseManifest({ ...base, files: [{ ...file, mode: 0o4755 }] }, base as never),
   ).toThrow("invalid file entry");
   expect(() =>
     parseReleaseManifest(

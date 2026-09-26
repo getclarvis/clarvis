@@ -1,0 +1,33 @@
+{
+  "name": "@clarvis/sandbox",
+  "private": true,
+  "description": "Native process isolation policy and launch backends for Clarvis tools.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["src", "assets", "native", "README.md"],
+  "engines": { "bun": ">=1.4.0" },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json && bun run build:assets",
+    "build:assets": "bun tooling/build-native.ts",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun test tests/unit tests/contract tests/architecture --timeout 60000",
+    "test:native": "bun test tests/integration --timeout 60000",
+    "test:coverage": "bun test tests/unit tests/contract tests/architecture tests/integration --timeout 60000 --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" \"tooling/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"tooling/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"tooling/**/*.ts\""
+  },
+  "dependencies": { "@clarvis/paths": "workspace:*" }
+}

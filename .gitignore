@@ -14,3 +14,5 @@ coverage/
 !.env.example
 /screenshots/
 /specs/proposals/
+/packages/sandbox/assets/native/
+/packages/tools/assets/worker.manifest.json

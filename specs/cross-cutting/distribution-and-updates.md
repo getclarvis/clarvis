@@ -52,8 +52,8 @@ Test: `tooling/tests/unit/release-readiness.test.ts` (scoped App contract).
 Every archive has exactly one top-level `clarvis/` directory. Its payload contains the root product
 manifest and MIT license, static `THIRD_PARTY_NOTICES.md`, Bun, models.dev, and Vercel AI SDK license
 texts beneath `third-party/`, generated `THIRD_PARTY_NOTICES.txt`, `runtime/clarvis`, a legacy `runtime/bun` compatibility entry, Code's small
-TypeScript launcher/update graph, the map-free split
-`packages/code/dist`, and the target-native runtime dependency closure beneath `node_modules`. The
+TypeScript application and host source graph, `bun.lock`, the workspace package sources, and the
+target-native runtime dependency closure beneath `node_modules`. The
 payload also carries the raw `packages/kernel/assets/skills/.system/clarvis-docs` Markdown tree and
 the bundled `runtime/system-docs.js` publisher from the first stable skill-bearing release. The
 release manifest requires and hashes these files for that release and later ones, while older
@@ -77,7 +77,7 @@ supplied by those packages remain in their copied package directories. Productio
 `copyDependencies`).
 
 The static notice also contains the complete upstream MIT license of the pinned Croner library,
-which is bundled into the terminal UI's calendar adapter. It remains available when Croner is not
+which is used by the terminal UI's calendar adapter. It remains available when Croner is not
 an external member of the packaged dependency closure. Production: `copySource` in
 [package.ts](../../packages/code/tooling/release/package.ts), the Code dependency manifest and
 [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
@@ -93,16 +93,21 @@ Test: packaged static-notice validation in
   "repository": "getclarvis/clarvis-releases",
   "version": "0.1.0",
   "target": "linux-x64",
-  "files": [{ "path": "runtime/clarvis", "size": 80761952, "sha256": "..." }]
+  "files": [{ "path": "runtime/clarvis", "size": 80761952, "sha256": "...", "mode": 493 }]
 }
 ```
 
 `files` describes every regular payload file except `release.json` itself, with a portable relative
-path, exact byte length, and lowercase SHA-256. Directories, symlinks, traversal segments, absolute
+path, exact byte length, lowercase SHA-256, and optional POSIX mode (493 is `0755`). Directories, symlinks, traversal segments, absolute
 paths, backslashes, control characters, case-insensitive `.map` suffixes, duplicates, extra files,
-and more than 4,096 entries are refused. Production:
+and more than 20,000 entries are refused. The manifest reader is bounded at 4 MiB. An empty
+zero-permission regular file is verified from
+its metadata and empty digest without opening it; no package-specific path is embedded in the
+verifier. Production:
 `packages/code/src/update/release-manifest.ts` (`parseReleaseManifest`, `manifestFiles`,
-`verifyReleaseTree`). Test: `packages/code/tests/unit/release-manifest.test.ts`.
+`verifyReleaseTree`, `restoreReleaseModes`). After content verification, extractors that discard
+tar modes restore the validated modes, keeping the native deny mask at `000` and launchers
+executable after a managed update. Test: `packages/code/tests/unit/release-manifest.test.ts`.
 
 A managed installation is:
 
@@ -126,25 +131,31 @@ that version's product-named runtime and `cli.ts`. Production:
 ## 4. Behavior
 
 Packaging runs only for the host's native supported target. It copies the exact running Bun binary,
-discovers bare runtime package references retained by the split artifact, closes their production
+collects runtime dependencies from workspace manifests and closes their production
 dependency graph, adds the one OpenTUI native package for the target, copies the static Bun,
 models.dev, and Vercel AI SDK license and notice set, removes every case-insensitive `.map` suffix
 from the complete payload, writes the internal manifest, creates a gzip tar archive, and emits a
 sidecar SHA-256. The tar subprocess receives the portable `C` locale explicitly, so a host runtime's
 synthetic or unavailable UTF-8 locale cannot add a platform warning or alter archive processing.
+The release job builds the source-worker manifest and platform-native assets before packaging;
+Linux installs Bubblewrap and a C compiler. Only Linux archives append the permission-free deny
+mask with GNU tar flags. macOS has no such asset and uses portable tar creation flags.
 Production:
 `packages/code/tooling/release/package.ts` and
-`packages/code/tooling/release/runtime-package-discovery.ts`. Generated static-import and call
-specifiers contribute to that closure only when they name an installed bare package root; relative,
-absolute, built-in, and module-internal `#` references are ignored, package subpaths resolve to their
-owning root, and an invalid name reaching manifest resolution is rejected before any path is read.
+`packages/code/tooling/release/runtime-package-discovery.ts`. The runtime closure follows workspace
+and third-party package manifests, including nested dependency manifests. Invalid package roots
+are rejected before reading their manifests; Clarvis source packages come from the workspace.
 Test: `packages/code/tests/unit/runtime-package-discovery.test.ts` and
 `packages/code/tests/architecture/artifact-contract.test.ts`. The release smoke re-extracts the
 archive, verifies the manifest, required notices/licenses, and zero-map rule, runs `--version` and
 `--help`, and on POSIX observes the complete-app marker under a real PTY using the packaged runtime.
+It also extracts the archive under a separate test-owned installation root, restores verified
+permissions, and requires `write_file` and `shell` to report the native Sandbox backend while a
+private home file remains unreadable. A Host fallback fails the smoke.
 Its elapsed value is explicitly the outer PTY/polling duration, not a first-paint benchmark. Test:
 `packages/code/tooling/release/smoke.ts` and
-`packages/code/tooling/artifact/pty.ts`.
+`packages/code/tooling/artifact/pty.ts`; the native probe is
+`packages/kernel/tests/fixtures/release-native-canary.ts`.
 
 Initial installation prints its selected version, target, install root, launcher, and one numbered
 status line before each potentially slow or mutating phase. It downloads the target archive and
@@ -231,17 +242,18 @@ mutating update. Production: `packages/code/src/adapters/code-config.ts`
 
 The updater downloads into a unique same-filesystem staging directory, streams the asset through
 the declared size and SHA-256 bounds, extracts through `Bun.Archive`, verifies every manifest file,
+restores validated file modes,
 and executes the candidate's included Bun with `--version`. It renames a new version beside the old
 one and durably replaces `current` last. Failure before that write leaves the active version and all
 user state unchanged. Production: `packages/code/src/update/index.ts` and
 `packages/code/src/update/installation.ts`. Test:
 `packages/code/tests/unit/update-command.test.ts` (verified activation and preserved predecessor).
 
-The split artifact also ships Code's `local-host.js` companion. Its launcher resolves the companion
+The source archive includes Code's TypeScript local host. Its launcher resolves the source entry
 and runtime beneath the current concrete version directory before starting the workspace host.
 Updating `current` does not redirect that process: installers and `activateStagedRelease` preserve
 the predecessor version directory, and an existing same-version payload cannot be overwritten with
-different bytes. This preserves lazy chunks for a live background run through a normal update.
+different bytes. This preserves source modules and native assets for a live background run through a normal update.
 An explicit uninstall or external deletion of the version directory is outside that retention
 guarantee. Developer builds likewise remain mutable checkout artifacts. Production:
 `resolveLocalKernelArtifact` in
@@ -470,7 +482,7 @@ system's archive/launcher conventions. Neither install nor update depends on Cla
 remote Kernel. Production: `packages/code/tooling/release/package.ts`,
 `.github/workflows/release.yml`, `install.sh`.
 
-Build structure, pinned Bun, CI checks, and the package-local bundle remain owned by
+Build structure, pinned Bun, CI checks, and the development-only package bundle remain owned by
 [Build and CI](build-and-ci.md). CLI parsing and fast-path application boot remain owned by
 [Code bootstrap](../hosts/code-bootstrap.md). Security's general secret and trust rules remain owned
 by [Security](security.md); this document owns only release artifact trust and activation. Product
@@ -488,10 +500,9 @@ version ownership remains in [Package architecture](package-architecture.md).
 3. The portable Linux assets target GNU/glibc; Alpine and other musl-only distributions are not
    configured targets for this beta. Production: `packages/code/tooling/release/package.ts`
    (`nativePackages`) and `.github/workflows/release.yml` (Ubuntu Linux runners).
-4. The portable Linux x64 beta is roughly 46 MiB compressed after all source maps are removed. Most
-   remaining bytes are the included Bun runtime and OpenTUI native library. Further reduction needs
-   a measured alternative runtime/link strategy that preserves split loading and package-owned
-   native assets; size alone does not authorize weakening either invariant.
+4. The portable archive includes TypeScript sources and the Bun runtime. Size depends on the
+   target-native dependency closure; trimming must preserve package-owned native assets and
+   source-based startup.
 5. The repository now preserves Bun's upstream JavaScriptCore/WebKit LGPL notice, source/relinking
    route, linked-library inventory, the models.dev MIT license, and the Vercel AI SDK Apache-2.0
    license in every archive. A release owner still needs to review the exact runtime and dependency

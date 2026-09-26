@@ -1,7 +1,17 @@
 #!/usr/bin/env bun
 /** Verify the native portable archive, fast paths, and real-PTY complete-app boot. */
-import { chmod, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -13,6 +23,7 @@ import {
   containsInlineSourceMap,
   isReleaseSourceMapPath,
   parseReleaseManifest,
+  restoreReleaseModes,
   verifyReleaseTree,
 } from "../../src/update/release-manifest.ts";
 import { createSmokeFixture } from "../artifact/isolation.ts";
@@ -68,6 +79,44 @@ async function sourceMaps(root: string): Promise<string[]> {
   return found.sort();
 }
 
+async function qualifyNativeArchive(
+  archive: Bun.Archive,
+  environment: Record<string, string>,
+  manifest: ReturnType<typeof parseReleaseManifest>,
+): Promise<string> {
+  const nativeRoot = await mkdtemp(join(repositoryRoot, "build", "release", ".native-smoke-"));
+  try {
+    await archive.extract(nativeRoot);
+    const productRoot = join(nativeRoot, "clarvis");
+    await verifyReleaseTree(productRoot, manifest);
+    await restoreReleaseModes(productRoot, manifest);
+    const runtime = join(productRoot, "runtime", releaseRuntimeExecutableName());
+    const canary = join(
+      productRoot,
+      "packages",
+      "kernel",
+      "tests",
+      "fixtures",
+      "release-native-canary.ts",
+    );
+    await mkdir(dirname(canary), { recursive: true });
+    await copyFile(
+      join(repositoryRoot, "packages", "kernel", "tests", "fixtures", "release-native-canary.ts"),
+      canary,
+    );
+    await chmod(runtime, 0o755);
+    const result = await commandOutput([runtime, canary, productRoot], environment);
+    if (result.code !== 0 || !result.stdout.includes("native release sandbox ok -")) {
+      throw new Error(
+        `portable native sandbox failed: ${result.stderr.slice(-2000)} ${result.stdout.slice(-1000)}`,
+      );
+    }
+    return result.stdout.trim();
+  } finally {
+    await rm(nativeRoot, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   const target = releaseTarget();
   if (target === undefined) throw new Error("native platform is not a release target");
@@ -108,6 +157,7 @@ async function main(): Promise<void> {
       { version: product.version, target },
     );
     await verifyReleaseTree(versionRoot, manifest);
+    await restoreReleaseModes(versionRoot, manifest);
     await requireNotice(join(versionRoot, "THIRD_PARTY_NOTICES.md"), [
       "Bun 1.4.0",
       "models.dev snapshot",
@@ -185,8 +235,9 @@ async function main(): Promise<void> {
         `portable complete-app boot ${boot.outcome}\n${readable(boot.screen).slice(-3000)}\n${boot.stderr.slice(-1000)}`,
       );
     }
+    const native = await qualifyNativeArchive(archive, environment, manifest);
     process.stdout.write(
-      `release smoke ok - ${target} ${product.version} observed the complete-app marker after ${boot.elapsed.toFixed(0)}ms of outer PTY/polling time\n`,
+      `release smoke ok - ${target} ${product.version} observed the complete-app marker after ${boot.elapsed.toFixed(0)}ms of outer PTY/polling time; ${native}\n`,
     );
   } finally {
     await fixture.cleanup();

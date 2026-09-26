@@ -10,7 +10,7 @@
  *
  * @remarks A deliberate duplicate of `@clarvis/capability`'s
  * `PLAN_REVIEW_ELICIT_KIND`: `code` depends on `@clarvis/kernel`,
- * `@clarvis/protocol` and `@clarvis/paths` only, so the value cannot be
+ * `@clarvis/protocol` and `@clarvis/kernel` only, so the value cannot be
  * imported. `packages/kernel/tests/architecture/elicit-kind.test.ts` pins the
  * two together.
  */

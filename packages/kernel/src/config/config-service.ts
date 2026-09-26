@@ -10,6 +10,7 @@ import type {
   ContextDoc,
   Scope,
   SettingsData,
+  IsolationStatus,
   SettingsRepairPlan,
   SettingsView,
   SharedPromptLayerView,
@@ -18,6 +19,7 @@ import type {
   Unsubscribe,
 } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
+import { resolveIsolationSettings } from "./isolation-settings.ts";
 import { compareAgentDisplayOrder } from "./agent-resolution.ts";
 import {
   SettingsRevisionConflictError,
@@ -29,6 +31,7 @@ import { resolveStoreSharedPrompt, sharedPromptPaths } from "./shared-prompt.ts"
 
 /** Host-supplied collaborators for {@link createConfigService}. */
 export interface ConfigServiceOptions {
+  isolationAvailability?: () => "available" | "unavailable" | "unverified";
   /**
    * Every grant this kernel's composed capability registry will accept, for
    * {@link SettingsView.known_grants}.
@@ -393,6 +396,22 @@ export function createConfigService(
     async getSettings(): Promise<SettingsView> {
       return withKnownGrants(store.readSettings());
     },
+    async getIsolationStatus(): Promise<IsolationStatus> {
+      const configured = resolveIsolationSettings(store.readSettings().scopes.global?.isolation);
+      const backend =
+        process.platform === "linux"
+          ? "bubblewrap"
+          : process.platform === "darwin"
+            ? "seatbelt"
+            : null;
+      return {
+        configured,
+        backend,
+        availability:
+          backend === null ? "unavailable" : (options.isolationAvailability?.() ?? "unverified"),
+        scope: "builtin_tools",
+      };
+    },
 
     /** Preview a repair bound to the SHA-256 revision of exact source bytes. */
     async previewSettingsRepair(scope: Scope): Promise<SettingsRepairPlan | null> {
@@ -481,6 +500,11 @@ export function createConfigService(
     ): Promise<SettingsView> {
       const merge = (current: SettingsData): SettingsData => {
         const next: SettingsData = { ...current, ...patch };
+        if (scope === "workspace") {
+          delete next.isolation;
+        } else if (patch.isolation !== undefined) {
+          next.isolation = { ...current.isolation, ...patch.isolation };
+        }
         const parsed = kernelSettingsSchema.safeParse(next);
         if (!parsed.success) {
           throw kernelError("invalid_request", firstIssue(parsed.error), parsed.error.issues);

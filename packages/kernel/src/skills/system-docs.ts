@@ -301,7 +301,7 @@ export async function reconcileSystemDocs(
       throw new Error("system skill release manifest is not a regular file");
     }
     const bytes = await readFile(manifestPath);
-    if (bytes.byteLength > 1024 * 1024)
+    if (bytes.byteLength > 4 * 1024 * 1024)
       throw new Error("system skill release manifest is too large");
     const parsed: unknown = JSON.parse(bytes.toString("utf8"));
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {

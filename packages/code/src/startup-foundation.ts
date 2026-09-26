@@ -1,4 +1,4 @@
-import { globalPaths, workspaceRoot } from "@clarvis/paths";
+import { globalPaths, workspaceRoot } from "@clarvis/kernel/paths";
 import { createLogger } from "@clarvis/kernel/logger";
 import type { Mode } from "./cli-args.ts";
 import { openPublicUrl } from "./adapters/open-public-url.ts";

@@ -4,7 +4,7 @@ import {
   workspacePaths,
   workspaceRoot,
   workspaceStatePaths,
-} from "@clarvis/paths";
+} from "@clarvis/kernel/paths";
 import { mkdirSync } from "node:fs";
 import { open as openFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
@@ -63,6 +63,11 @@ import {
 } from "./adapters/models-catalog.ts";
 import { createCodeConfigStore, type CodeConfigStore } from "./adapters/code-config.ts";
 import { createMemoryModeStore, type MemoryModeStore } from "./adapters/memory-mode.ts";
+import {
+  createIsolationModeStore,
+  isolationChoice,
+  type IsolationModeStore,
+} from "./adapters/isolation-mode.ts";
 import { createTheme, createThemePreview, type ThemePreview } from "./theme/theme.ts";
 import type { ThemeConfig } from "./theme/model.ts";
 import { tokens } from "./theme/tokens.ts";
@@ -715,6 +720,7 @@ async function runApp(
   let initialAgentFiles: AgentFile[] = [];
   let initialAgentConflicts: string[] = [];
   let memoryMode!: MemoryModeStore;
+  let isolationMode!: IsolationModeStore;
   let preview!: ThemePreview;
   const [modelsCatalog, setModelsCatalog] = createSignal<ModelsCatalog | null>(null);
   const liveCatalog: ModelsCatalog = {
@@ -968,6 +974,7 @@ async function runApp(
 
   interface WorkspaceAdaptersSnapshot {
     memoryMode: MemoryModeStore;
+    isolationMode: IsolationModeStore;
     agentFiles: AgentsStore;
     agents: ActiveAgentStore;
     preview: ThemePreview;
@@ -990,11 +997,15 @@ async function runApp(
       const nextMemoryMode = createMemoryModeStore(
         input.settings.read("global")?.memory?.enabled === true ? "on" : "off",
       );
+      const nextIsolationMode = createIsolationModeStore(
+        isolationChoice(input.settings.read("global")?.isolation),
+      );
       createEffect(() => {
         input.settings.version();
         nextMemoryMode.setMode(
           input.settings.read("global")?.memory?.enabled === true ? "on" : "off",
         );
+        nextIsolationMode.setChoice(isolationChoice(input.settings.read("global")?.isolation));
       });
       const nextAgentFiles = createAgentsStore(
         input.client.config,
@@ -1054,6 +1065,7 @@ async function runApp(
       };
       snapshot = {
         memoryMode: nextMemoryMode,
+        isolationMode: nextIsolationMode,
         agentFiles: nextAgentFiles,
         agents: nextAgents,
         preview: nextPreview,
@@ -1065,6 +1077,7 @@ async function runApp(
 
   const publishWorkspaceAdapters = (next: WorkspaceAdaptersSnapshot): void => {
     memoryMode = next.memoryMode;
+    isolationMode = next.isolationMode;
     agentFiles = next.agentFiles;
     agents = next.agents;
     preview = next.preview;
@@ -1603,6 +1616,9 @@ async function runApp(
     get memoryMode() {
       return memoryMode;
     },
+    get isolationMode() {
+      return isolationMode;
+    },
     get preview() {
       return preview;
     },
@@ -1616,6 +1632,7 @@ async function runApp(
   };
   const backendConn: AppBackend = {
     connection: conn.state,
+    isolationStatus: () => runClient.config.getIsolationStatus(),
     skillsRevision,
     probe: backend,
     get client() {

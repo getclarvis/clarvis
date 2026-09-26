@@ -485,9 +485,11 @@ export function analyzePackageGraph(root: string, options: { enforceArchitecture
         errors.push(`${pkg.name}: declares unknown workspace dependency ${declared}`);
         continue;
       }
-      const violation = enforceArchitecture
-        ? packageDependencyViolation(pkg.name, declared)
-        : undefined;
+      const violation =
+        enforceArchitecture &&
+        (pkg.runtimeDeclared.has(declared) || pkg.declaredByField.peerDependencies.has(declared))
+          ? packageDependencyViolation(pkg.name, declared)
+          : undefined;
       if (violation !== undefined) errors.push(`${pkg.name}: ${violation}`);
       if (used.has(declared)) continue;
       errors.push(`${pkg.name}: declares unused internal dependency ${declared}`);

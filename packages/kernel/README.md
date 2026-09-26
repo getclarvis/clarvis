@@ -12,11 +12,19 @@ adapter is Git and never writes to the repository.
 
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
+For Sandbox runs, the file kernel snapshots global isolation settings and
+identifies its Bun executable directory, source tool worker and product as
+protected installation roots. The native backend preserves host filesystem reads
+and applies write grants and private-path denies; the kernel does not discover
+or register the operator's tools. Internal Goal and Memory
+runs bind the same owner-scoped policy before entering the loop and release it
+after execution.
+
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
 `@clarvis/capability`, `@clarvis/goal`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
-`@clarvis/tools`, `@clarvis/trace` and `@clarvis/workflows`. It injects
+`@clarvis/sandbox`, `@clarvis/tools`, `@clarvis/trace` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
-Clients remain independent of the engine through seven deliberately bounded public entrypoints. Each
+Clients remain independent of the engine through eight deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
 
 | Entry                         | Responsibility                                                                                                                |
@@ -27,6 +35,7 @@ public symbol has one thematic owner; the root is not a compatibility barrel for
 | `@clarvis/kernel/policy`      | sanitization, tool identity, event mapping/policy/spans and ingest state                                                      |
 | `@clarvis/kernel/local`       | shell/process/executable helpers and local filesystem/git adapters                                                            |
 | `@clarvis/kernel/logger`      | logger constructor and types without loading file-kernel bootstrap                                                            |
+| `@clarvis/kernel/paths`       | curated path vocabulary for application bootstrap and persistence without a direct foundation dependency                        |
 | `@clarvis/kernel/system-docs` | verified publication of the product-owned Markdown skill for installers and source launchers                                  |
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
@@ -39,7 +48,7 @@ Clarvis skills directory before capturing the skill catalog. `reconcileSystemDoc
 portable release's listed Markdown hashes or reads the current source checkout, then publishes a
 complete revision only into the owned `.system/clarvis-docs` subtree. An unsafe or unowned target
 leaves user content untouched and makes this optional guide unavailable. The host supplies its
-active product root explicitly to bundled kernels; a package-local Kernel module derives its
+active product root explicitly to connected kernels; a package-local Kernel module derives its
 checkout from the package identity without naming an output directory.
 `createSystemDocsProvider` keeps body and resource bytes stable for an
 active host generation. See [self-configuration](../../specs/hosts/self-configuration.md) and
@@ -768,8 +777,13 @@ already-finished spinner.
 The kernel provides services for configuration, plugins, secrets, models, provider
 authentication, files, memory, plans, workflows, skills, sessions, tasks, storage,
 Extension Profiles and runs. These are control-plane APIs rather than model-callable
-MCP tools. The tools capability executes shell and file calls on the host under the process's
-permissions. Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and
+MCP tools. The tools capability executes shell and file calls under the global
+`isolation` preference, defaulting to Host. Sandbox applies only to built-in
+tools and descendants. The global block keeps Sandbox workspace/network
+preferences when Host is selected; a workspace block is ignored without a
+trust prompt. `config.getIsolationStatus` reports the configured preference,
+backend and observed availability; each tool result reports its actual mode.
+Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and
 `dispatch` in `packages/tools/src/core.ts`. Test:
 `packages/kernel/tests/integration/file-kernel.test.ts` and
 `packages/tools/tests/integration/open-authority.test.ts`.
@@ -778,7 +792,7 @@ permissions. Production: `createFileKernel` in `packages/kernel/src/file-kernel.
 
 The kernel publishes exactly one, `kernelSettingsSchema`: the engine's blocks
 plus the ones its capability registry contributes: memory, plans, goals, workflows, tasks and
-runtime placement.
+runtime placement, and isolation.
 Registration happens at module load in `config/capability-registry.ts`, **before**
 any `settings.json` is read — a block registered afterwards reads as an
 unrecognized key.

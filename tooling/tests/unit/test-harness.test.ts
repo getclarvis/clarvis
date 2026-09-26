@@ -185,7 +185,8 @@ describe("checkGateChain", () => {
 describe("checkRootBuild", () => {
   const scripts = {
     build: "bun run build:packages && bun run build:code",
-    "build:packages": "tsc -b",
+    "build:packages":
+      "tsc -b && bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets",
     "build:code": "bun --filter @clarvis/code build",
   };
 
@@ -199,9 +200,15 @@ describe("checkRootBuild", () => {
     );
   });
 
-  test("rejects a library build that no longer owns the solution graph", () => {
-    expect(checkRootBuild({ ...scripts, "build:packages": "echo skip" }).join(" ")).toContain(
-      "tsc -b",
-    );
+  test("rejects a package build missing the graph or either execution asset", () => {
+    for (const incomplete of [
+      "echo skip && bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets",
+      "tsc -b && bun --filter @clarvis/tools build:assets",
+      "tsc -b && bun --filter @clarvis/sandbox build:assets",
+    ]) {
+      expect(checkRootBuild({ ...scripts, "build:packages": incomplete }).join(" ")).toContain(
+        "sandbox assets",
+      );
+    }
   });
 });

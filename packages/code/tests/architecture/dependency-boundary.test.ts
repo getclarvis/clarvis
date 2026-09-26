@@ -14,6 +14,7 @@ const KERNEL_ENTRYPOINTS = new Set([
   "@clarvis/kernel/bootstrap",
   "@clarvis/kernel/config",
   "@clarvis/kernel/policy",
+  "@clarvis/kernel/paths",
   "@clarvis/kernel/local",
   "@clarvis/kernel/logger",
   "@clarvis/kernel/system-docs",

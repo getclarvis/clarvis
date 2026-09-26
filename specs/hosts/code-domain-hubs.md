@@ -23,7 +23,7 @@ sit beside them: `features/issues.ts` (validation issue projection), `features/d
 `features/notice.ts` is recorded in §8 item 8.
 
 All three views reach their data through `@clarvis/protocol` service interfaces or through
-`@clarvis/kernel`'s six sanctioned entrypoints; none of them touches the filesystem or the engine.
+`@clarvis/kernel`'s eight sanctioned entrypoints; none of them touches the filesystem or the engine.
 `WorkflowsHub`'s own doc comment states the rule: "It reads everything through the kernel's
 workflows/runs services, never the local filesystem, so a remote kernel needs no change"
 (`packages/code/src/views/config/WorkflowsHub.tsx`).
@@ -646,9 +646,9 @@ request that has been superseded by a queued one (`packages/code/src/views/confi
 | `adapters/agents-store.ts` | `@clarvis/kernel/config` (`compareAgentDisplayOrder`, `resolveAgentsByName`), `solid-js` | `packages/code/src/adapters/agents-store.ts` |
 | `features/agents/controller.ts` | `solid-js` | `packages/code/src/features/agents/controller.ts` |
 | `views/config/AgentsPanel.tsx` | `solid-js` | `packages/code/src/views/config/AgentsPanel.tsx` |
-| `adapters/agents.ts` | `@clarvis/paths` (types only) | `packages/code/src/adapters/agents.ts` |
+| `adapters/agents.ts` | `@clarvis/kernel/paths` (types only) | `packages/code/src/adapters/agents.ts` |
 
-Only the six kernel entrypoints appear (INV-251) — full statement owned by
+Only the eight kernel entrypoints appear (INV-251) — full statement owned by
 [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 ### 7.2 Inbound

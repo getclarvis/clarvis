@@ -13,8 +13,8 @@
  * Minimal structural logger.
  *
  * @remarks
- * Deliberately **not** `@clarvis/capability`'s `Logger`: this package's only
- * internal dependency is `@clarvis/paths`, and it stays that way. The
+ * Deliberately **not** `@clarvis/capability`'s `Logger`: this package depends on
+ * `@clarvis/paths`, not the capability or sandbox package. The
  * capability port satisfies this shape, so a host passes its own logger
  * straight in. Neither package can see both shapes, so the assignability is
  * pinned one package up, in

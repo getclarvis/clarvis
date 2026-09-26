@@ -18,7 +18,7 @@ import {
   workspacePaths,
   workspaceStatePaths,
   type WorkspaceStatePaths,
-} from "@clarvis/paths";
+} from "@clarvis/kernel/paths";
 
 function tmpDirs(): ClarvisDirs & { state: WorkspaceStatePaths } {
   const root = openTempDir("clarvis-cfg-");

@@ -8,24 +8,21 @@
 `@clarvis/code` is an application package with no `exports` map; its one declared entry point is the
 `clarvis` bin, which points at `src/cli.ts` (`packages/code/package.json`). This subsystem is
 everything between that bin and a painted terminal frame: the flag table, the two textual flags and
-explicit updater that run without loading the application, the choice between the built bundle and the TypeScript
-sources, the headless modes, the interactive boot sequence that constructs a file kernel and a run
+explicit updater that run without loading the application, the TypeScript source entry, the headless modes, the interactive boot sequence that constructs a file kernel and a run
 host, and the Solid/OpenTUI shell that the boot renders.
 
 The organising constraint stated in the source is launch cost. `packages/code/src/cli.ts` records
 that everything statically imported by `cli.ts` "is paid on every launch, including `--version`", and
 that `--help`/`--version` "used to be handled inside `main()`, after the whole 847-file graph had
-loaded, and cost ~2.5 s to print one string". `packages/code/src/cli-entry.ts` records the same
-figure for running the sources instead of the bundle: "roughly 2.5 s a launch: from source Bun
-transpiles the 847-file graph and applies the Solid JSX transform through Babel on every start". Two
-architecture tests exist solely to keep those two properties from regressing
+loaded, and cost ~2.5 s to print one string". The production entry runs source directly; a separate development build checks lazy module boundaries.
+The architecture test keeps the fast-flag static import graph small
 (`packages/code/tests/architecture/cli-fast-path.test.ts`).
 
 The second organising constraint is layering. `packages/code/tests/architecture/architecture-boundary.test.ts`
 enforces four directional rules among `core/`, `adapters/`, `ui/`, `views/` and `features/**/controller.ts`,
 and `packages/code/tests/architecture/dependency-boundary.test.ts`, "imports only its declared Clarvis
-dependencies and approved kernel entrypoints", confines the package to six
-`@clarvis/kernel` entrypoints and three `@clarvis/*` manifest dependencies. `src/index.tsx` is the
+dependencies and approved kernel entrypoints", confines the package to eight
+`@clarvis/kernel` entrypoints and two `@clarvis/*` manifest dependencies. `src/index.tsx` is the
 lightweight renderer entry while `src/runtime.tsx` is the complete composition root. Both are exempt
 from in-process coverage because importing either starts application lifecycle work; PTY smoke and
 architecture tests pin their observable handoff (`tooling/checks/coverage.ts`,
@@ -84,14 +81,12 @@ the checkpoint strip case in [run-status.test.ts](../../packages/code/tests/unit
 | -------------------------------- | -------------------------------------------- | ----------------------------------------------- |
 | bin name                         | `clarvis`                                    | `packages/code/package.json`                    |
 | bin target                       | `src/cli.ts`                                 | `packages/code/package.json`                    |
-| bundle path preferred at runtime | `../dist/index.js` relative to `cli.ts`      | `packages/code/src/cli.ts`                      |
-| source fallback modules          | `@opentui/solid/preload`, then `./index.tsx` | `packages/code/src/cli.ts`                      |
+| runtime modules                 | `@opentui/solid/preload`, then `./index.tsx` | `packages/code/src/cli.ts`                      |
 | package `exports`                | absent (application package)                 | `packages/code/package.json` (no `exports` key) |
 
 The launcher also resolves the checkout or portable-release root from its own `src/cli.ts` path
 and passes it to the host as `CLARVIS_PRODUCT_ROOT`. `createCodeHostKernelOptions` forwards that
-root to `createFileKernel` for product-owned Markdown assets. This path is independent of whether
-`resolveEntry` chooses source or `dist`; the bundle is only the application executable. Production:
+root to `createFileKernel` for product-owned Markdown assets. The application entry and host both run from source. Production:
 `productRootForEntry` in `packages/code/src/cli-entry.ts`, the application entry in
 `packages/code/src/cli.ts`, and `createCodeHostKernelOptions` in
 `packages/code/src/adapters/host-kernel-options.ts`. Test:
@@ -249,9 +244,6 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | `packages/code/src/cli-args.ts`                         | `versionText`                                                                                      | `() => string`                                                                                                                   |
 | `packages/code/src/cli-args.ts`                         | `productVersion`                                                                                   | `() => string`                                                                                                                   |
 | `packages/code/src/cli-args.ts`                         | `parseMode`                                                                                        | `(argv: string[]) => Mode`                                                                                                       |
-| `packages/code/src/cli-entry.ts`                        | `EntryInputs`                                                                                      | `{ distPath: string; distExists: boolean; forceSource: boolean }`                                                                |
-| `packages/code/src/cli-entry.ts`                        | `EntryChoice`                                                                                      | `{kind:"dist"} \| {kind:"source"} \| {kind:"error"; message:string}`                                                             |
-| `packages/code/src/cli-entry.ts`                        | `resolveEntry`                                                                                     | `(inputs: EntryInputs) => EntryChoice`                                                                                           |
 | `packages/code/src/cli-entry.ts`                        | `privateEntry`                                                                                     | `(argv: readonly string[]) => "remote-kernel" \| undefined`                                                                      |
 | `packages/code/src/adapters/remote-kernel-arguments.ts` | `encodeRemoteKernelArguments` / `parseRemoteKernelArguments`                                       | closed bounded base64url launch payload                                                                                          |
 | `packages/code/src/cli-mode.ts`                         | `resolveResumeMeta`                                                                                | `(store, owner, workspace, mode) => SessionMeta \| null`                                                                         |
@@ -311,7 +303,7 @@ do not implement runtime worktree switching:
 
 | Variable                        | Read at                                                                                                                          | Effect                                                                                                                                                                 |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLARVIS_CODE_SOURCE=1`         | `packages/code/src/cli.ts`                                                                                                       | forces the source entry over the bundle                                                                                                                                |
+| `CLARVIS_CODE_SOURCE=1`         | developer launcher                                                                                                                 | legacy development hint; the production launcher always uses source                                                                                                      |
 | `CLARVIS_INSTALL_ROOT`          | `packages/code/src/update/installation.ts` (`managedInstallation`)                                                               | authenticates a versioned portable install for explicit self-update                                                                                                    |
 | `CLARVIS_CODE_DEBUG`            | `packages/code/src/cli-args.ts`                                                                                                  | enables diagnostics unless in `{"", "0", "off", "false", "no"}` (`packages/code/src/cli-args.ts`); its value also doubles as a level (`packages/code/src/cli-args.ts`) |
 | `CLARVIS_CODE_DEBUG_LEVEL`      | `packages/code/src/cli-args.ts`                                                                                                  | level only; takes precedence over the level read out of `CLARVIS_CODE_DEBUG`                                                                                           |
@@ -359,20 +351,6 @@ The usage line comes from `usageText()`, which brackets each flag's alias-or-can
 metavar (`packages/code/src/cli-args.ts`); `metavar()` renders `" <v>"` for a value flag and
 `"[=<v>]"` for an inline one (`packages/code/src/cli-args.ts`). The flag column is padded to
 `max(len(invocation)) + 2` (`packages/code/src/cli-args.ts`).
-
-### 3.3 The missing-bundle error text (`packages/code/src/cli-entry.ts`)
-
-```
-clarvis: no build found at <distPath>
-
-  build it:                     bun --filter @clarvis/code build
-  or reinstall:                 bun run setup
-  or run from source (slower):  CLARVIS_CODE_SOURCE=1 clarvis
-```
-
-The TSDoc states the reason for carrying the fix commands inline: "a missing bundle must never reach
-the user as a module-resolution failure" (`packages/code/src/cli-entry.ts`). Every one of those
-four substrings is asserted in `packages/code/tests/unit/cli-entry.test.ts`.
 
 ### 3.4 The non-TTY refusal (`packages/code/src/adapters/renderer-bootstrap.ts`)
 
@@ -480,36 +458,13 @@ joined row reads `Type / for commands · @ for workspace files · Shift+Tab for 
 
 ### 4.1 `cli.ts` — the fast path, in execution order
 
-| #   | Step                                                                                    | File                       |
-| --- | --------------------------------------------------------------------------------------- | -------------------------- |
-| 1   | static imports: `node:fs` `existsSync`, `node:url`, `./cli-args.ts`, `./cli-entry.ts`   | `packages/code/src/cli.ts` |
-| 2   | `parseMode(process.argv.slice(2))`                                                      | `packages/code/src/cli.ts` |
-| 3   | `help` → write `helpText()`, `process.exit(0)`                                          | `packages/code/src/cli.ts` |
-| 4   | `version` → write `versionText()`, `process.exit(0)`                                    | `packages/code/src/cli.ts` |
-| 5   | compute `distPath` = `../dist/index.js` next to `cli.ts`                                | `packages/code/src/cli.ts` |
-| 6   | `resolveEntry({ distPath, distExists, forceSource })`                                   | `packages/code/src/cli.ts` |
-| 7   | `error` → write message to stderr, `process.exit(1)`                                    | `packages/code/src/cli.ts` |
-| 8   | `dist` → `await import(pathToFileURL(distPath).href)`                                   | `packages/code/src/cli.ts` |
-| 9   | otherwise → `await import("@opentui/solid/preload")` then `await import("./index.tsx")` | `packages/code/src/cli.ts` |
-
-Note what is **not** here: a usage error is not intercepted. `packages/code/src/cli.ts` states this is deliberate
-— "It is a human at a keyboard rather than a scripted call, so it can afford the slow path, and
-delegating keeps validation semantics owned in one place." A `usage-error` therefore falls through to
-step 5, loads the runtime chunk, and is reported by `main()` in `packages/code/src/index.tsx`.
-
-`resolveEntry` implements this precedence (`packages/code/src/cli-entry.ts`):
-
-| Condition         | Result                                                                                                      |
-| ----------------- | ----------------------------------------------------------------------------------------------------------- |
-| `forceSource`     | `{ kind: "source" }` (even when the bundle exists — pinned at `packages/code/tests/unit/cli-entry.test.ts`) |
-| else `distExists` | `{ kind: "dist" }`                                                                                          |
-| else              | `{ kind: "error", message }`                                                                                |
-
-The decision was extracted out of `cli.ts` for a stated reason: "The launcher in `cli.ts` is invisible
-to coverage — Bun instruments only the test process, and `coverage.ts` allowlists the file for
-that reason — so the decision lives here, as a pure function over already-gathered facts, and the
-launcher only performs it" (`packages/code/src/cli-entry.ts`; the allowlist entry is
-`tooling/checks/coverage.ts`).
+`cli.ts` statically imports only the argument and entry helpers. It handles `--help`, `--version`,
+`--update`, and the private remote-host entry before dynamically loading the source UI. The
+interactive path imports `@opentui/solid/preload` followed by `./index.tsx`; the private path
+imports `./remote-host.ts`. An ordinary usage error reaches the same source runtime for its
+canonical message. Production: `packages/code/src/cli.ts` and `privateEntry` in
+`packages/code/src/cli-entry.ts`. Test: `packages/code/tests/architecture/cli-fast-path.test.ts`
+and `packages/code/tests/unit/cli-entry.test.ts`.
 
 ### 4.2 `parseMode` — tokenising and validation order
 
@@ -598,7 +553,7 @@ Interactive worktree bootstrap, diagnostics and Extension Profile selection are 
 canonical workspace (`packages/code/src/runtime.tsx`, `runInteractiveMode`, `runHeadlessMode`).
 
 Before ordinary mode parsing, `privateEntry` recognizes only `--remote-kernel`. The thin launcher
-dynamically loads `remote-host.ts` from source or its separate bundled entry. That process decodes a
+dynamically loads `remote-host.ts` from source. That process decodes a
 closed base64url envelope, canonicalizes its absolute workspace on the remote machine and composes
 the same application FileKernel options as `local-host.ts`. This private entry is the fixed command
 started through SSH; it is not a user-facing mode in `FLAGS`.
@@ -1291,7 +1246,7 @@ Pinned: `packages/code/tests/architecture/cli-fast-path.test.ts`
 (`root product manifest` case).
 
 **INV-CB-3a.** `--update` reaches the mutating updater only through a dynamic import before
-bundle/source entry resolution. `--help`, `--version`, every headless mode, source, `bun link`, and
+loading the source application. `--help`, `--version`, every headless mode, `bun link`, and
 unmanaged installs do not perform the automatic request. A managed interactive TUI may dynamically
 import the separate read-only checker only from `AppShell.afterPaint`; disabling the global Code
 preference prevents that import. Production: `packages/code/src/cli.ts` and
@@ -1331,8 +1286,8 @@ is seen. `packages/code/src/app/command-composition.ts` is exactly such an impor
 not one of the four constrained layers.
 
 **INV-CB-9 (owns INV-251).** Every `@clarvis/kernel…` specifier anywhere in `src/` **or `tests/`** is
-one of the six sanctioned entrypoints (`@clarvis/kernel`, `/bootstrap`, `/config`, `/policy`,
-`/local`, `/logger`), and none of `@clarvis/{capability,loop,memory,plan,tools,skills,tasks,workflows}` appears at
+one of the eight sanctioned entrypoints (`@clarvis/kernel`, `/bootstrap`, `/config`, `/policy`,
+`/local`, `/logger`, `/paths`, `/system-docs`), and none of `@clarvis/{capability,loop,memory,plan,tools,skills,tasks,workflows}` appears at
 all.
 Pinned: `packages/code/tests/architecture/dependency-boundary.test.ts` (entrypoint set forbidden list). The lightweight startup/runtime imports `createLogger` from the narrow
 `@clarvis/kernel/logger` entry; file-kernel construction enters only through a dynamic
@@ -1353,20 +1308,19 @@ chunks therefore remain JavaScript. Production: `packages/code/tsconfig.json`
 by **build-and-ci**, resolves every relative runtime extension and rejects it when a matching
 TypeScript source exists.
 
-**INV-CB-10 (owns INV-252).** The manifest declares exactly three `@clarvis/*` dependencies:
-`@clarvis/kernel`, `@clarvis/paths`, `@clarvis/protocol`.
+**INV-CB-10 (owns INV-252).** The manifest declares exactly two `@clarvis/*` dependencies:
+`@clarvis/kernel` and `@clarvis/protocol`.
 Production: `packages/code/package.json`.
 Pinned: `packages/code/tests/architecture/dependency-boundary.test.ts`, "imports only its declared
 Clarvis dependencies and approved kernel entrypoints".
 
-**INV-CB-11.** `resolveEntry` precedence is `forceSource` → `distExists` → error; `CLARVIS_CODE_SOURCE=1`
-wins over a present bundle.
-Production: `packages/code/src/cli-entry.ts`.
-Pinned: `packages/code/tests/unit/cli-entry.test.ts`.
+**INV-CB-11.** The production launcher imports the TypeScript source entry and remote host; it
+does not resolve a `dist` entry. Production: `packages/code/src/cli.ts`. Test:
+`packages/code/tests/architecture/cli-fast-path.test.ts`.
 
-**INV-CB-12.** The missing-bundle message names the path and all three remedies.
-Production: `packages/code/src/cli-entry.ts`.
-Pinned: `packages/code/tests/unit/cli-entry.test.ts`.
+**INV-CB-12.** A missing development bundle cannot prevent the source launcher from starting.
+Production: `packages/code/src/cli.ts`. Test:
+`packages/code/tests/architecture/cli-fast-path.test.ts`.
 
 **INV-CB-13.** `FLAGS` is the sole source for `--help`, the usage line **and** the package README's CLI
 section — every flag token and every `desc` string appears in all three.
@@ -1685,7 +1639,7 @@ closed in the compact band").
 
 | Situation                                                                                                                          | Handling                                                                                                                                | Exit / effect                                                                                                        | Cite                                                                                                                                            |
 | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| No `dist/index.js` and no `CLARVIS_CODE_SOURCE`                                                                                    | full remedy text on stderr                                                                                                              | exit 1                                                                                                               | `packages/code/src/cli.ts`, `packages/code/src/cli-entry.ts`                                                                                    |
+| Development bundle absent                                                                                                           | source launcher continues normally                                                                                                       | no failure                                                                                                            | `packages/code/src/cli.ts`                                                                                                                       |
 | Unknown flag / missing value / mode conflict / bad `--print` prompt or format                                                      | `usage-error` mode in the lightweight entry; the complete runtime is not imported                                                       | stderr `<message>\n<usage>`, exit 1                                                                                  | `packages/code/src/cli.ts`, `packages/code/src/index.tsx` (`main`)                                                                              |
 | `--extension-profile` names an invalid or missing Extension Profile                                                                | kernel creation/current resolution fails closed or exposes the invalid snapshot; no builtin fallback is substituted                     | invocation fails or the interactive diagnostics view shows the exact issue                                           | [Extension Profiles](extension-profiles.md#6-failure-modes-and-degradation)                                                                     |
 | stdout or stdin is not a TTY in an interactive mode                                                                                | guidance naming every headless mode                                                                                                     | exit 2                                                                                                               | `packages/code/src/adapters/renderer-bootstrap.ts` (`assertInteractiveTTY`)                                                                     |
@@ -1734,9 +1688,9 @@ closed in the compact band").
 | `cli-args.ts`                          | root `../../../package.json`                                                                                                  | value (the **only** one), product version                             | `packages/code/src/cli-args.ts`                                                      |
 | `index.tsx`                            | `@opentui/core`, `@opentui/solid`, `solid-js`                                                                                 | renderer plus the focused startup root                                | `packages/code/src/index.tsx`                                                        |
 | `index.tsx`                            | `cli-args`, `StartupComposer`, renderer/terminal bootstrap                                                                    | value; bounded pre-runtime graph                                      | `packages/code/src/index.tsx`                                                        |
-| `startup-foundation.ts`                | `@clarvis/paths`, `@clarvis/kernel/logger`                                                                                    | minimal workspace/key-source projection while the runtime chunk loads | `packages/code/src/startup-foundation.ts`                                            |
+| `startup-foundation.ts`                | `@clarvis/kernel/paths`, `@clarvis/kernel/logger`                                                                                    | minimal workspace/key-source projection while the runtime chunk loads | `packages/code/src/startup-foundation.ts`                                            |
 | `adapters/workspace-client-manager.ts` | `@clarvis/kernel/bootstrap`                                                                                                   | type-only options plus dynamic `connectOrLaunchLocalKernel` / `connectRemoteKernelOverSsh` factories             | `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`)   |
-| `runtime.tsx`                          | `@clarvis/paths`, `@clarvis/kernel/logger`, OpenTUI/Solid, Node filesystem                                                    | complete headless and interactive composition graph                   | `packages/code/src/runtime.tsx`                                                      |
+| `runtime.tsx`                          | `@clarvis/kernel/paths`, `@clarvis/kernel/logger`, OpenTUI/Solid, Node filesystem                                                    | complete headless and interactive composition graph                   | `packages/code/src/runtime.tsx`                                                      |
 | `views/App.tsx`                        | `../app/command-composition.ts`                                                                                               | value: `registerCodeCommands`                                         | `packages/code/src/views/App.tsx`                                                    |
 | `views/App.tsx`                        | `../app/layout.ts`                                                                                                            | value                                                                 | `packages/code/src/views/App.tsx`                                                    |
 | `app/command-composition.ts`           | `./commands.tsx`, `../features/{agents,providers}/commands.ts`                                                                | value                                                                 | `packages/code/src/app/command-composition.ts`                                       |
@@ -1782,8 +1736,8 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
   `index.tsx` reaches it only through dynamic import after the startup composer paints; the artifact
   contract pins that split (`packages/code/src/index.tsx`, `packages/code/src/runtime.tsx`,
   `packages/code/tests/architecture/artifact-contract.test.ts`).
-- **`@clarvis/paths` is a `core/` violation but a composition-root legality**:
-  `packages/code/tests/architecture/architecture-boundary.test.ts` forbids `@clarvis/paths` under
+- **`@clarvis/kernel/paths` is a `core/` violation but a composition-root legality**:
+  `packages/code/tests/architecture/architecture-boundary.test.ts` forbids path access under
   `core/`; `startup-foundation.ts` and `runtime.tsx` sit outside every constrained layer.
 
 ### 7.5 `adapters/errors.ts` — a duplicate kept for the sake of INV-CB-9
@@ -1795,7 +1749,7 @@ including several on the path evaluated before the first frame. `kernel/src/poli
 run-event mappers and reaches `@clarvis/loop/host`, so that import dragged the host graph and its
 schema construction onto the pre-paint path merely to obtain this helper"
 (`packages/code/src/adapters/errors.ts`) — i.e. importing the real thing would satisfy INV-CB-9 (only
-the six sanctioned `@clarvis/kernel` entrypoints, §5) but would defeat the fast-path measurement
+the eight sanctioned `@clarvis/kernel` entrypoints, §5) but would defeat the fast-path measurement
 `cli-fast-path.test.ts` exists to hold (§7.4's first bullet). The duplication is pinned identical to its
 source rather than merely similar: `packages/code/tests/unit/errors.test.ts` imports both
 `errorText` from `../../src/adapters/errors.ts` and `@clarvis/kernel/policy`'s and asserts the two agree
@@ -1844,10 +1798,9 @@ Its importers span every layer this document's boundary rules separate:
 5. **Run streaming, `run-host.ts`, `kernel-run-client.ts`, `WorkspaceClientManager` and the transcript
    store** are named here only as the objects `runtime.tsx` assembles. Their contracts belong to
    [hosts/code-run-host.md](code-run-host.md).
-6. **The `dist/index.js` bundle's own contract** — what `packages/code/tooling/artifact/build.ts` externalises, what assets
-   it copies, what `tests/architecture/artifact-contract.test.ts` asserts — belongs to
-   [cross-cutting/build-and-ci.md](../cross-cutting/build-and-ci.md). This spec establishes only that `cli.ts` prefers that path when it
-   exists (`packages/code/src/cli.ts`).
+6. **The development bundle's own contract** — what `packages/code/tooling/artifact/build.ts`
+   externalises and checks — belongs to [cross-cutting/build-and-ci.md](../cross-cutting/build-and-ci.md).
+   The production launcher remains source-only (`packages/code/src/cli.ts`).
 7. **The `847-file` and `~2.5 s` figures** appear four times in this subsystem's own prose
    (`packages/code/src/cli.ts`, `packages/code/src/cli-entry.ts`, `packages/code/src/cli-args.ts`, `packages/code/tests/architecture/cli-fast-path.test.ts`) but are not
    re-derivable from the code; no benchmark in this document's scope measures them. `packages/code/tooling/benchmarks/first-paint.ts`

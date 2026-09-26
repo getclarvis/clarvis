@@ -93,6 +93,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`tools-read.md`](execution/tools-read.md) | The three observing tools (`read_file`, `read_image`, `list_dir`) and bounded reads | `tools` |
 | [`tools-mutation.md`](execution/tools-mutation.md) | The four file mutation tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
 | [`tools-shell-and-sessions.md`](execution/tools-shell-and-sessions.md) | Running commands with `shell` and `shell_session`, process trees, killing, bounded capture, and cursors | `tools` |
+| [`sandbox.md`](execution/sandbox.md) | Native launch policy, file worker, process backends and explicit Host recovery | `sandbox`, `tools` |
 | [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |
 | [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees with last-wins precedence; serving catalog, body and confined resource pages through `load_skill` and `read_skill_resource`; and routing named or description-matching skills into the run | `skills`, `kernel`, `loop` |
 
@@ -141,7 +142,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`model-catalog.md`](hosts/model-catalog.md) | The shipped models.dev snapshot, `provider/model` ref parsing and provider resolution, pricing, reasoning-effort floors and where a model's cache mode is derived | `kernel`, `capability`, `code` |
 | [`subscription-providers.md`](hosts/subscription-providers.md) | Local ChatGPT and Grok subscription login, credentials, entitled catalogs, pinned Responses transports, billing separation, coexistence, and local availability | `paths`, `protocol`, `capability`, `loop`, `llm`, `kernel`, `code` |
 | [`sessions.md`](hosts/sessions.md) | A session as a conversation index of turns pointing at runs: the file-backed service with its bounded summary sidecar, and how a client rebuilds a transcript from persisted traces | `kernel`, `code`, `protocol` |
-| [`code-bootstrap.md`](hosts/code-bootstrap.md) | From the `clarvis` bin to a painted frame: the flag table, the two flags answered before the graph loads, bundle-versus-source entry, headless modes and the Solid/OpenTUI shell | `code` |
+| [`code-bootstrap.md`](hosts/code-bootstrap.md) | From the `clarvis` bin to a painted frame: the flag table, fast-path flags, source entry, headless modes and the Solid/OpenTUI shell | `code` |
 | [`code-performance.md`](hosts/code-performance.md) | Startup latency, resident-memory budgets, measurement discipline, measured evidence, and the prioritized reduction plan | `code`, `kernel` |
 | [`code-run-host.md`](hosts/code-run-host.md) | The stateful bridge to the kernel run stream: the in-flight handle, the session, the kernel run client and workspace client manager, and the transcript/activity/session projection stores | `code` |
 | [`loop-scheduling.md`](hosts/loop-scheduling.md) | Memory-only conversation prompt recurrence: interval/cron parsing, bounded fair admission, live-session configuration bindings and TUI controls | `code` |
@@ -168,7 +169,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`observability.md`](cross-cutting/observability.md) | The one `Logger` port and its single backend, the event-name vocabulary, environment-only verbosity, the cost model at hot call sites, and the audit channel | `capability`, `kernel` (repo-wide) |
 | [`agent-interop.md`](cross-cutting/agent-interop.md) | Component-scoped ownership of the shared `.agents` seam, plus the single-owner correspondence tables that make a foreign-dialect hook document degrade instead of silently failing open | `kernel`, `skills`, `capability`, `paths` |
 | [`test-architecture.md`](cross-cutting/test-architecture.md) | Test placement, runner isolation, the pre-commit gate, LCOV-summed coverage floors, and the static TUI scenario inventory | `tooling/`, root config, all workspaces |
-| [`build-and-ci.md`](cross-cutting/build-and-ci.md) | One Bun workspace and lockfile, the two-layer TypeScript configuration, shared lint/format, the `tsc -b` graph, the three CI jobs, the TUI bundle and platform support | root config, `code`, all workspaces |
+| [`build-and-ci.md`](cross-cutting/build-and-ci.md) | One Bun workspace and lockfile, the two-layer TypeScript configuration, shared lint/format, the `tsc -b` graph, the three CI jobs, the development TUI bundle and platform support | root config, `code`, all workspaces |
 | [`distribution-and-updates.md`](cross-cutting/distribution-and-updates.md) | Portable native archives, installers, release trust and publication, explicit self-update, staging and atomic activation | root release config, `code` |
 
 ---

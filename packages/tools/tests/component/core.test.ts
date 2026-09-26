@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { toolDescriptors, tools } from "../../src/tools/registry.ts";
 import { dispatch, listTools } from "../../src/core.ts";
+import { ToolError } from "../../src/errors.ts";
 import {
   makeWorkspace,
   cleanup,
@@ -99,6 +100,52 @@ describe("dispatch — success and error routing", () => {
     expect(resultText(r.content)).toContain("line two");
   });
 
+  it("preserves typed recovery identity on a failed sandbox call", async () => {
+    const r = await dispatch(
+      "shell",
+      { command: "echo ignored" },
+      {
+        ...config,
+        maxToolMetaBytes: 1024,
+        executionPort: {
+          async execute() {
+            throw new ToolError("sandbox_denied", "denied after start", {
+              requested_mode: "sandbox",
+              effective_mode: "sandbox",
+              execution_backend: "bubblewrap",
+              policy_id: "fixture-policy",
+              execution_started: true,
+              sandbox_fallback: false,
+              attempt_id: "attempt-1",
+              attempts: Array.from({ length: 100 }, (_, index) => ({
+                attempt_id: `attempt-${index}`,
+              })),
+              recovery_strategy: "host_recovery",
+              recovery_token: "opaque-token",
+            });
+          },
+        },
+      },
+    );
+    expect(r.isError).toBe(true);
+    expect(JSON.parse(resultText(r.content))).toMatchObject({
+      recovery_strategy: "host_recovery",
+      recovery_token: "opaque-token",
+    });
+    expect(r.meta).toEqual({
+      requested_mode: "sandbox",
+      effective_mode: "sandbox",
+      execution_backend: "bubblewrap",
+      policy_id: "fixture-policy",
+      execution_started: true,
+      sandbox_fallback: false,
+      attempt_id: "attempt-1",
+      truncated: true,
+      truncation_reason: "tool metadata exceeded 1024 bytes",
+    });
+    expect(Buffer.byteLength(JSON.stringify(r.meta), "utf8")).toBeLessThanOrEqual(1024);
+  });
+
   it("routes an unbounded tool's output through the byte-bounder on success", async () => {
     write(root, "a.txt", "x");
     const r = await dispatch("list_dir", {}, config);
@@ -124,6 +171,54 @@ describe("dispatch — success and error routing", () => {
     expect(r.meta).toMatchObject({ truncated: true });
     expect(Buffer.byteLength(JSON.stringify(r.meta), "utf8")).toBeLessThanOrEqual(1_024);
     expect(String(r.meta?.diff)).toContain("[diff truncated to metadata budget]");
+  });
+
+  it("retains execution identity when diagnostic streams and diff exceed the metadata budget", async () => {
+    const r = await dispatch(
+      "read_file",
+      { path: "source.txt" },
+      makeConfig(root, {
+        maxToolMetaBytes: 1_024,
+        executionPort: {
+          async execute() {
+            return {
+              content: "bounded result",
+              meta: {
+                execution_mode: "sandbox",
+                execution_backend: "bubblewrap",
+                policy_id: "fixture-policy",
+                execution_started: true,
+                execution_diagnostic: {
+                  mode: "sandbox",
+                  backend: "bubblewrap",
+                  policyId: "fixture-policy",
+                  executionStarted: true,
+                  stdout: "x".repeat(5_000),
+                  stderr: "y".repeat(5_000),
+                },
+                diff: "z".repeat(5_000),
+              },
+            };
+          },
+        },
+      }),
+    );
+    expect(r.isError).toBe(false);
+    expect(r.meta).toMatchObject({
+      execution_mode: "sandbox",
+      execution_backend: "bubblewrap",
+      policy_id: "fixture-policy",
+      execution_started: true,
+      truncated: true,
+      execution_diagnostic: {
+        mode: "sandbox",
+        backend: "bubblewrap",
+        policyId: "fixture-policy",
+        executionStarted: true,
+      },
+    });
+    expect((r.meta?.execution_diagnostic as Record<string, unknown>).stdout).toBeUndefined();
+    expect(Buffer.byteLength(JSON.stringify(r.meta), "utf8")).toBeLessThanOrEqual(1_024);
   });
 });
 

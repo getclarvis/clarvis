@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { agentsMarketplaceFile, WORKSPACE_ENV } from "@clarvis/paths";
+import { agentsMarketplaceFile, WORKSPACE_ENV } from "@clarvis/kernel/paths";
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
 import {
   addMarketplaceSource,

@@ -70,7 +70,12 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       "CI cancellation contract changed",
     );
     check(
-      equalSet(Object.keys(workflow.jobs), [...LINUX_GATES, "linux", "keyboard-macos"]),
+      equalSet(Object.keys(workflow.jobs), [
+        ...LINUX_GATES,
+        "linux",
+        "sandbox-macos-intel",
+        "keyboard-macos",
+      ]),
       "CI job set is incomplete or unexpected",
     );
     for (const [id, job] of Object.entries(workflow.jobs)) {
@@ -82,13 +87,21 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
         !job["continue-on-error"] && job.permissions === undefined,
         `${id}: job bypass or permissions override forbidden`,
       );
-      if (id !== "linux") check(job.if === undefined, `${id}: unexpected conditional gate`);
+      if (id !== "linux" && id !== "keyboard-macos")
+        check(job.if === undefined, `${id}: unexpected conditional gate`);
       for (const step of job.steps)
         check(
           !step["continue-on-error"] && step.if === undefined,
           `${id}: step bypass or skip forbidden`,
         );
-      const expectedNeeds = id === "linux" ? LINUX_GATES : CONSUMERS.includes(id) ? ["build"] : [];
+      const expectedNeeds =
+        id === "linux"
+          ? LINUX_GATES
+          : id === "keyboard-macos"
+            ? ["sandbox-macos-intel"]
+            : CONSUMERS.includes(id)
+              ? ["build"]
+              : [];
       check(equalSet(needsOf(job), expectedNeeds), `${id}: dependency set changed`);
       if (LINUX_GATES.includes(id) || id === "linux")
         check(job["runs-on"] === "ubuntu-latest", `${id}: Linux runner changed`);
@@ -141,7 +154,10 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       lint: ["bun run lint:eslint"],
       knip: ["bun run knip"],
       checks: ["bun run format:check", "bun run lint:intent", "bun run test:cache"],
-      coverage: ["bash tooling/ci/retry-code-coverage.sh"],
+      coverage: [
+        "bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets",
+        "bash tooling/ci/retry-code-coverage.sh",
+      ],
     };
     for (const id of CONSUMERS) {
       const job = workflow.jobs[id];
@@ -201,9 +217,44 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
         !aggregate.steps[0].run.includes("${{"),
       "linux: needs JSON must enter Bash through environment only",
     );
+    const intel = workflow.jobs["sandbox-macos-intel"];
+    const keyboard = workflow.jobs["keyboard-macos"];
     check(
-      workflow.jobs["keyboard-macos"].name === "keyboard policy (macos)",
+      intel.name === "sandbox native (macos intel)" && intel["runs-on"] === "macos-15-intel",
+      "macOS Intel native runner changed",
+    );
+    ordered(
+      intel,
+      [
+        "bun install --frozen-lockfile",
+        "bun run build:packages",
+        "bun --filter @clarvis/sandbox test:native",
+        "bun --filter @clarvis/tools test:native",
+      ],
+      "sandbox-macos-intel",
+    );
+    check(
+      keyboard.name === "keyboard policy (macos)" &&
+        keyboard["runs-on"] === "macos-15" &&
+        keyboard.if === "${{ always() }}",
       "macOS required status changed",
+    );
+    check(
+      keyboard.steps[0]?.env?.INTEL_RESULT === "${{ needs.sandbox-macos-intel.result }}" &&
+        keyboard.steps[0]?.run === 'test "$INTEL_RESULT" = success',
+      "macOS required status must gate Intel native evidence",
+    );
+    ordered(
+      keyboard,
+      [
+        "bun install --frozen-lockfile",
+        "bun run build:packages",
+        "bun --filter @clarvis/sandbox test:native",
+        "bun --filter @clarvis/tools test:native",
+        "bun --filter @clarvis/tools test",
+        "bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts",
+      ],
+      "keyboard-macos",
     );
     check(
       scripts.lint === "bun run lint:eslint && bun run lint:intent && bun run knip",

@@ -28,9 +28,25 @@ export interface SettingsData {
   providers?: ProviderConfig[];
   mcp_servers?: Record<string, McpServerConfig>;
   memory?: MemoryConfig;
+  isolation?: IsolationSettings;
   budget?: unknown;
   /** Forward-compatible: the kernel owns the exhaustive schema. */
   [block: string]: unknown;
+}
+
+/** Global preference for built-in tool execution. Host ignores workspace and network preferences. */
+export interface IsolationSettings {
+  mode?: "host" | "sandbox";
+  workspace?: "read-only" | "read-write";
+  network?: "enabled" | "disabled";
+}
+
+/** Current operator preference and platform support; each tool result reports its actual mode. */
+export interface IsolationStatus {
+  configured: Required<IsolationSettings>;
+  backend: "bubblewrap" | "seatbelt" | null;
+  availability: "available" | "unavailable" | "unverified";
+  scope: "builtin_tools";
 }
 
 /** One configured LLM / completion provider. */
@@ -288,6 +304,8 @@ export interface ConfigChange {
 export interface ConfigService {
   /** Current settings view (merged + per-scope). */
   getSettings(): Promise<SettingsView>;
+  /** Global built-in execution preference and backend readiness. */
+  getIsolationStatus(): Promise<IsolationStatus>;
 
   /**
    * Preview a safe repair for one corrupt settings scope.

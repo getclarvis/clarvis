@@ -1,5 +1,24 @@
 # The one diagnostic channel: Logger port, vocabulary, cost and audit
 
+Sandbox recovery emits a structured `tools.sandbox_fallback` diagnostic with
+policy ID and reason. For a Sandbox-requested tool, the durable `tool_call`
+trace, protocol event and model-facing result identify the requested and
+effective execution modes; a Host fallback is never represented as a confined
+Sandbox success. A run selected directly for Host has no isolation execution
+envelope because `createIsolationService` supplies no execution port. These are
+separate channels: the diagnostic explains the transition, while the tool
+result records what happened for this operation. Production:
+`CoordinatedToolExecutor` in
+`packages/tools/src/execution/coordinator.ts`,
+`executeAgentToolCall` in
+`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`, and
+`mapEntry` in `packages/trace/src/trace-mapper.ts`, and
+`engineEventToProto` in `packages/kernel/src/runs/map-events.ts`. Test:
+`packages/tools/tests/unit/execution-coordinator.test.ts` and
+`packages/trace/tests/unit/trace-mapper.test.ts` and
+`packages/kernel/tests/unit/isolation-service.test.ts` and
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
+
 > Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
 

@@ -1266,7 +1266,7 @@ capability can live in its own package (`packages/capability/src/index.ts`).
 Fifteen of the other nineteen packages carry a static value edge to `@clarvis/capability` from their
 own `src/`; the four that do not are
 `@clarvis/paths` and `@clarvis/protocol` (both leaves), `@clarvis/tools` (which reaches only
-`@clarvis/paths`) and `@clarvis/code` (which reaches only `@clarvis/kernel`, `@clarvis/paths` and
+`@clarvis/paths`) and `@clarvis/code` (which reaches only `@clarvis/kernel` and
 `@clarvis/protocol` — `packages/code/package.json`).
 Verified samples of the forcing edge:
 

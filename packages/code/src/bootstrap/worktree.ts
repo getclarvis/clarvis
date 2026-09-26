@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
-import { ensureWorkspaceDir, worktreeCheckoutRoot } from "@clarvis/paths";
+import { ensureWorkspaceDir, worktreeCheckoutRoot } from "@clarvis/kernel/paths";
 import type { WorktreeRequest } from "../cli-args.ts";
 
 const OUTPUT_LIMIT = 1024 * 1024;

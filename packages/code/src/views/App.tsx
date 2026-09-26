@@ -37,6 +37,7 @@ import { type ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
+import type { IsolationModeStore } from "../adapters/isolation-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
 import { memoryState, plansState } from "../adapters/execution-safety.ts";
 import type { ThemePreview } from "../theme/theme.ts";
@@ -56,6 +57,7 @@ import type {
   SkillsService,
   RunDetail,
   RuntimeStatus,
+  IsolationStatus,
   StorageService,
   WorkflowsService,
 } from "@clarvis/protocol";
@@ -124,6 +126,10 @@ import { productVersion } from "../cli-args.ts";
 const MemoryPicker = lazy(async () => {
   const module = await import("./overlays/MemoryPicker.tsx");
   return { default: module.MemoryPicker };
+});
+const IsolationPicker = lazy(async () => {
+  const module = await import("./overlays/IsolationPicker.tsx");
+  return { default: module.IsolationPicker };
 });
 
 /** Minimal painted alpha that lets OpenTUI hit-test the pointer blocker without hiding the UI. */
@@ -295,6 +301,7 @@ export interface AppFleet {
   dirs: ClarvisDirs;
   code: CodeConfigStore;
   memoryMode: MemoryModeStore;
+  isolationMode: IsolationModeStore;
   preview: ThemePreview;
   keys: KeysAdapter;
   /** A reactive catalog facade that stays empty until a catalog-backed surface opens. */
@@ -309,6 +316,7 @@ export interface AppFleet {
 /** The kernel-backed services the shell talks to: connection state, MCP client, plans/workflows and run lookup. */
 export interface AppBackend {
   connection: Accessor<ConnectionState>;
+  isolationStatus: () => Promise<IsolationStatus>;
   skillsRevision?: Accessor<number>;
   probe: Accessor<BackendProbe>;
   client: McpClientCaps;
@@ -764,6 +772,10 @@ export function App(props: AppProps): JSX.Element {
       if (props.run.active()) return;
       if (overlays.openPicker("memoryPicker")) notify("");
     },
+    openIsolationPicker: () => {
+      if (props.run.active()) return;
+      if (overlays.openPicker("isolationPicker")) notify("");
+    },
     focusNext: () => {
       ts.clearFocus();
       inputEl?.focus();
@@ -914,7 +926,10 @@ export function App(props: AppProps): JSX.Element {
     run: toggleActivitySidebar,
   });
   createEffect(() => {
-    if (props.run.active() && ["agentPicker", "memoryPicker"].includes(overlays.overlay()))
+    if (
+      props.run.active() &&
+      ["agentPicker", "memoryPicker", "isolationPicker"].includes(overlays.overlay())
+    )
       overlays.dismissTop();
   });
   let notifiedMissingEntryAgent = false;
@@ -1665,6 +1680,26 @@ export function App(props: AppProps): JSX.Element {
                   settings={props.fleet.settings}
                   runModel={resolvedModel()}
                   memory={props.fleet.memoryMode}
+                  active={lifecycle.active}
+                  notify={notify}
+                  onClose={() => overlays.dismissTop()}
+                  onApplied={() => overlays.dismissTop()}
+                />
+              </Suspense>
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() => overlays.overlay() === "isolationPicker"}
+            retention="retain-one"
+            placement="portal"
+          >
+            {(lifecycle) => (
+              <Suspense fallback={<text>Loading isolation{glyph("ellipsis")}</text>}>
+                <IsolationPicker
+                  interaction={interaction}
+                  settings={props.fleet.settings}
+                  isolation={props.fleet.isolationMode}
+                  status={props.backend.isolationStatus}
                   active={lifecycle.active}
                   notify={notify}
                   onClose={() => overlays.dismissTop()}

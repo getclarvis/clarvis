@@ -1,5 +1,17 @@
 # How a host extends the engine: registration, folding and optional packages
 
+The host may pass `resolveAgentExecution` through `BuildRunDepsOptions`.
+Its type-only declaration leaves the tools runtime on the optional import path.
+The tools capability awaits the resolver once per run, shares the resulting
+policy and worker across its agents, and closes the worker after command-session
+drain. Without a resolver, embedded and standalone toolsets keep Host behavior.
+Production: `buildExecuteRunDeps` in
+`packages/loop/src/runtime/build-run-deps.ts` and
+`createAgentToolsCapability` in
+`packages/loop/src/runtime/capabilities/tools.ts`. Test:
+`packages/loop/tests/integration/tools.test.ts` and
+`packages/kernel/tests/unit/isolation-service.test.ts`.
+
 > Implemented at `packages/loop/src/...` and `packages/capability/src/...`. Every claim below is
 > anchored to a file and a named symbol or test. Open questions are collected in the final section.
 

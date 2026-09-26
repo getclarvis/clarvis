@@ -23,6 +23,8 @@ import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
 import type { GoalCreationExecutionPolicy, GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import type { ResolvedIsolationSettings } from "../config/isolation-settings.ts";
+import type { IsolationService } from "../execution/isolation-service.ts";
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
@@ -30,14 +32,15 @@ import type { GoalCreationExecutionPolicy, GoalExecutionPolicy } from "../goals/
 export type RunRequestAssembler = (params: StartRunParams & { execution_id: string }) => unknown;
 
 /** Trusted host preparation; never accepted as a protocol start parameter. */
-export type PreparedRunExecution =
+export type PreparedRunExecution = (
   | {
       kind: "ordinary";
       rawBody: unknown;
       goal?: GoalExecutionPolicy;
       goalCreation?: GoalCreationExecutionPolicy;
     }
-  | { kind: "workflow"; start(): RunHandle };
+  | { kind: "workflow"; start(): RunHandle }
+) & { isolation?: ResolvedIsolationSettings };
 
 /** Run service with a host-only prepared launch sharing ordinary execution-id reservations. */
 export interface KernelRunService extends RunService {
@@ -93,6 +96,7 @@ export interface RunServiceConfig {
   logger?: Logger;
   /** Executes the loop natively or through an explicitly configured isolated runtime. */
   executeRun?: RunExecutor;
+  isolationService?: IsolationService;
 }
 
 /**
@@ -198,10 +202,12 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
       }
       activeIds.add(executionId);
       try {
+        cfg.isolationService?.bind(owner, executionId, prepared?.isolation);
         const handle = startReserved(params, executionId, prepared);
         activeHandles.set(executionId, handle);
         const release = (): void => {
           activeIds.delete(executionId);
+          cfg.isolationService?.release(owner, executionId);
           if (activeHandles.get(executionId) === handle) activeHandles.delete(executionId);
         };
         // `done` settles before the managed stream's optional ingest grace.
@@ -212,6 +218,7 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
         return handle;
       } catch (error) {
         activeIds.delete(executionId);
+        cfg.isolationService?.release(owner, executionId);
         throw error;
       }
     },

@@ -31,6 +31,11 @@
       "types": "./dist/policy.d.ts",
       "import": "./dist/policy.js"
     },
+    "./paths": {
+      "bun": "./src/paths.ts",
+      "types": "./dist/paths.d.ts",
+      "import": "./dist/paths.js"
+    },
     "./local": {
       "bun": "./src/local.ts",
       "types": "./dist/local.d.ts",
@@ -75,6 +80,7 @@
     "@clarvis/paths": "workspace:*",
     "@clarvis/plan": "workspace:*",
     "@clarvis/protocol": "workspace:*",
+    "@clarvis/sandbox": "workspace:*",
     "@clarvis/skills": "workspace:*",
     "@clarvis/tools": "workspace:*",
     "@clarvis/trace": "workspace:*",

@@ -46,6 +46,7 @@ export function createAgentTools(options: AgentToolsOptions): AgentTools {
       if (!(await config.sessionManager.close())) {
         throw new ToolError("io_error", "Command session termination was not confirmed");
       }
+      await config.executionPort?.close?.();
     },
   };
 }
@@ -73,6 +74,10 @@ export {
 } from "./config.ts";
 export type { RuntimeConfig, AgentToolsOptions } from "./config.ts";
 export { ExecutionSessionManager } from "./lib/execution-session.ts";
+export { hostToolExecutor } from "./execution/host.ts";
+export { SandboxToolExecutor, sandboxWorkerRoot } from "./execution/sandbox.ts";
+export { CoordinatedToolExecutor } from "./execution/coordinator.ts";
+export type { ToolExecutionPort } from "./execution/port.ts";
 export { systemTemporaryRoots } from "./lib/system-temporary-roots.ts";
 export { resolveShell, shellArgs } from "./shell.ts";
 export type { ShellSpec } from "./shell.ts";

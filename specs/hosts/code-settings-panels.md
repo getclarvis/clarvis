@@ -160,6 +160,17 @@ Production: `MemoryPicker` in `packages/code/src/views/overlays/MemoryPicker.tsx
 Test: `packages/code/tests/integration/app-shell-render.test.tsx` and
 `packages/code/tests/unit/memory-mode.test.ts`.
 
+`Ctrl+X I` opens the isolation picker with Host and Sandbox choices. Sandbox preferences for
+workspace write access and tool network access are independent subpickers and persist globally
+through the connected kernel, including SSH. A failed write leaves the previous radio active;
+external settings reload updates the next-run choice. The preview reports backend availability
+and automatic Host fallback without claiming continuous confinement. Production:
+`IsolationPicker` in `packages/code/src/views/overlays/IsolationPicker.tsx`,
+`createIsolationModeStore` and `saveIsolationChoice` in
+`packages/code/src/adapters/isolation-mode.ts`, and `createWorkspaceAdapters` in
+`packages/code/src/runtime.tsx`. Test: `packages/code/tests/unit/isolation-mode.test.ts` and
+`packages/code/tests/integration/app-shell-render.test.tsx`.
+
 `UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
 toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global
 document, and writes through the scope-free `writeUpdateCheckEnabled` global writer. A workspace
@@ -1473,7 +1484,7 @@ cases).
 | `ExtensionProfileBrowser.tsx` | `@clarvis/protocol` (`ExtensionProfileService` and Extension Profile DTOs) | type-only | `packages/code/src/views/config/ExtensionProfileBrowser.tsx` |
 | `adapters/models-catalog.ts` | `@clarvis/protocol` catalog DTOs + `@clarvis/kernel/config` `parseModelRef` | runtime + type | `packages/code/src/adapters/models-catalog.ts` |
 
-Every one of those is one of the six sanctioned kernel entrypoints (INV-251) — full statement owned
+Every one of those is one of the eight sanctioned kernel entrypoints (INV-251) — full statement owned
 by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 ### 7.2 Internal edges

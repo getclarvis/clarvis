@@ -38,7 +38,6 @@
   },
   "dependencies": {
     "@clarvis/kernel": "workspace:*",
-    "@clarvis/paths": "workspace:*",
     "@clarvis/protocol": "workspace:*",
     "@opentui/core": "0.5.9",
     "@opentui/keymap": "0.5.9",

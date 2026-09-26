@@ -1,5 +1,15 @@
 # Hosted run observation and ownership
 
+The hosted file kernel's built-in tool executor uses the same owner-scoped
+isolation binding as a foreground run. Disconnecting a client does not release
+the binding; run closure does. Prepared work and later workflow leaders retain
+the global preference captured at admission. Production: `createFileKernel` in
+`packages/kernel/src/file-kernel.ts`, `createRunService` in
+`packages/kernel/src/runs/run-service.ts`, and `createWorkflowsService` in
+`packages/kernel/src/workflows/workflows-service.ts`. Test:
+`packages/kernel/tests/unit/isolation-service.test.ts` and
+`packages/kernel/tests/integration/isolation-settings.test.ts`.
+
 > Production: [hosting.ts](../../packages/protocol/src/hosting.ts) defines the transport-independent
 > hosted-run boundary. [projection.ts](../../packages/kernel/src/hosting/projection.ts) owns bounded
 > observation storage. [local-host.ts](../../packages/paths/src/local-host.ts) owns the private path

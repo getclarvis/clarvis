@@ -1,4 +1,5 @@
 import { warn } from "./lib/log.ts";
+import { isIsolationSetupError } from "./execution/isolation-port.ts";
 
 /**
  * The closed set of machine-readable error codes a {@link ToolError} may carry.
@@ -24,6 +25,10 @@ export const ERROR_CODES = [
   "denied",
   "too_many_sessions",
   "internal",
+  "sandbox_unavailable",
+  "sandbox_setup_failed",
+  "sandbox_denied",
+  "outcome_unknown",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -66,6 +71,20 @@ export class ToolError extends Error {
  *   goes to the warn sink and the caller sees only `internal error`.
  */
 export function serializeError(err: unknown): string {
+  if (isIsolationSetupError(err)) {
+    return JSON.stringify({
+      error: err.code,
+      message: err.message,
+      execution_started: false,
+      ...(err.boundary
+        ? {
+            execution_mode: "sandbox",
+            execution_backend: err.boundary.backend,
+            policy_id: err.boundary.policyId,
+          }
+        : {}),
+    });
+  }
   if (err instanceof ToolError) {
     return JSON.stringify({ error: err.code, message: err.message, ...err.fields });
   }
@@ -114,5 +133,8 @@ export function fsError(err: NodeJS.ErrnoException, path: string): ToolError {
       platform: process.platform,
     },
   });
-  return new ToolError("io_error", `${err.code ?? "EIO"}: ${err.message}`, { path });
+  return new ToolError("io_error", `${err.code ?? "EIO"}: ${err.message}`, {
+    path,
+    errno_code: err.code ?? "EIO",
+  });
 }

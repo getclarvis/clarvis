@@ -207,8 +207,9 @@ deletion, cleanup and recovery. A view accepts only matching writes and cannot b
 
 `tool_call_started.control` preserves the opaque execution token and its `interrupt` action through
 detail caps, mapping and persistence. It is historical data on replay, never authority to control a
-new run. A confirmed selective terminal carries `tool_call.interruption: { source: "operator" }`;
-the terminal closes the live control. Old events omit both fields. Orphan repair synthesizes an
+new run. A confirmed selective terminal carries `tool_call.interruption: { source: "operator" }`
+and closes the live control. The terminal also preserves its requested/effective isolation and
+attempt identity when present. Old events omit these fields. Orphan repair synthesizes an
 operational failure without attributing it to the operator. See the
 [trace contract](../../specs/foundations/trace.md).
 

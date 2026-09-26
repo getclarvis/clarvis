@@ -1,6 +1,6 @@
 import { serveRemoteFileKernelOverStdio } from "@clarvis/kernel/bootstrap";
 import { createLogger } from "@clarvis/kernel/logger";
-import { globalPaths } from "@clarvis/paths";
+import { globalPaths } from "@clarvis/kernel/paths";
 import { createCodeHostKernelOptions } from "./adapters/host-kernel-options.ts";
 import { resolveLocalKernelArtifact } from "./adapters/local-kernel-artifact.ts";
 import { parseRemoteKernelArguments } from "./adapters/remote-kernel-arguments.ts";

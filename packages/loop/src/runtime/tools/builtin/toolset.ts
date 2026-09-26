@@ -6,6 +6,7 @@ import {
   type RuntimeConfig,
   type ToolsLogger,
   type ExecutionSessionManager,
+  type AgentToolsOptions,
 } from "@clarvis/tools";
 import type { NamespacedTool } from "@clarvis/capability";
 import type { ToolResultImage } from "@clarvis/capability";
@@ -26,6 +27,9 @@ export interface AgentToolsetOptions {
   temporaryRoots?: readonly string[];
   sessionManager?: ExecutionSessionManager;
   sessionAgent?: object;
+  executionPort?: AgentToolsOptions["executionPort"];
+  executionPolicy?: AgentToolsOptions["executionPolicy"];
+  sandboxBackend?: AgentToolsOptions["sandboxBackend"];
   /** Credential env-var names withheld from every spawned command. */
   secretEnvNames?: readonly string[];
   /**
@@ -51,6 +55,21 @@ export interface AgentToolResult {
   text: string;
   images?: ToolResultImage[];
   diff?: string;
+  execution?: {
+    requested_mode: "host" | "sandbox";
+    effective_mode: "host" | "sandbox";
+    backend: "host" | "bubblewrap" | "seatbelt";
+    policy_id: string;
+    fallback: boolean;
+    reason?: string;
+    attempt_id?: string;
+    attempts?: readonly {
+      attempt_id: string;
+      mode: "host" | "sandbox";
+      execution_started: boolean;
+      reason?: string;
+    }[];
+  };
 }
 
 /**
@@ -151,6 +170,9 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
       ...(opts.temporaryRoots !== undefined ? { temporaryRoots: opts.temporaryRoots } : {}),
       ...(opts.sessionManager !== undefined ? { sessionManager: opts.sessionManager } : {}),
       ...(opts.sessionAgent !== undefined ? { sessionAgent: opts.sessionAgent } : {}),
+      ...(opts.executionPort !== undefined ? { executionPort: opts.executionPort } : {}),
+      ...(opts.executionPolicy !== undefined ? { executionPolicy: opts.executionPolicy } : {}),
+      ...(opts.sandboxBackend !== undefined ? { sandboxBackend: opts.sandboxBackend } : {}),
       ...(opts.secretEnvNames !== undefined ? { secretEnvNames: opts.secretEnvNames } : {}),
       ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     });
@@ -169,6 +191,43 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
             .filter((p) => p.type === "image")
             .map((p) => ({ data: p.data, mediaType: p.mimeType }));
           const diff = typeof r.meta?.diff === "string" ? r.meta.diff : undefined;
+          const meta = r.meta;
+          const execution: AgentToolResult["execution"] =
+            meta?.requested_mode === "sandbox" &&
+            (meta.effective_mode === "sandbox" || meta.effective_mode === "host") &&
+            (meta.execution_backend === "bubblewrap" ||
+              meta.execution_backend === "seatbelt" ||
+              meta.effective_mode === "host") &&
+            typeof meta.policy_id === "string"
+              ? {
+                  requested_mode: "sandbox" as const,
+                  effective_mode: meta.effective_mode,
+                  backend: (meta.effective_mode === "host" ? "host" : meta.execution_backend) as
+                    "host" | "bubblewrap" | "seatbelt",
+                  policy_id: meta.policy_id,
+                  fallback: meta.sandbox_fallback === true,
+                  ...(typeof meta.fallback_reason === "string"
+                    ? { reason: meta.fallback_reason }
+                    : {}),
+                  ...(typeof meta.attempt_id === "string" ? { attempt_id: meta.attempt_id } : {}),
+                  ...(Array.isArray(meta.attempts) &&
+                  meta.attempts.every(
+                    (attempt: unknown) =>
+                      typeof attempt === "object" &&
+                      attempt !== null &&
+                      typeof (attempt as Record<string, unknown>).attempt_id === "string" &&
+                      ((attempt as Record<string, unknown>).mode === "host" ||
+                        (attempt as Record<string, unknown>).mode === "sandbox") &&
+                      typeof (attempt as Record<string, unknown>).execution_started === "boolean",
+                  )
+                    ? {
+                        attempts: meta.attempts as NonNullable<
+                          AgentToolResult["execution"]
+                        >["attempts"],
+                      }
+                    : {}),
+                }
+              : undefined;
           const text = contentText(r.content);
           return {
             isError: r.isError,
@@ -178,6 +237,7 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
               : {}),
             ...(images.length > 0 ? { images } : {}),
             ...(diff ? { diff } : {}),
+            ...(execution === undefined ? {} : { execution }),
           };
         }),
     };

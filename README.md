@@ -203,7 +203,7 @@ the RC's pinned Bun version. See the
 
 ## Packages
 
-Clarvis is one product made from 20 private, unversioned workspace packages. They are implementation
+Clarvis is one product made from 18 private, unversioned workspace packages. They are implementation
 units and are not published independently.
 
 | Package                                        | Role                | Path                   | Description                                                           |
@@ -215,6 +215,7 @@ units and are not published independently.
 | [`@clarvis/mcp-client`](packages/mcp-client)   | execution service   | `packages/mcp-client`  | MCP transports, connections, and pooling.                             |
 | [`@clarvis/supervision`](packages/supervision) | execution service   | `packages/supervision` | Run-scoped parent/child observation and control.                      |
 | [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.                |
+| [`@clarvis/sandbox`](packages/sandbox)         | execution service   | `packages/sandbox`     | Native process policy and Linux/macOS launch backends.                |
 | [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                         |
 | [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                           |
 | [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                         |

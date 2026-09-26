@@ -163,6 +163,30 @@ const RUN_EVENT_SCHEMAS = {
       result: text.optional(),
       error: text.optional(),
       diff: text.optional(),
+      execution: z
+        .object({
+          requested_mode: z.enum(["host", "sandbox"]),
+          effective_mode: z.enum(["host", "sandbox"]),
+          backend: z.enum(["host", "bubblewrap", "seatbelt"]),
+          policy_id: text,
+          fallback: z.boolean(),
+          reason: text.optional(),
+          attempt_id: text.optional(),
+          attempts: z
+            .array(
+              z
+                .object({
+                  attempt_id: text,
+                  mode: z.enum(["host", "sandbox"]),
+                  execution_started: z.boolean(),
+                  reason: text.optional(),
+                })
+                .strict(),
+            )
+            .optional(),
+        })
+        .strict()
+        .optional(),
       control: z
         .object({
           tool_execution_id: text,

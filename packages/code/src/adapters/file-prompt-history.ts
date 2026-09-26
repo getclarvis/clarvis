@@ -1,4 +1,4 @@
-import { DIR_MODE, FILE_MODE, workspaceStatePaths } from "@clarvis/paths";
+import { DIR_MODE, FILE_MODE, workspaceStatePaths } from "@clarvis/kernel/paths";
 import { closeSync, fstatSync, openSync, promises as fs, readSync } from "node:fs";
 import { dirname } from "node:path";
 import {

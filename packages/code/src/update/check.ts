@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 
-import { globalPaths, writeFileAtomic } from "@clarvis/paths";
+import { globalPaths, writeFileAtomic } from "@clarvis/kernel/paths";
 import {
   RELEASE_REPOSITORY,
   compareProductVersions,

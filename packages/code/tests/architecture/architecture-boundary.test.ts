@@ -171,7 +171,10 @@ describe("code's internal architecture", () => {
       )
         return [];
       return specifiersIn(file)
-        .filter((specifier) => specifier.startsWith("@clarvis/kernel"))
+        .filter(
+          (specifier) =>
+            specifier.startsWith("@clarvis/kernel") && specifier !== "@clarvis/kernel/paths",
+        )
         .map((specifier) => ({ file: relativeFile, specifier }));
     });
     expect(offenders).toEqual([]);

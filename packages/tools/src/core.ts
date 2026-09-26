@@ -1,10 +1,12 @@
 import { Ajv, type ValidateFunction } from "ajv";
+import { randomUUID } from "node:crypto";
 import { ToolError, serializeError } from "./errors.ts";
 import { bound } from "./lib/output.ts";
 import { tools, getTool, selectSurface } from "./tools/registry.ts";
 import { textPart, type ContentPart, type ToolResult } from "./tools/content.ts";
 import type { ToolCallHooks } from "./tools/types.ts";
 import type { RuntimeConfig } from "./config.ts";
+import { hostToolExecutor } from "./execution/host.ts";
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true, coerceTypes: true });
 const validators = new Map<string, ValidateFunction>();
@@ -27,8 +29,30 @@ function normalizeOutput(out: string | ToolResult): ToolResult {
   return typeof out === "string" ? { content: out } : out;
 }
 
-function errorResult(err: unknown): DispatchResult {
-  return { isError: true, content: [textPart(serializeError(err))] };
+function errorResult(err: unknown, maxMetaBytes?: number): DispatchResult {
+  const fields = err instanceof ToolError ? err.fields : undefined;
+  const sandboxError = fields?.execution_mode === "sandbox" && typeof fields.policy_id === "string";
+  const meta =
+    (sandboxError || fields?.requested_mode === "sandbox") && typeof fields?.policy_id === "string"
+      ? {
+          requested_mode: "sandbox",
+          effective_mode: fields.effective_mode === "host" ? "host" : "sandbox",
+          sandbox_fallback: fields.sandbox_fallback === true,
+          attempt_id: typeof fields.attempt_id === "string" ? fields.attempt_id : randomUUID(),
+          ...Object.fromEntries(
+            ["execution_backend", "policy_id", "execution_started", "attempts", "fallback_reason"]
+              .filter((key) => fields[key] !== undefined)
+              .map((key) => [key, fields[key]]),
+          ),
+        }
+      : undefined;
+  return {
+    isError: true,
+    content: [textPart(serializeError(err))],
+    ...(meta === undefined
+      ? {}
+      : { meta: maxMetaBytes === undefined ? meta : boundMeta(meta, maxMetaBytes) }),
+  };
 }
 
 function boundParts(
@@ -43,10 +67,46 @@ function boundParts(
 function boundMeta(meta: Record<string, unknown>, maxBytes: number): Record<string, unknown> {
   const encoded = JSON.stringify(meta);
   if (Buffer.byteLength(encoded, "utf8") <= maxBytes) return meta;
-  const base = {
+  const identity = Object.fromEntries(
+    [
+      "execution_mode",
+      "execution_backend",
+      "policy_id",
+      "execution_started",
+      "sandbox_fallback",
+      "execution_diagnostic",
+      "requested_mode",
+      "effective_mode",
+      "attempt_id",
+      "attempts",
+      "fallback_reason",
+    ]
+      .filter((key) => meta[key] !== undefined)
+      .map((key) => [key, meta[key]]),
+  );
+  let base: Record<string, unknown> = {
+    ...identity,
     truncated: true,
     truncation_reason: `tool metadata exceeded ${String(maxBytes)} bytes`,
   };
+  if (Buffer.byteLength(JSON.stringify(base), "utf8") > maxBytes) {
+    const diagnostic = base.execution_diagnostic;
+    if (typeof diagnostic === "object" && diagnostic !== null && !Array.isArray(diagnostic)) {
+      const withoutStreams = { ...diagnostic } as Record<string, unknown>;
+      delete withoutStreams.stdout;
+      delete withoutStreams.stderr;
+      base = { ...base, execution_diagnostic: withoutStreams };
+    }
+  }
+  if (Buffer.byteLength(JSON.stringify(base), "utf8") > maxBytes) {
+    delete base.execution_diagnostic;
+  }
+  if (Buffer.byteLength(JSON.stringify(base), "utf8") > maxBytes) {
+    delete base.attempts;
+  }
+  if (Buffer.byteLength(JSON.stringify(base), "utf8") > maxBytes) {
+    base = { truncated: true, truncation_reason: base.truncation_reason };
+  }
   const diff = typeof meta.diff === "string" ? meta.diff : undefined;
   if (diff === undefined) return base;
 
@@ -135,7 +195,10 @@ export async function dispatch(
   }
 
   try {
-    const { content, meta } = normalizeOutput(await tool.handler(filled, config, signal, hooks));
+    const executor = config.executionPort ?? hostToolExecutor;
+    const { content, meta } = normalizeOutput(
+      await executor.execute(tool, filled, config, signal, hooks),
+    );
     const parts = typeof content === "string" ? [textPart(content)] : content;
     return {
       isError: false,
@@ -143,7 +206,7 @@ export async function dispatch(
       ...(meta ? { meta: boundMeta(meta, config.maxToolMetaBytes) } : {}),
     };
   } catch (err) {
-    const failed = errorResult(err);
+    const failed = errorResult(err, config.maxToolMetaBytes);
     return failed;
   }
 }

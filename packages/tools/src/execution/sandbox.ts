@@ -69,7 +69,10 @@ function policyDenied(
     isAbsolute(path) ? resolve(path) : resolve(policy.workspaceRoot, path),
   );
   if (!target) return undefined;
-  const explicitDeny = policy.denies.some((deny) => within(target, deny));
+  const explicitDeny = policy.denies.some((deny) => {
+    const canonicalDeny = canonicalTarget(deny);
+    return canonicalDeny !== undefined && within(target, canonicalDeny);
+  });
   const readonlyWorkspace =
     policy.workspaceAccess === "read-only" &&
     within(target, policy.workspaceRoot) &&

@@ -30,7 +30,9 @@ function readonlyWorkspaceMutation(error: unknown, tool: ToolDef, config: Runtim
   if (!target) return false;
   if (
     config.executionPolicy.denies.some((deny) => {
-      const suffix = relative(deny, target);
+      const canonicalDeny = canonicalTarget(deny);
+      if (!canonicalDeny) return true;
+      const suffix = relative(canonicalDeny, target);
       return (
         suffix === "" || (suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))
       );

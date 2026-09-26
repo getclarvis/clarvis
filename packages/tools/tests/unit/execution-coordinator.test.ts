@@ -322,7 +322,7 @@ test("Seatbelt read-only denial recovers only for a workspace file outside expli
     mkdirSync(home);
     const workspaceAlias = join(root, "workspace-alias");
     symlinkSync(workspace, workspaceAlias);
-    const denied = join(workspace, "private.txt");
+    const denied = join(workspaceAlias, "private.txt");
     const policy = createExecutionPolicy({
       id: "seatbelt-readonly-recovery",
       mode: "sandbox",

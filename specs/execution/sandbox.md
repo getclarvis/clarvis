@@ -280,7 +280,8 @@ its nearest existing canonical ancestor so macOS `/var` aliases and an absent
 configuration directory retain that recovery. Seatbelt
 `EPERM` also qualifies for a single-file mutation in a read-only workspace
 outside explicit denies, after resolving path aliases through the same canonical
-target.
+target. Explicit denies are compared through their canonical targets as well;
+an unresolved deny cannot authorize a read-only Host replay.
 Other denied paths retain their Sandbox error.
 
 Production: `CoordinatedToolExecutor` in

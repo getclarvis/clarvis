@@ -76,7 +76,7 @@ export list (`packages/memory/src/index.ts`).
 | `enqueueFinishedRun` | `(a: {...}) => Promise<void>` (never rejects) | `packages/memory/src/ingest.ts` |
 | `MemoryIngestNotice` | type | `packages/memory/src/ingest.ts` |
 | `storedExecutionToRunSnapshot`, `firstUserText` | fns | `packages/memory/src/run-snapshot.ts` |
-| `captureWorkspaceState` | `(cwd, logger?) => Promise<WorkspaceState \| undefined>` | `packages/memory/src/workspace-state.ts` |
+| `captureWorkspaceState` | `(cwd, logger?, environment?) => Promise<WorkspaceState \| undefined>` | `packages/memory/src/workspace-state.ts` |
 | `composeMemoryPolicy`, `loadMemoryPolicy`, `MEMORY_POLICY_MAX_CHARS` (4000) | fns / const | `packages/memory/src/recording-policy.ts` |
 
 Re-export site: `packages/memory/src/capability.ts`.
@@ -262,10 +262,13 @@ re-truncated to 2000 chars (`packages/memory/src/run-snapshot.ts`); a `tool_call
 treated as MCP — `mcp_name` becomes the tool name and `server` is omitted (`packages/memory/src/run-snapshot.ts`);
 capability-contributed events are skipped via `isBuiltinTraceEvent` (`packages/memory/src/run-snapshot.ts`).
 
-`captureWorkspaceState(cwd)` obtains branch, commit and dirty state from the explicitly selected
+`captureWorkspaceState(cwd, logger?, environment?)` obtains branch, commit and dirty state from the explicitly selected
 workspace. Its three Git probes remove Git's repository-local environment before using `cwd`, so a
 Clarvis process launched by a parent hook cannot substitute that parent's repository or temporary
-index (`packages/memory/src/workspace-state.ts`). Probe failure remains best-effort:
+index (`packages/memory/src/workspace-state.ts`). The optional environment is applied to every
+probe without replacing `process.env` in tests; omission reads the live environment at call time.
+Production: `packages/memory/src/workspace-state.ts` (`captureWorkspaceState`, `git`). Test:
+`packages/memory/tests/integration/workspace-state.test.ts`. Probe failure remains best-effort:
 it returns `undefined` and emits only the debug diagnostic.
 
 ### 3.6 The composed recording policy
@@ -841,7 +844,7 @@ ledger never appears in the document listing.
 Production: `packages/memory/src/file-store/jobs.ts` (exclusive-of-tree `.state/indexed`
 directory).
 Test: `packages/memory/src/testing.ts`, driven against both backends from
-`packages/memory/tests/contract/store.test.ts`.
+`packages/memory/tests/contract/physical/store.test.ts`.
 
 **INV-124.** Enqueuing for a run id already queued returns the original record untouched — the
 original `enqueued_at` wins — and queue counts reflect exactly the distinct jobs.

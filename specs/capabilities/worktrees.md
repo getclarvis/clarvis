@@ -15,7 +15,7 @@ Production: `packages/code/src/cli-args.ts` (`FlagSpec.optionalValue`, `parseMod
 `packages/code/src/index.tsx` (`main`);
 `packages/code/src/runtime.tsx` (`runApp`, `runHeadlessMode`).
 
-Test: `packages/code/tests/unit/cli-args.test.ts`;
+Test: `packages/code/tests/integration/cli-args.test.ts`;
 `packages/code/tests/integration/worktree-bootstrap.test.ts`.
 
 ## 2. Location and naming
@@ -96,7 +96,7 @@ Production: `packages/code/src/runtime.tsx` (`runApp`, `connectWorkspaceManager`
 `packages/kernel/src/git-workspace.ts` (`discoverGitWorkspace`);
 `packages/kernel/src/file-kernel.ts` (`createFileKernel`).
 
-Test: `packages/code/tests/component/workspace-client-manager.test.ts`;
+Test: `packages/code/tests/integration/workspace-client-manager.test.ts`;
 `packages/code/tests/unit/workspace-runtime.test.ts`;
 `packages/kernel/tests/integration/file-kernel.test.ts`.
 
@@ -105,7 +105,7 @@ Test: `packages/code/tests/component/workspace-client-manager.test.ts`;
 
 1. **One process owns one canonical workspace for its entire lifetime.**
    Production: `packages/code/src/runtime.tsx`; `packages/code/src/adapters/workspace-client-manager.ts`.
-   Test: `packages/code/tests/component/workspace-client-manager.test.ts`.
+   Test: `packages/code/tests/integration/workspace-client-manager.test.ts`.
 
 2. **Git's registered worktree list is the only worktree authority.**
    Production: `packages/code/src/bootstrap/worktree.ts` (`bootstrapWorktree`).

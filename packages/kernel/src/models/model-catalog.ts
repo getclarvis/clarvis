@@ -673,11 +673,12 @@ export function projectModelsDevApi(raw: unknown): CatalogData {
 /**
  * Fetches the live models.dev JSON API.
  *
+ * @param fetcher - host fetch function; defaults to the live runtime implementation.
  * @returns the raw decoded JSON payload, to be passed to {@link projectModelsDevApi}.
  * @throws Error when the HTTP response is not `ok` (message carries the status).
  */
-export async function fetchModelsDevApi(): Promise<unknown> {
-  const res = await fetch(MODELS_DEV_URL, {
+export async function fetchModelsDevApi(fetcher: typeof fetch = fetch): Promise<unknown> {
+  const res = await fetcher(MODELS_DEV_URL, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(MODEL_CATALOG_FETCH_TIMEOUT_MS),
   });
@@ -735,6 +736,7 @@ function isPlausibleCatalog(data: CatalogData): boolean {
  * under `configDir`.
  *
  * @param configDir - config dir under which the refreshed cache is written.
+ * @param fetcher - host fetch function forwarded to {@link fetchModelsDevApi}.
  * @returns the provider and model counts written, plus the cache file path.
  * @throws Error when the models.dev fetch fails (see {@link fetchModelsDevApi}), or when the
  *   projection carries no models at all — see {@link isPlausibleCatalog} for why that is refused
@@ -742,8 +744,9 @@ function isPlausibleCatalog(data: CatalogData): boolean {
  */
 export async function refreshModelsCatalog(
   configDir: string,
+  fetcher: typeof fetch = fetch,
 ): Promise<{ providers: number; models: number; path: string }> {
-  const data = projectModelsDevApi(await fetchModelsDevApi());
+  const data = projectModelsDevApi(await fetchModelsDevApi(fetcher));
   if (!isPlausibleCatalog(data)) {
     throw new Error(
       "models.dev returned a payload this build cannot read: it projected to no models at all. " +
@@ -783,6 +786,8 @@ function toProtoProvider(p: CatalogProvider): ProtoCatalogProvider {
  *
  * @param configDir - config dir whose cache backs the served catalog and receives
  *   refreshes.
+ * @param logger - diagnostics for serving the catalog.
+ * @param fetcher - host fetch function used by `refresh`; defaults to the live runtime implementation.
  * @returns a service whose `get` projects the current local catalog to the wire
  *   {@link ProtoModelCatalog} and whose `refresh` first downloads and re-caches
  *   from models.dev, then returns the rebuilt catalog.
@@ -792,6 +797,7 @@ function toProtoProvider(p: CatalogProvider): ProtoCatalogProvider {
 export function createModelCatalogService(
   configDir: string,
   logger: Logger = NOOP_LOGGER,
+  fetcher: typeof fetch = fetch,
 ): ModelCatalogService {
   const build = (): ProtoModelCatalog => {
     const cat = createModelsCatalog(configDir, logger);
@@ -812,7 +818,7 @@ export function createModelCatalogService(
       return build();
     },
     async refresh(): Promise<ProtoModelCatalog> {
-      await refreshModelsCatalog(configDir);
+      await refreshModelsCatalog(configDir, fetcher);
       return build();
     },
     async getEntitled(): Promise<never> {

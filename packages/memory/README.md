@@ -380,7 +380,9 @@ indexer runtime to become available.
 | debug | `memory.workspace_state.unavailable` | `cause`                                                                                                            |
 
 Workspace-state capture runs Git against the explicit workspace directory after removing Git's
-repository-local environment. A parent hook's temporary index or repository routing therefore cannot
+repository-local environment. It accepts an optional supplied environment; without it, capture reads
+the process environment at call time. Tests pass their own environment to the Git probe.
+A parent hook's temporary index or repository routing therefore cannot
 replace the branch, commit, or dirty state stored in a `RunSnapshot`; transport-neutral process inputs
 remain inherited. A missing repository, missing Git executable, timeout, or other probe failure still
 degrades to an absent `workspace_state` and the debug event above. The three probes run in parallel,
@@ -534,3 +536,10 @@ Durable indexing jobs persist a distinct agent instance and reserve execution id
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+
+## Test suites
+
+`bun --filter @clarvis/memory test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/memory test:integration` runs this package's common physical test cases. `bun --filter @clarvis/memory test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

@@ -45,7 +45,7 @@ Test: [git-changes-provider.test.ts](../../packages/kernel/tests/integration/git
 Wire methods `changes.availability`, `changes.list`, and `changes.read` are ordinary file-sensitive
 reads. Production: `OPERATIONS.changes` in
 [operations.ts](../../packages/kernel/src/transport/operations.ts).
-Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts).
 
 ## 3. Data and formats
 

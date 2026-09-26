@@ -762,8 +762,8 @@ are in [loop-scheduling.md](../../specs/hosts/loop-scheduling.md).
 Shell commands and file operations execute on the host with its process permissions.
 Production: `dispatch` in `packages/tools/src/core.ts` and `ExecutionSessionManager.launch` in
 `packages/tools/src/lib/execution-session.ts`. Test:
-`packages/tools/tests/integration/open-authority.test.ts` and
-`packages/tools/tests/integration/execution-session.test.ts`.
+`packages/tools/tests/integration/common/open-authority.test.ts` and
+`packages/tools/tests/integration/common/execution-session.test.ts`.
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 
@@ -1276,12 +1276,16 @@ config. Git transport and credential variables are preserved.
 The suite is classified by the primary effect boundary of each file:
 
 - `tests/unit/` owns pure adapters, controllers, state machines, parsers, projections and theme or
-  layout policy. Narrow fakes are local to the behavior under test;
+  layout policy, including clipboard selection from explicit environment/platform readers and
+  stream-metric counters with injected clock, memory sample and sink. Clipboard helper and local
+  shell orchestration use controlled child events and timers in this tier.
+  Narrow fakes are local to the behavior under test;
 - `tests/component/` composes code-owned stores, hosts, command registration and view models over
   fake or in-memory protocol/kernel ports;
 - `tests/integration/` owns OpenTUI's real test renderer, file-backed settings and prompt history,
-  clipboard/process/platform behavior, local shell and Git, plugin/template installation and the
-  shipped `admiral` contract;
+  physical clipboard/platform behavior, local-kernel IPC in `workspace-client-manager.test.ts`,
+  the physical stream-debug append and diagnostic session, local shell and Git,
+  plugin/template installation and the shipped `admiral` contract;
 - `tests/architecture/` owns static dependency, public-surface and ASCII-source guards. It reads
   source and manifests but does not stand in for runtime coverage;
 - `tests/helpers/` contains preloads, typed fixtures and renderer-lifecycle harnesses; helpers own no
@@ -1298,6 +1302,11 @@ deferred barriers or bounded microtask drains, and timer behavior uses injected 
 renderers open through the tracked helpers in `tests/helpers/`, which register teardown before the
 first assertion; file-backed suites use the same pattern for temporary directories. Eager cleanup in
 the test remains useful, while the registered fallback owns assertion failures and early returns.
+`runClipboardProcess` and `runLocalBash` keep real spawn, timers and process-group signalling as
+defaults; their unit tests own the alternate clock and child streams. Production:
+`runClipboardProcess` in `src/adapters/clipboard-process.ts` and `runLocalBash` in
+`src/adapters/local-shell.ts`. Test: `tests/unit/clipboard-process.test.ts`,
+`tests/unit/local-shell-policy.test.ts` and `tests/integration/local-shell.test.ts`.
 
 Consumer fixtures author `RunEvent` directly from `@clarvis/protocol`; the kernel's engine-event
 projection is covered by one integration smoke, while the exhaustive mapping matrix belongs to
@@ -1428,10 +1437,10 @@ exists for a later Providers open, and proves first paint emits no `catalog.load
 The smoke harness uses disposable environment and filesystem state. `script(1)` and tmux both use the fixture environment; tmux receives the fixture's
 reserved socket through `-S` and every capture and `kill-server` command names that same endpoint.
 Installer smoke copies release inputs into the fixture. The regression coverage is
-`packages/code/tests/unit/artifact-isolation.test.ts` plus
-`packages/code/tests/unit/benchmark-isolation.test.ts`, which executes the benchmark's version arm
+`packages/code/tests/integration/artifact-isolation.test.ts` plus
+`packages/code/tests/integration/benchmark-isolation.test.ts`, which executes the benchmark's version arm
 against a real Bun child and checks the observed fixture roots. The release/installer/PTY contract
-canary is `tooling/tests/unit/harness-isolation-contract.test.ts`; installer smoke has also passed
+canary is `tooling/tests/integration/harness-isolation-contract.test.ts`; installer smoke has also passed
 the current Linux archive journey, while the artifact and release PTY journeys remain subject to
 the host private-state ownership check described in `specs/known-issues.md`.
 
@@ -1542,3 +1551,10 @@ current authenticated operator connection. The Kernel reads canonical receipts a
 idempotent admission queue; it restores no old consent or physical-closure claim. Code requests this
 when reopening an idle conversation and attaches to the admitted run. Recovery failure leaves the
 saved history readable. A restart without a new controller still waits for authority.
+
+## Test suites
+
+`bun --filter @clarvis/code test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/code test:integration` runs this package's common physical test cases. `bun --filter @clarvis/code test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

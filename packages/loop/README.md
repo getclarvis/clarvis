@@ -625,3 +625,10 @@ Direct runs persist missing session/agent identities before inference; continuat
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+
+## Test suites
+
+`bun --filter @clarvis/loop test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/loop test:integration` runs this package's common physical test cases. `bun --filter @clarvis/loop test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

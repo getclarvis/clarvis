@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { createSemaphore, type Usage } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry, type AgentsLimits } from "@clarvis/supervision";
@@ -80,6 +80,7 @@ function session(
   units: readonly DispatchUnit[],
   limits: Partial<AgentsLimits> = {},
   before?: (registry: ReturnType<typeof createAgentRegistry>) => void,
+  delay?: DispatchDeps["delay"],
 ) {
   const controller = new AbortController();
   const registry = createAgentRegistry({ limits: { ...LIMITS, ...limits } });
@@ -90,7 +91,7 @@ function session(
     assemble: (spec) => requestWithPrompt(spec.prompt),
   });
   const { bc } = recordingBc();
-  const deps: DispatchDeps = { ctx, bc, clock: undefined, agents: registry };
+  const deps: DispatchDeps = { ctx, bc, clock: undefined, agents: registry, delay };
   return { controller, registry, dispatch: beginDispatch(deps, units) };
 }
 
@@ -206,36 +207,28 @@ describe("beginDispatch", () => {
   test("waits for a child outside the batch to free a slot, rather than dropping the queue", async () => {
     let foreign: ReturnType<typeof occupy> = [];
     const pendingTimers: Array<() => void> = [];
-    const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((
-      callback: Parameters<typeof setTimeout>[0],
-    ) => {
-      if (typeof callback !== "function") throw new Error("unexpected timer handler");
-      pendingTimers.push(callback as () => void);
-      return { unref: () => {} } as unknown as ReturnType<typeof setTimeout>;
-    }) as unknown as typeof setTimeout);
-    const clear = spyOn(globalThis, "clearTimeout").mockImplementation(() => {});
-    try {
-      const s = session([unit("a"), unit("b"), unit("c")], { maxLiveChildren: 3 }, (registry) => {
+    const s = session(
+      [unit("a"), unit("b"), unit("c")],
+      { maxLiveChildren: 3 },
+      (registry) => {
         foreign = occupy(registry, 2);
-      });
-      const dispatch = s.dispatch!;
-      // One unit got the last slot; the other two are queued behind children this
-      // dispatch cannot settle itself.
-      expect(dispatch.queuedCount()).toBe(2);
-      const run = dispatch.run();
-      for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
-        await Promise.resolve();
-      for (const handle of foreign) handle.settled({ status: "completed", result: "done" });
-      pendingTimers.shift()?.();
+      },
+      () => new Promise<void>((resolve) => pendingTimers.push(resolve)),
+    );
+    const dispatch = s.dispatch!;
+    // One unit got the last slot; the other two are queued behind children this
+    // dispatch cannot settle itself.
+    expect(dispatch.queuedCount()).toBe(2);
+    const run = dispatch.run();
+    for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
+      await Promise.resolve();
+    for (const handle of foreign) handle.settled({ status: "completed", result: "done" });
+    pendingTimers.shift()?.();
 
-      const outcomes = await run;
-      expect(outcomes.map((o) => o.key)).toEqual(["a", "b", "c"]);
-      expect(outcomes.every((o) => o.status === "completed")).toBe(true);
-      dispatch.end("done");
-    } finally {
-      clear.mockRestore();
-      timeout.mockRestore();
-    }
+    const outcomes = await run;
+    expect(outcomes.map((o) => o.key)).toEqual(["a", "b", "c"]);
+    expect(outcomes.every((o) => o.status === "completed")).toBe(true);
+    dispatch.end("done");
   });
 
   test("gives up on a queue no slot can ever free, instead of waiting forever", async () => {

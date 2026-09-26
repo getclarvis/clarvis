@@ -238,7 +238,7 @@ commit survival after that channel closes. Production: `WorkspaceClientManager.b
 and `RunHost.backgroundCurrentRun`. Test: the connection-owned handoff case in
 [`run-host.test.ts`](../../packages/code/tests/component/run-host.test.ts) and destination/transition
 cases in
-[`workspace-client-manager.test.ts`](../../packages/code/tests/component/workspace-client-manager.test.ts).
+[`workspace-client-manager.test.ts`](../../packages/code/tests/integration/workspace-client-manager.test.ts).
 
 ### 2.3 `KernelRunClient` (`packages/code/src/adapters/kernel-run-client.ts`)
 
@@ -276,7 +276,7 @@ optional `prepareReconnect`, and `callbacks`.
 | `adapters/session-store.ts` | `SessionId`, `NodeStatus`, `SessionTotals`, `TurnRef`, `SessionMeta`, `runStatusToNode`, `uuidv7`, `redactPreview`, `TURN_ERROR_MAX_CHARS` (2000), `redactTurnError`, `addUsageToTotals`, `uncachedInput`, `formatCostUsd`, `SessionStore`, `MAX_RESIDENT_FULL_SESSIONS` (8), `listSessionsForWorkspace`, `metaToSession`, `sessionToMeta`, `sessionSummaryToMeta`, `sessionTurnCount`, `loadSessions`, `createSessionStore` | `packages/code/src/adapters/session-store.ts` |
 | `adapters/active-agent.ts` | `ActiveAgentStore`, `ActiveAgentDeps`, `AutomaticAgentCandidate`, `automaticAgentFallback`, `createActiveAgentStore` | `packages/code/src/adapters/active-agent.ts` |
 | `adapters/connection-state.ts` | `ConnectionState`, `ConnectionStore`, `createConnectionState`, `connectionLabel`, `connectionProbe` | `packages/code/src/adapters/connection-state.ts` |
-| `adapters/stream-metrics.ts` | `StreamMetrics`, `createStreamMetrics`, `streamMetrics` | `packages/code/src/adapters/stream-metrics.ts` |
+| `adapters/stream-metrics.ts` | `StreamMetrics`, `createStreamMetricsCounter`, `createStreamMetrics`, `selectStreamMetrics`, `streamMetrics` | `packages/code/src/adapters/stream-metrics.ts` |
 | `adapters/memory-pressure.ts` | `MIB`, `DEFAULT_TUI_RSS_LIMIT_BYTES`, `MEMORY_PRESSURE_SAMPLE_MS`, `MEMORY_PRESSURE_STEP_TIMEOUT_MS`, `MEMORY_PRESSURE_EPISODE_TIMEOUT_MS`, `MEMORY_PRESSURE_STATUS_RESTORING`, `MEMORY_PRESSURE_STATUS_FAILED`, `MemoryPressurePhase`, `ProcessMemorySample`, `MemoryMaintenanceReport`, `MemoryPressureSnapshot`, `MemoryPressureDeps`, `MemoryPressureController`, `memoryPressureAllowsSlash`, `memoryPressureStatus`, `tuiRssLimitBytes`, `createMemoryPressureController` | `packages/code/src/adapters/memory-pressure.ts` |
 | `adapters/execution-safety.ts` | `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState` | symbols of the same names |
 | `adapters/file-prompt-history.ts` | `createFilePromptHistory(limit = 200, file = workspaceStatePaths().promptHistoryFile, options)` | `packages/code/src/adapters/session-store.ts` |
@@ -405,17 +405,22 @@ and an unparsable line is skipped without hiding the rest.
 
 ### 3.4 `stream-metrics` JSONL
 
-`createStreamMetrics(path, source)` (`packages/code/src/adapters/stream-metrics.ts`) appends one
+`createStreamMetricsCounter` computes windows from an injected clock, memory sample and sink without
+files or process listeners. `createStreamMetrics(path, source, overrides?)`
+(`packages/code/src/adapters/stream-metrics.ts`) owns the interval, exit listener and JSONL append,
+and appends one
 record per 1000 ms window :
 
 ```
 { at, source, window_ms, counts: {…}, rates: {…}, rss, heap_used, external }
 ```
 
-On `process.on("exit")`, it also appends a totals line `{ at, source, totals: {…} }` when any
+On exit or explicit `dispose()`, it also appends a totals line `{ at, source, totals: {…} }` when any
 counter fired. `rates` is `round(count * 1000 / elapsed)`. An idle window still
 emits a record with empty `counts`/`rates` — pinned by
-`packages/code/tests/integration/stream-metrics.test.ts`.
+`packages/code/tests/unit/stream-metrics.test.ts` and
+`packages/code/tests/integration/stream-metrics.test.ts`. Disposal cancels the timer, removes the
+exit listener and flushes once.
 
 ### 3.5 `MemoryPressureSnapshot`
 
@@ -990,7 +995,7 @@ Test: `reconnect confirms host retirement before releasing a healthy client`, `c
 forwards its intent without preparing a host reload` and `a refused host reload leaves the connected
 client usable` in `packages/code/tests/component/kernel-run-client.test.ts`, plus the real socket,
 occupied-host and placement-transition cases in
-`packages/code/tests/component/workspace-client-manager.test.ts`.
+`packages/code/tests/integration/workspace-client-manager.test.ts`.
 
 ### 4.20 `execution-safety` derivations (`packages/code/src/adapters/execution-safety.ts`)
 
@@ -1170,7 +1175,7 @@ The following are derived directly from this document's own source and its tests
     preserves the original client. Production: `prepareReconnect`, `reconnect` in
     `packages/code/src/adapters/kernel-run-client.ts`. Test:
     `packages/code/tests/component/kernel-run-client.test.ts` and
-    `packages/code/tests/component/workspace-client-manager.test.ts`.
+    `packages/code/tests/integration/workspace-client-manager.test.ts`.
 
 28. **A run's usage is counted at most once per execution id.** The `counted` set is shared by
     `createSession`'s `endTurn` and `reconcile` paths in `packages/code/src/adapters/session.ts`.
@@ -1245,13 +1250,15 @@ The following are derived directly from this document's own source and its tests
 43. **The sampler timer is unref'd.** `packages/code/src/adapters/memory-pressure.ts`. Pinned:
     `packages/code/tests/unit/memory-pressure.test.ts`.
 
-44. **The stream-metrics sink never takes the process down and never writes to a terminal stream.**
-    `appendFileSync` inside a `try {} catch {}` (`packages/code/src/adapters/stream-metrics.ts`)
-    to a file path only. Pinned: `packages/code/tests/integration/stream-metrics.test.ts`.
+44. **A failed stream-metrics append cannot take the process down or write to a terminal stream.**
+    `createStreamMetricsCounter` catches the injected sink's errors while `createStreamMetrics`
+    writes only to a file path (`packages/code/src/adapters/stream-metrics.ts`). Pinned:
+    `packages/code/tests/unit/stream-metrics.test.ts` and
+    `packages/code/tests/integration/stream-metrics.test.ts`.
 
-45. **`createStreamMetrics` is exported so it can be reached without a cache-busting dynamic import.**
-    `packages/code/src/adapters/stream-metrics.ts` (the memo is). The reasoning is
-    stated in the file's own TSDoc. Its twin in `@clarvis/llm` must stay
+45. **The stream-metrics factories are statically imported without a cache-busting dynamic import.**
+    `createStreamMetrics` and `createStreamMetricsCounter` in
+    `packages/code/src/adapters/stream-metrics.ts` are covered directly. Their twin in `@clarvis/llm` must stay
     token-identical modulo the `source` default — enforced by
     `tooling/tests/architecture/stream-metrics-drift.test.ts` ("the normalizer permits only the
     owner-specific default" and "the two production stream metrics implementations stay
@@ -1303,7 +1310,7 @@ The following are derived directly from this document's own source and its tests
     idempotent. A refused restart leaves the run adapter's current client intact. Production:
     `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.open`,
     `invalidate`, and `close`). Test:
-    `packages/code/tests/component/workspace-client-manager.test.ts` ("opens only the process-pinned
+    `packages/code/tests/integration/workspace-client-manager.test.ts` ("opens only the process-pinned
     workspace") and `packages/code/tests/component/kernel-run-client.test.ts` ("a refused host
     reload leaves the connected client usable").
 

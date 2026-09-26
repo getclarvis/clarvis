@@ -192,7 +192,7 @@ the value in total. Generation has no observable progress and remains absolutely
 schema owns validation and ceiling enforcement; the runtime timeout and retry contract is owned by
 [LLM](../foundations/llm.md). Production: `agentProfileSchema`, `enforcePerProfileRules`, and
 `AiSdkAdapter.call`. Test: `packages/loop/tests/unit/request-profile-validation.test.ts` and
-`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`.
+`packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts`.
 
 `modelField` keeps the provider token restricted to settings-safe lowercase characters, then allows
 provider-native `/`, `.`, and `:` characters in the model-id half. This admits tagged local-server
@@ -443,7 +443,7 @@ The host settings assembler's optional resolver checks the entry and delegated c
 reviewer before emitting an empty provider array. Without it, provider
 declarations survive assembly. Production: [`createSettingsRunAssembler`](../../packages/kernel/src/runs/settings-assembler.ts).
 Test: [`settings-assembler-model-execution.test.ts`](../../packages/kernel/tests/component/settings-assembler-model-execution.test.ts)
-and [`settings-assembler.test.ts`](../../packages/kernel/tests/component/settings-assembler.test.ts).
+and [`settings-assembler.test.ts`](../../packages/kernel/tests/integration/settings-assembler.test.ts).
 
 `rejectProviderConfigIssues` (`packages/loop/src/validation/request/provider-rules.ts`):
 returns immediately when `providers` is empty; else, for each entry: rejects a repeated `name`
@@ -594,20 +594,20 @@ falls back to `basePrompt` only when the body is empty/whitespace-only.
 turns) still validates against `runRequestSchema`, and running it to completion never requires the
 caller to have sent a `tool`-role message.
 Production: `packages/loop/src/validation/request/message-schemas.ts` (role enum has no
-`"tool"` member). Test: `packages/loop/tests/contract/native-tool-wire-stable.contract.test.ts`.
+`"tool"` member). Test: `packages/loop/tests/contract/memory/native-tool-wire-stable.contract.test.ts`.
 
 **INV-047.** The wire role enum still excludes `tool` — a caller-sent message with `role: "tool"` is
 rejected by `validateBody`.
 Production: `packages/loop/src/validation/request/message-schemas.ts`
 (`z.enum(["system","user","assistant"])`). Test:
-`packages/loop/tests/contract/native-tool-wire-stable.contract.test.ts`.
+`packages/loop/tests/contract/memory/native-tool-wire-stable.contract.test.ts`.
 
 **INV-048.** `RunRequest` (the hand-authored type from `@clarvis/capability`) and `ParsedRunRequest`
 (the zod-inferred type from `runRequestSchema`) stay mutually assignable — a compile-time parity
 check.
 Production: the `SchemaMatches`/`_runRequestDriftLock` machinery at
 `packages/loop/src/validation/request/request-schema.ts`. Test:
-`packages/loop/tests/contract/schema-type-parity.contract.test.ts`.
+`packages/loop/tests/contract/memory/schema-type-parity.contract.test.ts`.
 
 The same file defines **three siblings** of `_runRequestDriftLock`, one per remaining hand-authored
 DTO from `@clarvis/capability`, each its own `SchemaMatches<..., ...> = true` constant
@@ -631,7 +631,7 @@ same optional prompt-expansion context, while the kernel adds it only for a succ
 user-invoked skill command.
 Production: `packages/loop/src/runtime/capabilities/hooks.ts`,
 `packages/capability/src/api.ts`, `packages/kernel/src/runs/settings-assembler.ts`.
-Test: `packages/kernel/tests/component/settings-assembler.test.ts`.
+Test: `packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 ### Further invariants derived directly from the code (not in the numbered catalog above)
 

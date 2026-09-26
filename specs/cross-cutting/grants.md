@@ -222,7 +222,7 @@ The tool definitions and their names are owned by
 `packages/tools/src/tools/registry.ts`; the loop derives grant sets from that
 registry. Production: `toolDescriptors` in `packages/tools/src/tools/registry.ts`
 and `AGENT_TOOL_NAMES` in `packages/loop/src/runtime/tools/builtin/names.ts`.
-Test: `packages/tools/tests/component/tool-surface.test.ts` and
+Test: `packages/tools/tests/integration/common/tool-surface.test.ts` and
 `packages/loop/tests/unit/tool-effect.test.ts`.
 ## 4. Behavior
 

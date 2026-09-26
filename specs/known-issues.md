@@ -39,9 +39,9 @@ workload remains necessary before claiming the TUI performance incident resolved
 an exclusive root, explicit `CLARVIS_HOME`, allowlisted child environment and owned lifecycle.
 A host with no usable temporary parent reports `smoke_fixture_no_usable_parent`; a host without
 `script(1)` needs tmux for the PTY. Regression coverage is in
-`packages/code/tests/unit/artifact-isolation.test.ts`,
-`packages/code/tests/unit/benchmark-isolation.test.ts`, and
-`tooling/tests/unit/harness-isolation-contract.test.ts`.
+`packages/code/tests/integration/artifact-isolation.test.ts`,
+`packages/code/tests/integration/benchmark-isolation.test.ts`, and
+`tooling/tests/integration/harness-isolation-contract.test.ts`.
 
 ---
 
@@ -61,7 +61,7 @@ round-tripped could end a client session.
 
 Fixed by adding `code: text.optional()` to the codec
 (`packages/kernel/src/transport/run-event-codec.ts`), and pinned by
-`packages/kernel/tests/contract/transport-codecs.test.ts`'s "carries a failed run's error code
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`'s "carries a failed run's error code
 instead of killing the connection". The more useful half is the guard: the
 `satisfies Record<RunEvent["type"], z.ZodType>` beneath the table constrains the *key set* only,
 never a payload's shape, which is why `tsc` could not see this. `CodecFieldDrift`
@@ -150,7 +150,7 @@ The durable fix requires descriptor-relative mutation for all write handlers, wi
 handling of symlinks. Another `realpath` before a pathname-based rename
 would leave a final gap. Production: `resolveFileToolPath` in
 `packages/tools/src/lib/paths.ts` and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`.
-Test: `packages/tools/tests/integration/atomic.test.ts` covers mutation behavior; it does not close
+Test: `packages/tools/tests/integration/common/atomic.test.ts` covers mutation behavior; it does not close
 this race.
 
 ---
@@ -669,8 +669,8 @@ below remains attached to the runtime named by each measurement.
 - **Not cross-file state; `--isolate` does not help.** Measured by re-running one commit six times:
   linux failed 3 of 6 under `--isolate`, the same rate as without. Note the flag does not exist in
   1.3.11, so that experiment ran on 1.3.14; a check before the migration confirmed that
-  `bun test --help` under 1.3.11 still listed no `--isolate`. `@clarvis/workflows` still passes the
-  flag; `@clarvis/loop` did until the 1.4 migration removed its measured 84.9% overhead, and
+  `bun test --help` under 1.3.11 still listed no `--isolate`. `@clarvis/workflows` and
+  `@clarvis/loop` have since removed the flag after their local shared-runner qualifications;
   `@clarvis/code` does not and never did.
 - **Not reachable via `OTUI_NO_NATIVE_RENDER`.** It fails 275 tests outright; the suite's assertions
   depend on native rendering. The variable appears nowhere in the tree — the experiment was run and
@@ -731,7 +731,7 @@ Recovery continues the remaining workspaces before global coverage validation.
 - Cancellation waits for the active child and prevents the next package or retry.
 
 Production: `tooling/lib/ci-coverage.ts`, `runCiCoverage` and `executeCoverageCommand`.
-Test: [supervisor tests](../tooling/tests/unit/ci-coverage.test.ts), order permutations, retry
+Test: [supervisor tests](../tooling/tests/integration/ci-coverage.test.ts), order permutations, retry
 classification/exhaustion, real Bun signal conversion, stale reports and cancellation.
 
 At the historical 31% rate the expected residual red after three retries was ~0.9%.
@@ -786,7 +786,7 @@ The original reading was: nothing in `loop` constructs a `WriteStream` — there
 `createWriteStream` anywhere in its `src/` or `tests/`, still true in the current tree — therefore this is
 inside Bun, plausibly its `--isolate` implementation reattaching a stream to an fd that is already
 registered. **That theory is superseded.** The mechanism is named in the tree, at
-`packages/loop/tests/unit/logger.test.ts`: `createLogger`'s stdout branch calls `pino(options)`
+`packages/loop/tests/integration/logger.test.ts`: `createLogger`'s stdout branch calls `pino(options)`
 with no stream argument (`packages/loop/src/logger.ts`), so pino builds a brand-new `SonicBoom`
 around fd 1 every time, with no reuse and no pooling. Left undestroyed, that handle stays alive —
 and its write-readiness watch stays registered — for the rest of the process; over a large test run
@@ -795,7 +795,7 @@ a `WriteStream` construction failing with `EEXIST` on `epoll_ctl` deep in Bun's 
 never hits it: `createLogger` is called once per process and the destination lives for the process's
 whole lifetime.
 
-The mitigation is `destroyStdoutDestination` (`packages/loop/tests/unit/logger.test.ts`), which
+The mitigation is `destroyStdoutDestination` (`packages/loop/tests/integration/logger.test.ts`), which
 reaches the stream through pino's publicly exported `symbols.streamSym` and destroys it after the
 suite's stdout-destination case. It landed in `dcc62896`, whose message records it as "a leaked pino
 stdout destination in logger.test.ts that
@@ -929,7 +929,7 @@ invariants, slow single-flight polling
 repeated-run (`workflows-hub-render.test.tsx`), never-settling-operation,
 oversized-body, sparse-file, deep-schema, wide-catalog and transcript-restoration cases. The counter
 sampler's own test is written against this very defect's counter:
-`packages/code/tests/unit/diagnostics.test.ts` drives `overlay.view.factory` 1,024 times and
+`packages/code/tests/integration/diagnostics.test.ts` drives `overlay.view.factory` 1,024 times and
 asserts the emitted counts are exactly `[1..8, 16, 32, 64, 128, 256, 512, 1024]`.
 
 A physical-terminal validation in the real `demo_02` workspace opened the stale persisted workflow,
@@ -1227,7 +1227,7 @@ the rationale recorded **nowhere**, so the invariant is documented on one of two
 
 *What breaks if the premise is false.* Publication **is** the mutual exclusion. On a filesystem whose
 `link` replaces rather than refuses, two acquirers both believe they hold the lease. That consequence
-is pinned behaviourally — `packages/paths/tests/contract/local-lease.test.ts` asserts the
+is pinned behaviourally — `packages/paths/tests/contract/physical/local-lease.test.ts` asserts the
 second `acquireLocalLease` returns null while the first still owns the record — but nothing in
 `packages/paths/tests` exercises `link`'s `EEXIST` refusal directly, so the suite pins the outcome on
 whatever filesystem it runs on and never the premise it rests on. A filesystem without hard links
@@ -1236,7 +1236,7 @@ fails acquisition loudly rather than degrading, because rethrows and `acquireLoc
 
 **The `writeFileDurable` half is largely stale.** The dependency is already recorded in TSDoc:
 `packages/paths/src/atomic.ts` explains why `rename` is atomic but not durable, and why unsupported directory sync errors degrade a durable write to an atomic one. The degradation is pinned by
-`packages/paths/tests/contract/atomic.test.ts`, both for the never-throws property and for one
+`packages/paths/tests/contract/physical/atomic.test.ts`, both for the never-throws property and for one
 `paths.fsync_dir_unsupported` diagnostic per errno. "No test in
 `packages/memory/tests` simulates a power loss" is literally true and misleading:
 `packages/memory/tests/integration/journal-recovery.test.ts` simulates the *interruption* the journal

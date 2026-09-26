@@ -6,6 +6,7 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
+import { fastTestResourceRules } from "./tooling/lib/fast-test-resource-rules.js";
 
 /**
  * Canonical Clarvis ESLint flat config.
@@ -60,6 +61,15 @@ export function clarvisEslintConfig({ tsconfigRootDir, project = ["./tsconfig.js
         "@typescript-eslint/await-thenable": "off",
         "@typescript-eslint/no-floating-promises": ["error", { ignoreVoid: true }],
       },
+    },
+    {
+      files: [
+        "tests/unit/**/*.{ts,tsx}",
+        "tests/component/**/*.{ts,tsx}",
+        "tests/contract/memory/**/*.{ts,tsx}",
+        "tests/helpers/pure/**/*.{ts,tsx}",
+      ],
+      rules: fastTestResourceRules,
     },
   );
 }

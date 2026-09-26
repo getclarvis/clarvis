@@ -11,8 +11,8 @@ read-only access is a separate preference and can leave mutation tools available
 Production: `toolDescriptors` in [registry.ts](../../packages/tools/src/tools/registry.ts),
 `resolveToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts), and
 `dispatch` in [core.ts](../../packages/tools/src/core.ts).
-Test: [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts)
-and [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
+Test: [tool-surface.test.ts](../../packages/tools/tests/integration/common/tool-surface.test.ts)
+and [open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts).
 
 ## Operations
 
@@ -25,8 +25,8 @@ behavior, while retaining the rest of the file.
 
 Production: `writeFile` in [write-file.ts](../../packages/tools/src/tools/write-file.ts)
 and `editFile` in [edit-file.ts](../../packages/tools/src/tools/edit-file.ts).
-Test: [write-file.test.ts](../../packages/tools/tests/integration/write-file.test.ts)
-and [edit-file.test.ts](../../packages/tools/tests/integration/edit-file.test.ts).
+Test: [write-file.test.ts](../../packages/tools/tests/integration/common/write-file.test.ts)
+and [edit-file.test.ts](../../packages/tools/tests/integration/common/edit-file.test.ts).
 
 `apply_patch` accepts a model patch envelope or unified diff. It parses and
 validates all operations before staging, locks affected paths, and commits as
@@ -38,9 +38,9 @@ removal does not follow a symlink and reports partial durability failures.
 Production: `applyPatchTool` in [apply-patch.ts](../../packages/tools/src/tools/apply-patch.ts),
 `remove` in [remove.ts](../../packages/tools/src/tools/remove.ts), and
 `applyOpsAtomic` in [atomic.ts](../../packages/tools/src/lib/atomic.ts).
-Test: [apply-patch.test.ts](../../packages/tools/tests/integration/apply-patch.test.ts),
-[remove.test.ts](../../packages/tools/tests/integration/remove.test.ts), and
-[atomic.test.ts](../../packages/tools/tests/integration/atomic.test.ts).
+Test: [apply-patch.test.ts](../../packages/tools/tests/integration/common/apply-patch.test.ts),
+[remove.test.ts](../../packages/tools/tests/integration/common/remove.test.ts), and
+[atomic.test.ts](../../packages/tools/tests/integration/common/atomic.test.ts).
 
 ## Invariants
 
@@ -61,9 +61,9 @@ Production: `CoordinatedToolExecutor.execute` in
 `packages/tools/src/execution/coordinator.ts` and `SandboxToolExecutor.stopWorker`
 and `close` in `packages/tools/src/execution/sandbox.ts`. Test:
 `packages/tools/tests/unit/execution-coordinator.test.ts` and
-`packages/tools/tests/integration/native-sandbox.test.ts`.
+`packages/tools/tests/integration/native/native-sandbox.test.ts`.
 
 Production: `FileOp`, `applyOpsAtomic`, `writeAtomic`, `withFileLock` and
 `assertNotSymlink` in [atomic.ts](../../packages/tools/src/lib/atomic.ts).
-Test: [atomic.test.ts](../../packages/tools/tests/integration/atomic.test.ts)
-and [symlink.test.ts](../../packages/tools/tests/integration/symlink.test.ts).
+Test: [atomic.test.ts](../../packages/tools/tests/integration/common/atomic.test.ts)
+and [symlink.test.ts](../../packages/tools/tests/integration/common/symlink.test.ts).

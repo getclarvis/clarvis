@@ -86,7 +86,7 @@ reference and `runGoalAgent` in [run.ts](../../packages/goal/src/agent/run.ts). 
 one-way edge without adding a Goal branch to Loop. Goal Steward uses the same edge through
 `runGoalSteward`; Kernel owns its coordinator and domain ports carry no engine gate or result types.
 Test: `limits engine execution to the capabilities that own it` in
-[package-architecture.test.ts](../../tooling/tests/unit/package-architecture.test.ts) and the generated
+[package-architecture.test.ts](../../tooling/tests/architecture/package-architecture.test.ts) and the generated
 [package coupling report](../package-coupling-analysis.md).
 
 ### 2.2 Ownership terms
@@ -258,7 +258,7 @@ type-only and test edges do not create an exception to direction.
 
 Production: `tooling/lib/package-graph.ts` (`analyzePackageGraph`, declared and compilation SCCs).
 
-Test: `tooling/tests/unit/package-graph.test.ts` (`detects declared and compilation cycles`);
+Test: `tooling/tests/architecture/package-graph.test.ts` (`detects declared and compilation cycles`);
 `packages/loop/tests/architecture/optional-package-boundary.test.ts`
 (`optional package boundaries`).
 
@@ -270,7 +270,7 @@ Production: `tooling/lib/package-architecture.ts` (`PACKAGE_ROLES`,
 `packageDependencyViolation`, `packageRoleRegistryErrors`); `tooling/lib/package-graph.ts`
 (`analyzePackageGraph`).
 
-Test: `tooling/tests/unit/package-architecture.test.ts` (`package architecture policy`).
+Test: `tooling/tests/architecture/package-architecture.test.ts` (`package architecture policy`).
 
 **INV-PA3. Every cross-package import names a declared workspace dependency, every buildable
 runtime dependency agrees with TypeScript project references, and source reaches only exported
@@ -279,7 +279,7 @@ public root.
 
 Production: `tooling/lib/package-graph.ts` (`analyzePackageGraph`).
 
-Test: `tooling/tests/unit/package-graph.test.ts` (`analyzePackageGraph`).
+Test: `tooling/tests/architecture/package-graph.test.ts` (`analyzePackageGraph`).
 
 **INV-PA3a. No effective workspace alias replaces an export, and development and build resolve
 through the package's public source and declaration conditions respectively.** Development enables
@@ -288,8 +288,8 @@ through the package's public source and declaration conditions respectively.** D
 Production: `tooling/lib/module-resolution-policy.ts` (`moduleResolutionPolicyErrors`);
 `tooling/lib/package-graph.ts` (`analyzePackageGraph`).
 
-Test: `tooling/tests/unit/module-resolution-policy.test.ts` (`moduleResolutionPolicyErrors`);
-`tooling/tests/unit/package-graph.test.ts` (`includes stale TypeScript aliases in graph violations`);
+Test: `tooling/tests/architecture/module-resolution-policy.test.ts` (`moduleResolutionPolicyErrors`);
+`tooling/tests/architecture/package-graph.test.ts` (`includes stale TypeScript aliases in graph violations`);
 `tooling/tests/architecture/module-resolution-contract.test.ts` (dist-hidden source resolution);
 `tooling/tests/integration/module-resolution.test.ts` (declaration and runtime canary).
 
@@ -320,7 +320,7 @@ Production: `packages/kernel/package.json` (`exports`); `packages/kernel/src/ind
 `packages/protocol/package.json`.
 
 Test: `packages/kernel/tests/architecture/public-surface.test.ts` (`kernel public surface`);
-`tooling/tests/unit/package-architecture.test.ts` (`package architecture policy`).
+`tooling/tests/architecture/package-architecture.test.ts` (`package architecture policy`).
 
 **INV-PA8. Code's framework-free core and generic UI do not depend on Kernel; Core also remains
 independent from Paths, filesystem effects, adapters and presentation.**
@@ -338,7 +338,7 @@ Production: root `package.json` (`version`); `tooling/lib/package-architecture.t
 (`PRODUCT_VERSION_IMPORTERS`, `productVersionPolicyErrors`, `productLockfileVersionErrors`,
 `productManifestImportViolation`); `tooling/lib/package-graph.ts` (`analyzePackageGraph`).
 
-Test: `tooling/tests/unit/package-architecture.test.ts`
+Test: `tooling/tests/architecture/package-architecture.test.ts`
 (`keeps the root manifest as the sole product-version authority`,
 `limits runtime reads of the root product manifest`); package-local version tests in Code, Loop,
 MCP Client, and Server.

@@ -243,7 +243,7 @@ owner/spill builder methods under that exact state root; the caller owns the ass
 the workspace and state roots. Production: `workspaceStatePathsFromRoot` in
 `packages/paths/src/workspace-state.ts` and `runFilesystemWorker` in
 `packages/tools/src/core.ts`. Test: `rebuilds all state paths and builders from the
-host-selected root` in `packages/paths/tests/component/workspace-state.test.ts`.
+host-selected root` in `packages/paths/tests/integration/workspace-state.test.ts`.
 
 The `isSpillFile(name)` predicate is paired with `toolOutputSpill(token)` in `packages/paths/src/workspace-state.ts`. Command sessions have no persisted path builder.
 
@@ -255,7 +255,7 @@ written into `.agents/plugins`. Production:
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts` and
 `packages/kernel/src/plugins/plugin-runtime.ts`. Test:
 `packages/paths/tests/architecture/agents-read-only.test.ts` and
-`packages/kernel/tests/unit/plugin-runtime.test.ts`.
+`packages/kernel/tests/integration/plugin-runtime.test.ts`.
 
 Ensure functions: `ensureWorkspaceStateDir(root?, opts?)` (`packages/paths/src/workspace-state.ts`) and
 `ensureWorkspaceLocalDir(root?, opts?)` (`packages/paths/src/workspace-state.ts`) both `mkdirSync` with
@@ -315,10 +315,10 @@ apart. `unixSocketPathFits(path, budgetBytes?)` applies `UNIX_SOCKET_PATH_BUDGET
 `ancestorTrust` and `unixSocketPathFits` in `packages/paths/src/short-temporaries.ts`,
 `sweepGlobalStateArtifacts` in `packages/paths/src/housekeeping.ts`, and
 `assertPrivateHostDirectory` in `packages/kernel/src/hosting/private-files.ts`. Tests:
-`packages/paths/tests/unit/short-temporaries.test.ts`,
+`packages/paths/tests/integration/short-temporaries.test-physical.test.ts`,
 `packages/paths/tests/integration/short-temporaries.test.ts`,
 `packages/loop/tests/integration/tools.test.ts` and
-`packages/code/tests/unit/artifact-isolation.test.ts`.
+`packages/code/tests/integration/artifact-isolation.test.ts`.
 
 ### 2.7 Ensure functions and the workspace `.gitignore` (`packages/paths/src/ensure.ts`)
 
@@ -384,12 +384,15 @@ platform?, logger? }`.
 | Symbol | File | Behavior |
 | --- | --- | --- |
 | `executableOnPath(command, path?)` | `packages/paths/src/which.ts` | first `PATH` entry holding an executable candidate |
-| `resolveCommand(command)` | `packages/paths/src/which.ts` | memoized wrapper, falls back to the bare name on a miss |
+| `resolveCommand(command, path?)` | `packages/paths/src/which.ts` | memoized wrapper, falls back to the bare name on a miss; default path is the live process `PATH` |
 
 `resolveCommand` logs a `paths.command_resolved` diagnostic (`command`, `resolved`, `found`) via
 `pathsLogger()` on the first resolution of a given command name (`packages/paths/src/which.ts`); the memo
 (`packages/paths/src/which.ts`) bounds this to one line per distinct command per process regardless of call
 volume, and fires whether or not the lookup actually found the command on `PATH`.
+It accepts an explicit search path for isolated command-selection tests; the first resolution for
+each command still wins in its process-local cache. Production: `packages/paths/src/which.ts`
+(`resolveCommand`). Test: `packages/paths/tests/integration/which.test.ts` (resolution and diagnostics).
 
 ### 2.13 Launch-worktree path (`packages/paths/src/roots.ts`)
 
@@ -500,7 +503,7 @@ catalog on first list but deliberately does not materialize the workspace author
 a read; that lifecycle is owned by `missingDefinitionCatalog` and `list` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`. Test:
 `packages/paths/tests/component/paths.test.ts`,
-`packages/paths/tests/component/workspace-state.test.ts`, and
+`packages/paths/tests/integration/workspace-state.test.ts`, and
 `packages/kernel/tests/integration/extension-profile-manager.test.ts` ("materializes an empty global
 catalog without writing into the workspace").
 
@@ -651,7 +654,7 @@ floored at 1 (`packages/paths/src/local-lease.ts`).
    error** rather than returning `null` (`packages/paths/src/local-lease.ts`; sync twin
    `abandonPublishedLeaseSync`) — a materially different outcome from step 7's
    contended `null`: `acquireLocalLease`/`acquireLocalLeaseSync` reject/throw instead. Pinned by
-   `packages/paths/tests/contract/local-lease.test.ts` ("retires an async publication when its recovery recheck fails") and
+   `packages/paths/tests/contract/physical/local-lease.test.ts` ("retires an async publication when its recovery recheck fails") and
    its sync twin, both of which also assert a subsequent acquisition still succeeds
    cleanly.
 9. `finally`: if publication never completed (`published === false`), close and unlink the temp.
@@ -662,7 +665,7 @@ publication is abandoned through the same ownership-checked release path before 
 It does not cancel ownership already returned to a caller. Production: `acquireLocalLease`
 and `tryPublish` in [local-lease.ts](../../packages/paths/src/local-lease.ts).
 Test: cancelled contention and publication races in
-[local-lease.test.ts](../../packages/paths/tests/contract/local-lease.test.ts).
+[local-lease.test.ts](../../packages/paths/tests/contract/physical/local-lease.test.ts).
 
 ### 4.6 Reclaiming a stale lease (`reclaimLocalLease`, `packages/paths/src/local-lease.ts`)
 
@@ -779,7 +782,7 @@ record, so a crash mid-heartbeat cannot corrupt an otherwise-valid record. If `b
 reported with `phase: "renew"`, and `renew()` returns `false`; the heartbeat's next scheduled tick
 still fires (the timer itself is untouched), but every subsequent `owned()`/`renew()` call now
 returns `false` because `lost` never clears. Pinned by
-`packages/paths/tests/contract/local-lease.test.ts` ("a holder that loses its lease on a heartbeat
+`packages/paths/tests/contract/physical/local-lease.test.ts` ("a holder that loses its lease on a heartbeat
 says so, and names the phase", asserting `phase: "renew"`) and its throwing-sink counterpart.
 
 If `heartbeatMs > 0`, `setInterval(requestHeartbeat, heartbeatMs)` (unref'd). `requestHeartbeat`
@@ -790,7 +793,7 @@ requested before it exits (`do {...; await renew(); } while (heartbeatRequested 
 tick rate, and `release()` awaits `heartbeatInFlight` before proceeding (`packages/paths/src/local-lease.ts`), so
 a release can never race a heartbeat write. A caller must still invoke `release()` after ownership
 loss: it returns `false` without detaching the canonical path, but closes the held handle. The
-heartbeat-loss regression in `packages/paths/tests/contract/local-lease.test.ts` pins both the
+heartbeat-loss regression in `packages/paths/tests/contract/physical/local-lease.test.ts` pins both the
 diagnostic and this cleanup path.
 
 ### 4.12 Synchronous acquire (`acquireLocalLeaseSync`, `packages/paths/src/local-lease.ts`)
@@ -840,53 +843,53 @@ flags. Tests: `packages/paths/tests/architecture/invariant.test.ts` (list itself
 
 **INV-005.** `tmpPathFor(target)` builds its temp file as a sibling of `target` in the same
 directory, prefixed with `TMP_PREFIX`. Production: `packages/paths/src/atomic.ts`. Test:
-`packages/paths/tests/contract/atomic.test.ts`.
+`packages/paths/tests/contract/physical/atomic.test.ts`.
 
 **INV-006.** 200 concurrent calls to `tmpPathFor` for the same target inside one process never
-collide on a name. Test: `packages/paths/tests/contract/atomic.test.ts`.
+collide on a name. Test: `packages/paths/tests/contract/physical/atomic.test.ts`.
 
 **INV-007.** The temp file name embeds the current process's pid, so an orphaned temp file is
-attributable to the process that created it. Test: `packages/paths/tests/contract/atomic.test.ts`.
+attributable to the process that created it. Test: `packages/paths/tests/contract/physical/atomic.test.ts`.
 
 **INV-008.** `isTmpFile` recognises exactly the names `tmpPathFor` produces and no other pattern
 (neither the bare target name nor legacy `*.tmp`/`*.tmp-<pid>` suffixes). Production:
-`packages/paths/src/atomic.ts`. Test: `packages/paths/tests/contract/atomic.test.ts`.
+`packages/paths/src/atomic.ts`. Test: `packages/paths/tests/contract/physical/atomic.test.ts`.
 
 **INV-009.** `writeFileAtomic` replacing an existing file leaves no orphaned temp file behind and
-the directory contains only the target afterward. Test: `packages/paths/tests/contract/atomic.test.ts`.
+the directory contains only the target afterward. Test: `packages/paths/tests/contract/physical/atomic.test.ts`.
 
 **INV-010.** 12 concurrent `writeFileAtomic` calls to one path all settle (to one of the attempted
-bodies) and none orphans a temp file. Test: `packages/paths/tests/contract/atomic.test.ts`.
+bodies) and none orphans a temp file. Test: `packages/paths/tests/contract/physical/atomic.test.ts`.
 
 **INV-011.** When the final `rename` fails, `writeFileAtomic` removes its own temp file and
 propagates the rename's error; the same holds for the sync variant, `writeFileDurable` and
-`writeFileDurableSync`. Test: `packages/paths/tests/contract/atomic.test.ts` (async) (sync)
+`writeFileDurableSync`. Test: `packages/paths/tests/contract/physical/atomic.test.ts` (async) (sync)
 (durable) (durable sync).
 
 **INV-014.** `fsyncDir` is a no-op (does not throw) on a platform or path that cannot yield a
-directory handle, and its synchronous twin behaves identically. Test: `packages/paths/tests/contract/atomic.test.ts`.
+directory handle, and its synchronous twin behaves identically. Test: `packages/paths/tests/contract/physical/atomic.test.ts`.
 
 **INV-015.** `acquireLocalLease` publishes one complete owner record and a `release()` call frees
 only the record its own holder created. Production: `packages/paths/src/local-lease.ts`. Test:
-`packages/paths/tests/contract/local-lease.test.ts`.
+`packages/paths/tests/contract/physical/local-lease.test.ts`.
 
 **INV-016.** A lease record that is stale (past `staleMs`) but whose owning pid is still alive on
-the same host is never reclaimed. Test: `packages/paths/tests/contract/local-lease.test.ts`.
+the same host is never reclaimed. Test: `packages/paths/tests/contract/physical/local-lease.test.ts`.
 
 **INV-017.** A stale lease record owned by a *different host* is never reclaimed — the liveness
-check fails closed rather than guessing. Test: `packages/paths/tests/contract/local-lease.test.ts`.
+check fails closed rather than guessing. Test: `packages/paths/tests/contract/physical/local-lease.test.ts`.
 
 **INV-018.** A stale lease is reclaimed only once its owning process is positively known dead
-(same host, pid not live). Test: `packages/paths/tests/contract/local-lease.test.ts`.
+(same host, pid not live). Test: `packages/paths/tests/contract/physical/local-lease.test.ts`.
 
 **INV-019.** When two contenders race to reclaim one stale lease concurrently, at most one
-succeeds. Test: `packages/paths/tests/contract/local-lease.test.ts`.
+succeeds. Test: `packages/paths/tests/contract/physical/local-lease.test.ts`.
 
 **INV-020.** A non-positive pid (`0` or negative) in a lease record is treated as *live*, never as
-evidence the owner is dead. Test: `packages/paths/tests/contract/local-lease.test.ts`.
+evidence the owner is dead. Test: `packages/paths/tests/contract/physical/local-lease.test.ts`.
 
 **INV-021.** A fresh (non-stale) but only partially written lease record is never reclaimed. Test:
-`packages/paths/tests/contract/local-lease.test.ts`.
+`packages/paths/tests/contract/physical/local-lease.test.ts`.
 
 **INV-192.** Driving every writer that touches a workspace (plan repository listing, two memory
 batch writes, `markIndexed`) leaves `<ws>/.clarvis`'s top level containing only entries from the
@@ -924,26 +927,26 @@ changed between the initial observation and the post-recovery-intent re-observat
 (`sameObservedLease`, `packages/paths/src/local-lease.ts`), and never unlink a quarantined entry whose
 moved identity/token does not match what was expected (`packages/paths/src/local-lease.ts`) — instead
 restoring the quarantine. Production: `packages/paths/src/local-lease.ts` (async) (sync). Pinned
-by `packages/paths/tests/contract/local-lease.test.ts` ("preserves a successor introduced before async quarantine",
+by `packages/paths/tests/contract/physical/local-lease.test.ts` ("preserves a successor introduced before async quarantine",
 "never detaches a raced successor after observing an older stale lease").
 
 **PATHS-C.** A release's identity check (`heldIdentity`) is captured from the **held file
 descriptor**, not from a fresh `lstat` of the path, so an ABA replacement of the path (unlink +
 recreate with a different inode) between a holder's last confirmed ownership and its `release()`
 call is detected and the release refuses to delete the successor. Production:
-`packages/paths/src/local-lease.ts`. Pinned by `packages/paths/tests/contract/local-lease.test.ts` ("a late release cannot unlink a
+`packages/paths/src/local-lease.ts`. Pinned by `packages/paths/tests/contract/physical/local-lease.test.ts` ("a late release cannot unlink a
 successor with another token and inode").
 
 **PATHS-D.** `writeStaged`/`writeStagedSync` always attempt to remove their staged temp file on
 any failure from `open` onward, and report (via `paths.atomic_staging_failed`) whether that
 removal itself succeeded — a removal failure never replaces or masks the original thrown error.
-Production: `packages/paths/src/atomic.ts`. Pinned by `packages/paths/tests/contract/atomic.test.ts` (both
+Production: `packages/paths/src/atomic.ts`. Pinned by `packages/paths/tests/contract/physical/atomic.test.ts` (both
 `test.if(modeBitsEnforced)`).
 
 **PATHS-E.** An asynchronous lease that has already lost ownership still closes its held file handle
 when `release()` is called. It returns `false` and does not detach the canonical lease path.
 Production: `packages/paths/src/local-lease.ts` (`createLease`, `release`). Test:
-`packages/paths/tests/contract/local-lease.test.ts` ("a holder that loses its lease on a heartbeat
+`packages/paths/tests/contract/physical/local-lease.test.ts` ("a holder that loses its lease on a heartbeat
 says so, and names the phase").
 
 **PATHS-F.** Remote MCP registrations and tokens are machine state, not operator-authored settings:
@@ -963,7 +966,7 @@ says so, and names the phase").
 | `ensureWorkspaceSubdir` given a `dir` outside `<ws>/.clarvis` | throws a plain `Error` naming both paths | `packages/paths/src/ensure.ts` |
 | `acquireLocalLease` contended and unreclaimable | returns `null` after `waitMs` of retries; an aborted acquisition signal rejects | `packages/paths/src/local-lease.ts` |
 | `tryPublish`'s `afterPublish` callback or its post-publish recovery-intent recheck throws | the just-published lease is abandoned via `abandonPublishedLease(Sync)` and the original error is rethrown — `acquireLocalLease`/`acquireLocalLeaseSync` reject/throw rather than returning `null` | `packages/paths/src/local-lease.ts` (async) (sync) |
-| `owned()` or `renew()` finds it no longer holds the lease | sets `lost = true` and logs `paths.lease_lost` with `phase` naming where the loss was discovered — one of the three `LeaseLossPhase` values `"renew"` (a failed heartbeat, `packages/paths/src/local-lease.ts`), `"stat"` (the identity capture at the start of `release()` failed), or `"release"` (`handle.close()` itself failed); every subsequent `owned()`/`release()` call returns `false`, while `release()` still stops heartbeat work and closes the held handle | `packages/paths/src/local-lease.ts` (`createLease`, `release`); `packages/paths/tests/contract/local-lease.test.ts` (heartbeat-loss regression) |
+| `owned()` or `renew()` finds it no longer holds the lease | sets `lost = true` and logs `paths.lease_lost` with `phase` naming where the loss was discovered — one of the three `LeaseLossPhase` values `"renew"` (a failed heartbeat, `packages/paths/src/local-lease.ts`), `"stat"` (the identity capture at the start of `release()` failed), or `"release"` (`handle.close()` itself failed); every subsequent `owned()`/`release()` call returns `false`, while `release()` still stops heartbeat work and closes the held handle | `packages/paths/src/local-lease.ts` (`createLease`, `release`); `packages/paths/tests/contract/physical/local-lease.test.ts` (heartbeat-loss regression) |
 | A reclaim's rename-to-quarantine hits `ENOENT` (already gone) | treated as success (`return true`), not a refusal | `packages/paths/src/local-lease.ts` |
 | A reclaim's quarantine identity mismatches | restores (links) the quarantine back to its original path, refuses, logs `paths.lease_reclaim_refused` with the stage | `packages/paths/src/local-lease.ts` |
 | A lease reclaim decision is wrong (steals a lock from a still-alive holder due to clock skew or an unusual errno) | not detected or corrected anywhere in this package — the design note at `packages/paths/src/local-lease.ts` names this as "the single densest blind spot here: if the judgement is wrong, two holders both believe they own the path and nothing anywhere says so" | `packages/paths/src/local-lease.ts` |

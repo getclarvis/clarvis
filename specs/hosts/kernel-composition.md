@@ -56,7 +56,7 @@ from closing; only failed disposals remain owned for retry. Construction cleanup
 reported together with the original construction failure rather than swallowed.
 Production: `createNativeKernel` in [native-kernel.ts](../../packages/kernel/src/native-kernel.ts)
 and `createKernelLifecycle` in [lifecycle.ts](../../packages/kernel/src/application/lifecycle.ts).
-Test: [native-kernel-cleanup.test.ts](../../packages/kernel/tests/unit/native-kernel-cleanup.test.ts)
+Test: [native-kernel-cleanup.test.ts](../../packages/kernel/tests/integration/native-kernel-cleanup.test.ts)
 injects a collector failure and verifies all-resource disposal and failed-only retry.
 
 Production: `createFileRunHost` in
@@ -150,6 +150,18 @@ Production: `packages/kernel/src/kernel.ts` (`InProcessKernel`, `createInProcess
 
 Test: `packages/kernel/tests/integration/owner-isolation.test.ts`;
 `packages/kernel/tests/unit/lifecycle.test.ts`.
+
+The owner composition tests supply distinct per-owner in-memory Plan, Memory, session and workflow
+stores alongside in-memory config and trace stores. Workspace identities are paths without physical
+directories; a separate physical suite owns persistence and socket claims. A host can supply
+`sessionStoreForOwner` and `workflowStoreForOwner`; absent these, the kernel composes its file stores.
+Each factory receives the same `workspaceScopeKey(owner, projectId, workspaceId)` used by the Plan
+and Memory factories, so an authenticated owner never shares a store with another workspace scope.
+Production: `createInProcessKernel` in `packages/kernel/src/kernel.ts` (`memoryFactory`,
+`planFactory`, `sessionStoreForOwner`, `workflowStoreForOwner`, `configStore` and trace dependencies).
+Test:
+`packages/kernel/tests/integration/owner-isolation.test.ts` (`makeKernel`, plan and memory isolation)
+and `packages/kernel/tests/component/transport.test.ts` (`planFactory`).
 
 ## 5. Capability composition
 
@@ -246,7 +258,7 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 
 5. **The kernel exposes no worktree lifecycle service or cross-workspace kernel cache.**
    Production: `packages/protocol/src/client.ts`; `packages/kernel/src/bootstrap.ts`.
-   Test: protocol contract tests and `packages/code/tests/component/workspace-client-manager.test.ts`.
+   Test: protocol contract tests and `packages/code/tests/integration/workspace-client-manager.test.ts`.
 
 6. **Kernel construction starts no memory-index inference; explicit recovery start is idempotent and
    applies once to resident owners plus every later owner generation.**

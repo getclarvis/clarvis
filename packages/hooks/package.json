@@ -1,7 +1,7 @@
 {
   "name": "@clarvis/hooks",
   "private": true,
-  "description": "Executes workspace shell hooks for Clarvis \u2014 match, spawn, bounded capture, verdict parse.",
+  "description": "Executes workspace shell hooks for Clarvis — match, spawn, bounded capture, verdict parse.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -38,7 +38,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "test:fast": "bun test tests/unit tests/component --timeout 60000"
   },
   "dependencies": {
     "@clarvis/capability": "workspace:*",

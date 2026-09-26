@@ -12,13 +12,13 @@ reissues the same final action with current authorization and policy revisions b
 whose identity remains stale cannot execute. Production: `dispatch` in
 [core.ts](../../packages/tools/src/core.ts). Test: `steering during review
 requires a fresh authorization before execution` in
-[action-authorization.test.ts](../../packages/tools/tests/unit/action-authorization.test.ts).
+[action-authorization.test.ts](../../packages/tools/tests/integration/common/action-authorization.test.ts).
 
 Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `resolveConfig` in
 [config.ts](../../packages/tools/src/config.ts), and `resolveToolPath` in
 [paths.ts](../../packages/tools/src/lib/paths.ts). Test:
-[core.test.ts](../../packages/tools/tests/component/core.test.ts) and
-[open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
+[core.test.ts](../../packages/tools/tests/integration/common/core.test.ts) and
+[open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts).
 
 ## Package surface
 
@@ -29,8 +29,8 @@ hooks and kernel consumers to load shell/process helpers without loading the reg
 
 Production: exports in [index.ts](../../packages/tools/src/index.ts) and
 [shell-entry.ts](../../packages/tools/src/shell-entry.ts). Test:
-[api.test.ts](../../packages/tools/tests/integration/api.test.ts) and
-[tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts).
+[api.test.ts](../../packages/tools/tests/integration/common/api.test.ts) and
+[tool-surface.test.ts](../../packages/tools/tests/integration/common/tool-surface.test.ts).
 
 The ordered `toolDescriptors` table in [registry.ts](../../packages/tools/src/tools/registry.ts)
 owns all nine names. `readOnlyTools` is its three-tool observing projection:
@@ -41,8 +41,8 @@ projection selected by `RuntimeConfig.readOnly`; `dispatch` selects from that sa
 Production: `toolDescriptors`, `readOnlyTools` and `selectSurface` in
 [registry.ts](../../packages/tools/src/tools/registry.ts), and `listTools` in
 [core.ts](../../packages/tools/src/core.ts). Test:
-[tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts) and
-[core.test.ts](../../packages/tools/tests/component/core.test.ts).
+[tool-surface.test.ts](../../packages/tools/tests/integration/common/tool-surface.test.ts) and
+[core.test.ts](../../packages/tools/tests/integration/common/core.test.ts).
 
 ## Runtime configuration and results
 
@@ -56,8 +56,8 @@ stores run machinery; it is not a separate tool read gate.
 
 Production: `RuntimeConfig`, `AgentToolsOptions` and `resolveConfig` in
 [config.ts](../../packages/tools/src/config.ts). Test:
-[config.test.ts](../../packages/tools/tests/integration/config.test.ts) and
-[host-access.test.ts](../../packages/tools/tests/integration/host-access.test.ts).
+[config.test.ts](../../packages/tools/tests/integration/common/config.test.ts) and
+[host-access.test.ts](../../packages/tools/tests/integration/common/host-access.test.ts).
 
 `DispatchResult` reports failures in band as `isError: true` with a serialized text part.
 Unknown or unavailable tools return `not_found`; invalid arguments return `invalid_input`.
@@ -76,9 +76,9 @@ Production: `dispatch`, `boundParts` and `boundMeta` in
 [core.ts](../../packages/tools/src/core.ts), `serializeError` in
 [errors.ts](../../packages/tools/src/errors.ts), and `createAgentTools` in
 [index.ts](../../packages/tools/src/index.ts). Test:
-[core.test.ts](../../packages/tools/tests/component/core.test.ts),
-[native-sandbox.test.ts](../../packages/tools/tests/integration/native-sandbox.test.ts), and
-[api.test.ts](../../packages/tools/tests/integration/api.test.ts).
+[core.test.ts](../../packages/tools/tests/integration/common/core.test.ts),
+[native-sandbox.test.ts](../../packages/tools/tests/integration/native/native-sandbox.test.ts), and
+[api.test.ts](../../packages/tools/tests/integration/common/api.test.ts).
 
 ## Invariants and coupling
 
@@ -88,21 +88,21 @@ Production: `dispatch`, `boundParts` and `boundMeta` in
   itself override that preference. Production: `prepareToolAction` in
   [action.ts](../../packages/tools/src/execution/action.ts). Test: `admitted additional roots need
   no new permission while read-only paths stay restricted` in
-  [action-authorization.test.ts](../../packages/tools/tests/unit/action-authorization.test.ts).
+  [action-authorization.test.ts](../../packages/tools/tests/integration/common/action-authorization.test.ts).
 
 - The advertised and dispatchable tool names come from one registry. Production:
   `selectSurface` in [registry.ts](../../packages/tools/src/tools/registry.ts). Test:
-  [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts).
+  [tool-surface.test.ts](../../packages/tools/tests/integration/common/tool-surface.test.ts).
 - A Kernel-bound call is authorized against its final validated arguments, paths and trusted actor/call identity; standalone callers retain the Host default. Production: `prepareToolAction` in [action.ts](../../packages/tools/src/execution/action.ts) and `dispatch` in
   [core.ts](../../packages/tools/src/core.ts). Test:
-  [action-authorization.test.ts](../../packages/tools/tests/unit/action-authorization.test.ts) and [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
+  [action-authorization.test.ts](../../packages/tools/tests/integration/common/action-authorization.test.ts) and [open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts).
 - An injected Sandbox port and backend wrap file handlers and new shell
   sessions. Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts),
   `SandboxToolExecutor` in [sandbox.ts](../../packages/tools/src/execution/sandbox.ts), and
   `ExecutionSessionManager.launch` in
   [execution-session.ts](../../packages/tools/src/lib/execution-session.ts). Test:
-  [core.test.ts](../../packages/tools/tests/component/core.test.ts) and
-  [native-sandbox.test.ts](../../packages/tools/tests/integration/native-sandbox.test.ts).
+  [core.test.ts](../../packages/tools/tests/integration/common/core.test.ts) and
+  [native-sandbox.test.ts](../../packages/tools/tests/integration/native/native-sandbox.test.ts).
 
 Read behavior belongs to [tools-read.md](tools-read.md),
 mutations to [tools-mutation.md](tools-mutation.md), and shell sessions to

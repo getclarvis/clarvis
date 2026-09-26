@@ -134,14 +134,21 @@ describe("runs.rehydrated", () => {
 describe("observationSink", () => {
   it("stamps an event name on a detached failure and reaches the logger", async () => {
     const logger = recordingLogger();
-    const lifecycle = createKernelLifecycle(logger);
+    const observed = Promise.withResolvers<void>();
+    const lifecycle = createKernelLifecycle({
+      ...logger,
+      warn: (fields: unknown, ...args: unknown[]) => {
+        logger.warn(fields, typeof args[0] === "string" ? args[0] : undefined);
+        observed.resolve();
+      },
+    });
     await lifecycle.close();
     lifecycle.register({
       close: () => {
         throw new Error("resource did not close");
       },
     });
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await observed.promise;
     expect(logger.events("lifecycle.late_close_failed")[0]).toMatchObject({
       operation: "kernel_late_resource_close",
       cause: "resource did not close",

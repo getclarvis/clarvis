@@ -1,4 +1,5 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { describe, it, expect } from "bun:test";
@@ -12,7 +13,7 @@ function seedFile(file: string, content: string): void {
 }
 
 function tmp(): string {
-  return mkdtempSync(join(tmpdir(), "clarvis-secrets-"));
+  return ownedTempDirSync(join(tmpdir(), "clarvis-secrets-"));
 }
 
 describe("createFileSecretStore", () => {

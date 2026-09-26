@@ -577,7 +577,7 @@ content; the per-file and aggregate budgets are deliberately distinct. Productio
 `createPluginContributions` in `packages/kernel/src/plugins/plugin-contributions.ts`, and the
 `loadDigest` callback inside `createExtensionProfileManager` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`. Test:
-`packages/skills/tests/unit/bounded-read.test.ts` (`hashes bounded raw bytes without decoding binary
+`packages/skills/tests/integration/bounded-read.test.ts` (`hashes bounded raw bytes without decoding binary
 content`) and `packages/kernel/tests/integration/plugin-contributions.test.ts` (`streams large binary
 and text resources into the exact skill snapshot` and the per-file resource bound).
 
@@ -758,7 +758,7 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
   verification checks drift during copying. Failed verification closes the candidate; owner disposal
   closes the active capture. Full reads retain full-file bounds, and chunked reads retain pagination.
   Test: helper byte consistency and full-read limits in
-  [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts).
+  [execution-snapshot.test.ts](../../packages/skills/tests/integration/execution-snapshot.test.ts).
   Later calls only test the host's memory-only `available(skill)` predicate. A
   withdrawn skill disappears from the catalog, returns no body, and refuses resource reads without
   rebuilding the registry or rejecting a run. An optional idle trust-change subscription atomically
@@ -931,7 +931,7 @@ to this document.
     `readBoundedTextChunk`, `hashBoundedFile`, and `readFromFile` in
     `packages/skills/src/bounded-read.ts`. Test: `packages/skills/tests/integration/bounds.test.ts`
     (`reads a large text resource incrementally while the legacy whole read stays bounded`) and
-    `packages/skills/tests/unit/bounded-read.test.ts` (UTF-8 cursor/boundary, growth, short-read and
+    `packages/skills/tests/integration/bounded-read.test.ts` (UTF-8 cursor/boundary, growth, short-read and
     binary-hash cases).
 24. **A directory with more entries than `MAX_SKILL_DIRECTORY_ENTRIES` contributes nothing at all**,
     rather than a truncated listing. `packages/skills/src/scan.ts`. Pinned:
@@ -1236,4 +1236,4 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts` and owned
    (`packages/kernel/src/runs/settings-assembler.ts`).
 The host may observe directories visited by `listSkillDirs`, including empty candidates, to arm catalog monitors. Observation follows the existing discovery budgets and does not traverse resource subtrees as additional skills. Prospective manifests use `validateSkillDocument` with the owning root validation mode, preserving the distinction between Clarvis naming defaults and shared Agent Skills requirements.
 Production: `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts) and `validateSkillDocument` in [registry.ts](../../packages/skills/src/registry.ts).
-Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts) and root validation in [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts).
+Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts) and root validation in [execution-snapshot.test.ts](../../packages/skills/tests/integration/execution-snapshot.test.ts).

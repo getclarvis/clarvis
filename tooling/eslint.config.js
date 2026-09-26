@@ -1,4 +1,5 @@
 import { clarvisEslintConfig } from "../eslint.config.base.js";
+import { fastTestResourceRules } from "./lib/fast-test-resource-rules.js";
 
 export default [
   ...clarvisEslintConfig({ tsconfigRootDir: import.meta.dirname }),
@@ -19,5 +20,9 @@ export default [
       "@typescript-eslint/await-thenable": "off",
       "@typescript-eslint/no-floating-promises": ["error", { ignoreVoid: true }],
     },
+  },
+  {
+    files: ["tooling/tests/unit/**/*.ts", "tooling/tests/helpers/pure/**/*.ts"],
+    rules: fastTestResourceRules,
   },
 ];

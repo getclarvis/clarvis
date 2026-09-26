@@ -1348,4 +1348,4 @@ journal versioning and recovery validation are owned by [trace](trace.md).
 Production: `ExecutionVisibility` and `ExecutionRecord` in
 [trace-events.ts](../../packages/capability/src/trace-events.ts).
 Test: both classes and invalid writes in
-[trace-store-conformance.ts](../../packages/trace/tests/contract/trace-store-conformance.ts).
+[trace-store-conformance.ts](../../packages/trace/tests/contract/physical/trace-store-conformance.ts).

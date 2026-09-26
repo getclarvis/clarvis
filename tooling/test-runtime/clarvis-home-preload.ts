@@ -53,6 +53,20 @@ function ownsHandoff(): boolean {
   return root !== undefined && root.length > 0 && process.env[HANDOFF_ENV] === root;
 }
 
+/** Report failure to remove only the root acquired by this process. */
+export function removeOwnedTestRoot(
+  root: string,
+  remove: typeof rmSync = rmSync,
+  report: (message: string) => void = (message) => process.stderr.write(message),
+): void {
+  try {
+    remove(root, { recursive: true, force: true });
+  } catch (error) {
+    report(`clarvis test home cleanup failed for ${root}: ${String(error)}\n`);
+    process.exitCode = process.exitCode && process.exitCode !== 0 ? process.exitCode : 1;
+  }
+}
+
 /**
  * Isolate direct Bun test entry from operator state while preserving explicit test
  * child handoff. Production root precedence is unchanged: this only authors the
@@ -62,11 +76,5 @@ if (!ownsHandoff()) {
   const root = mkdtempSync(join(safeTemporaryParent(), "clarvis-test-home-"));
   process.env[HOME_ENV] = root;
   process.env[HANDOFF_ENV] = root;
-  process.on("exit", () => {
-    try {
-      rmSync(root, { recursive: true, force: true });
-    } catch {
-      /* A live child may still hold a handle; the owner remains the only cleaner. */
-    }
-  });
+  process.on("exit", () => removeOwnedTestRoot(root));
 }

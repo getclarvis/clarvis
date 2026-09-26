@@ -7,12 +7,12 @@ import type { WorkspaceState } from "./types.ts";
 
 const GIT_TIMEOUT_MS = 1500;
 
-function git(args: string[], cwd: string): Promise<string> {
+function git(args: string[], cwd: string, environment: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "git",
       args,
-      { cwd, env: withoutGitRepositoryEnvironment(process.env), timeout: GIT_TIMEOUT_MS },
+      { cwd, env: withoutGitRepositoryEnvironment(environment), timeout: GIT_TIMEOUT_MS },
       (err, stdout) => {
         if (err) reject(new Error(err.message));
         else resolve(stdout.trim());
@@ -28,6 +28,8 @@ function git(args: string[], cwd: string): Promise<string> {
  * @param logger - where a probe that could not run is reported. A snapshot with
  *   no branch or commit is otherwise indistinguishable from one taken outside a
  *   repository, and every run indexed from it loses that provenance silently.
+ * @param environment - environment supplied to Git after repository-local variables are removed;
+ *   defaults to the live process environment at call time.
  * @returns the current branch, commit, and dirty flag, or `undefined` when the
  *   directory is not a git repo, git is missing, or any probe times out
  *   ({@link GIT_TIMEOUT_MS}) — absence is a valid outcome, never an error.
@@ -39,12 +41,13 @@ function git(args: string[], cwd: string): Promise<string> {
 export async function captureWorkspaceState(
   cwd: string,
   logger: Logger = NOOP_LOGGER,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<WorkspaceState | undefined> {
   try {
     const [branch, commit, porcelain] = await Promise.allSettled([
-      git(["rev-parse", "--abbrev-ref", "HEAD"], cwd),
-      git(["rev-parse", "HEAD"], cwd),
-      git(["status", "--porcelain"], cwd),
+      git(["rev-parse", "--abbrev-ref", "HEAD"], cwd, environment),
+      git(["rev-parse", "HEAD"], cwd, environment),
+      git(["status", "--porcelain"], cwd, environment),
     ]);
     if (branch.status === "rejected") throw branch.reason;
     if (commit.status === "rejected") throw commit.reason;

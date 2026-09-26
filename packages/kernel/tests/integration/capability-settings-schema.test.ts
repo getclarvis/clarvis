@@ -1,5 +1,6 @@
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveGoalsSettings } from "@clarvis/goal/settings";
@@ -160,7 +161,7 @@ describe("verbosity cannot be set from settings", () => {
 
 describe("ConfigService.updateSettings over a registered capability block", () => {
   it("round-trips a workflows block to disk and back", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-capset-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-capset-"));
     const config = createConfigService(createFileConfigStore({ globalDir: dir }));
 
     const written = await config.updateSettings("global", workflowsBlock, null);

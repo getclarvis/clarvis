@@ -582,6 +582,11 @@ and use the operator's normal home; `globalConfigDir` continues to own `.clarvis
 
 The package exports constructors for individual services, file and in-memory
 configuration stores, secret storage, model catalogs and engine-to-protocol mapping.
+`createInProcessKernel` accepts owner-scoped session and workflow store factories for ephemeral
+hosts; omitted factories retain the standard file-backed behavior.
+The model catalog's `createModelCatalogService` accepts an optional fetcher after the logger;
+`refreshModelsCatalog` and `fetchModelsDevApi` accept the same fetcher directly. Their defaults
+use the host's native `fetch`, while an injected fetcher keeps catalog refresh tests isolated.
 
 The operator-scoped `StorageService` walks Clarvis-owned roots with entry/depth bounds, reports
 logical category totals without exposing persisted content, paths or credential sizes, and applies
@@ -591,11 +596,9 @@ intentionally immutable runtime-artifact tree: `removeOwnedTree` restores remova
 real directories owned by the current POSIX user, never traverses links, and refuses unsafe
 ownership without elevation or disclosing the local path. Published artifacts keep their read-only
 modes outside that bounded cleanup. Production: `createStorageService` in
-[`src/storage/storage-service.ts`](src/storage/storage-service.ts), `removeOwnedTree` in
-[`src/storage/owned-tree.ts`](src/storage/owned-tree.ts), and `cacheRuntimeArtifact` in
-[`src/runtime/runtime-artifact.ts`](src/runtime/runtime-artifact.ts). Test:
-[`tests/integration/storage-service.test.ts`](tests/integration/storage-service.test.ts) and
-[`tests/unit/runtime-artifact.test.ts`](tests/unit/runtime-artifact.test.ts). Workspace
+[`src/storage/storage-service.ts`](src/storage/storage-service.ts) and `removeOwnedTree` in
+[`src/storage/owned-tree.ts`](src/storage/owned-tree.ts). Test:
+[`tests/integration/storage-service.test.ts`](tests/integration/storage-service.test.ts). Workspace
 bootstrap also sweeps inactive workspace spill/run scratch state and repairs recognized spill modes
 to `0600` on POSIX.
 
@@ -832,12 +835,12 @@ call and only supplies it to one materially identical new attempt; it does not
 launch the old call or override deterministic restrictions.
 Production: `createIsolationService` in
 `packages/kernel/src/execution/isolation-service.ts`. Test:
-`packages/kernel/tests/unit/isolation-service.test.ts` and
+`packages/kernel/tests/integration/isolation-service.test.ts` and
 `packages/kernel/tests/integration/judge-approval.test.ts`.
 Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and
 `dispatch` in `packages/tools/src/core.ts`. Test:
 `packages/kernel/tests/integration/file-kernel.test.ts` and
-`packages/tools/tests/integration/open-authority.test.ts`.
+`packages/tools/tests/integration/common/open-authority.test.ts`.
 
 ## The settings schema
 
@@ -1143,10 +1146,10 @@ The suite is classified by its primary boundary while the architecture migration
   prompt-cache configuration, workflow routing policy and other deterministic request projections.
 - `tests/component/` owns kernel services and assembly over typed fakes or in-memory collaborators:
   memory, skills, planning and settings-to-run assembly
-  composition.
+  composition, including owner isolation and loopback transport with owner-scoped in-memory stores.
 - `tests/contract/` applies shared configuration-service behavior to its interchangeable stores.
-- `tests/integration/` owns real filesystem, process, git, loop, plan, stdio and loopback boundaries,
-  plus file-kernel and owner/composition wiring. Memory capability/loop behavior belongs to
+- `tests/integration/` owns real filesystem, process, git, loop, plan and stdio boundaries,
+  plus file-kernel wiring. Memory capability/loop behavior belongs to
   `@clarvis/memory`; this package keeps one composition-root sentinel only.
 - `tests/architecture/` owns static enforcement of the six-entry public surface and the
   cross-package workspace-layout invariant.
@@ -1280,3 +1283,10 @@ current authenticated operator connection. The Kernel reads canonical receipts a
 idempotent admission queue; it restores no old consent or physical-closure claim. Code requests this
 when reopening an idle conversation and attaches to the admitted run. Recovery failure leaves the
 saved history readable. A restart without a new controller still waits for authority.
+
+## Test suites
+
+`bun --filter @clarvis/kernel test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/kernel test:integration` runs this package's common physical test cases. `bun --filter @clarvis/kernel test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

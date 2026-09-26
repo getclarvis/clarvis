@@ -91,7 +91,7 @@ root to `createFileKernel` for product-owned Markdown assets. The application en
 `packages/code/src/cli.ts`, and `createCodeHostKernelOptions` in
 `packages/code/src/adapters/host-kernel-options.ts`. Test:
 `packages/code/tests/unit/cli-entry.test.ts` and
-`packages/code/tests/unit/host-kernel-options.test.ts`.
+`packages/code/tests/integration/host-kernel-options.test.ts`.
 
 The manifest exposes no compatibility alias: the installed executable is `clarvis` only. The
 TypeScript setup requires the exact Bun version pinned by `mise.toml`, performs a frozen root install,
@@ -114,7 +114,7 @@ action. Production: `dev-install.sh`,
 `packages/code/tooling/development-install.ts` (`installDevelopmentLauncher`,
 `developmentLauncherSource`, `uninstallDevelopmentLauncher`), and
 `packages/kernel/src/hosting/launcher.ts` (`connectOrLaunchLocalKernel`). Test:
-`packages/code/tests/unit/development-install.test.ts` and
+`packages/code/tests/integration/development-install.test.ts` and
 `packages/kernel/tests/integration/local-host-process.test.ts`.
 
 The explicit `--candidate [tag]` mode installs a published source prerelease into a separate unique
@@ -128,8 +128,8 @@ maintenance modes. Updates require another explicit candidate installation; unin
 the launcher. Git and the exact Bun runtime are prerequisites. Production:
 `packages/code/tooling/candidate-install.ts` (`installCandidate`, `selectCandidateRelease`) and
 `packages/code/tooling/development-install.ts` (`parseDevelopmentInstallArgs`,
-`developmentLauncherSource`). Test: `packages/code/tests/unit/candidate-install.test.ts` and
-`packages/code/tests/unit/development-install.test.ts`.
+`developmentLauncherSource`). Test: `packages/code/tests/integration/candidate-install.test.ts` and
+`packages/code/tests/integration/development-install.test.ts`.
 
 The development-only `--empty-workspace` operation allocates a new empty
 `/tmp/clarvis-development-temp/workspace-*` directory on every invocation and changes into it before
@@ -142,7 +142,7 @@ non-directories. Temporary cleanup refuses a link, non-directory, foreign owner,
 changed marker. Other workspace state is not in scope. Production:
 `packages/code/tooling/development-install.ts` (`cleanDevelopmentState`,
 `createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`,
-`clearDevelopmentEnvironment`). Test: `packages/code/tests/unit/development-install.test.ts`
+`clearDevelopmentEnvironment`). Test: `packages/code/tests/integration/development-install.test.ts`
 (`clean removes only a real global-state directory below home`, `empty workspaces are always new
 and clear removes only the authenticated root`). Release uninstall retains the separate
 state-preserving contract in [Portable distribution](../cross-cutting/distribution-and-updates.md).
@@ -320,7 +320,7 @@ do not implement runtime worktree switching:
 `versionText()` returns `` `clarvis ${product.version}` `` where `product` is the root
 `../../../package.json`, the monorepo's sole version authority
 (`packages/code/src/cli-args.ts`, `versionText`). Pinned by
-`packages/code/tests/unit/cli-args.test.ts` (`version reports the product`).
+`packages/code/tests/integration/cli-args.test.ts` (`version reports the product`).
 The interactive entry passes `productVersion()` into `StartupComposer`, and the complete `App`
 passes the same value into `projectHeader`; both headers render it as `v<version>` in their final
 right-aligned zone. Production: `packages/code/src/index.tsx` (`runInteractive`),
@@ -475,11 +475,11 @@ and `packages/code/tests/unit/cli-entry.test.ts`.
    `--resume 0198c0ff` works and how a bare positional is ignored.
 3. A token containing `=` at index > 0 resolves the prefix; if that spec has no `inlineValue`, it is
    `unknown flag: <whole token>`. This is why `--verbose=1` reports the full token
-   (`packages/code/tests/unit/cli-args.test.ts`).
+   (`packages/code/tests/integration/cli-args.test.ts`).
 4. Otherwise, unknown token → `unknown flag: <tok>`.
 5. A `value` flag consumes `argv[i+1]`; a missing token, or one starting with `-`, is
    `` `${tok} requires a ${noun(spec.value)} (usage: clarvis ${spec.flag} ${spec.value})` ``. `noun()` strips `<>` and turns `-` into a space, so `<session-id>`
-   reads as `session id` — the string `packages/code/tests/unit/cli-args.test.ts` asserts.
+   reads as `session id` — the string `packages/code/tests/integration/cli-args.test.ts` asserts.
 6. `--help` short-circuits, then `--version` — both **before** mode-conflict checking,
    so `--list --help` is `help`, not a conflict.
 7. At most one `mode: true` flag; two or more →
@@ -499,11 +499,11 @@ step-8 rejection outside `--print`. Only the three interactive `Mode` variants (
 `--delete` and `--refresh-models`, the computed value is simply never attached to the returned `Mode`
 and is silently discarded — `--refresh-models --ascii` parses without error and `--ascii` has no effect,
 where `--format` in the same position would be a usage error. No test in
-`packages/code/tests/unit/cli-args.test.ts` exercises `--ascii` combined with a headless mode flag; see
+`packages/code/tests/integration/cli-args.test.ts` exercises `--ascii` combined with a headless mode flag; see
 §8.
 
 `extensionProfileSelector` is retained on run, resume, continue, print, list, delete, and refresh-models.
-Tests in `packages/code/tests/unit/cli-args.test.ts` pin the missing-value error, qualified/bare values,
+Tests in `packages/code/tests/integration/cli-args.test.ts` pin the missing-value error, qualified/bare values,
 propagation to those modes, and the `--update` incompatibility.
 
 ### 4.3 `resolveDebugRequest` — folding flag and environment
@@ -521,7 +521,7 @@ propagation to those modes, and the `--update` incompatibility.
 | yes                                 | `--debug=warn`    | `CLARVIS_CODE_DEBUG_LEVEL=error`         | `true`           | `"warn"`       |
 | yes                                 | no                | `CLARVIS_CODE_DEBUG_LEVEL="shout"` only  | `false`          | `"debug"`      |
 
-Every row above is an assertion in `packages/code/tests/unit/cli-args.test.ts`. Level
+Every row above is an assertion in `packages/code/tests/integration/cli-args.test.ts`. Level
 precedence is `mode.debug.level ?? debugLevel(CLARVIS_CODE_DEBUG_LEVEL) ?? debugLevel(CLARVIS_CODE_DEBUG) ?? "debug"`
 (`packages/code/src/cli-args.ts`, default constant).
 
@@ -679,7 +679,7 @@ Two orderings the code annotates explicitly:
   blocks or paints an error. Production: `packages/code/src/runtime.tsx` (`AppShell.afterPaint`,
   `update_check`) and `packages/code/src/update/check.ts`. Test:
   `packages/code/tests/architecture/architecture-boundary.test.ts` (post-paint gate),
-  `packages/code/tests/unit/update-check.test.ts`, and
+  `packages/code/tests/integration/update-check.test.ts`, and
   `packages/code/tests/integration/app-shell-render.test.tsx`.
 
 
@@ -847,7 +847,7 @@ environment isolation, primary anchoring, ignore protection, clean removal, dirt
 generated name, path collision, invalid name, local-`HEAD` base selection against a remote default,
 unpublished commits, nested-worktree and detached-`HEAD` launches, branch reuse with and without a
 commit at `HEAD`, missing commit, and uncopied uncommitted changes) and parsing is
-pinned by `packages/code/tests/unit/cli-args.test.ts`.
+pinned by `packages/code/tests/integration/cli-args.test.ts`.
 
 **Callback identity remains local, not a switching API.** `createWorkspaceCallbackTarget` is a
 one-slot box and `isActiveWorkspaceCallbackTarget` accepts only the same still-bound object
@@ -1206,7 +1206,7 @@ run or silently reattaches its controls.
 Production: `createWorkspaceRunClient`, `reconnectBackend` and `subscribeConnectionFailure` wiring
 in `packages/code/src/runtime.tsx`; `WorkspaceClientManager` and `createKernelRunClient`.
 Test: the recovery/refused-reload cases in
-`packages/code/tests/component/workspace-client-manager.test.ts`, transition-intent and retained-client
+`packages/code/tests/integration/workspace-client-manager.test.ts`, transition-intent and retained-client
 cases in `packages/code/tests/component/kernel-run-client.test.ts`, and `/reconnect` routing in
 `packages/code/tests/integration/app-commands.test.tsx`.
 
@@ -1326,37 +1326,37 @@ Production: `packages/code/src/cli.ts`. Test:
 **INV-CB-13.** `FLAGS` is the sole source for `--help`, the usage line **and** the package README's CLI
 section — every flag token and every `desc` string appears in all three.
 Production: `packages/code/src/cli-args.ts`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts`.
+Pinned: `packages/code/tests/integration/cli-args.test.ts`.
 
 **INV-CB-14.** At most one `mode: true` flag per invocation; two or more is a usage error naming all of
 them.
 Production: `packages/code/src/cli-args.ts`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts`.
+Pinned: `packages/code/tests/integration/cli-args.test.ts`.
 
 **INV-CB-15.** `--agent` and `--format` are legal only alongside `-p/--print`.
 Production: `packages/code/src/cli-args.ts`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts`.
+Pinned: `packages/code/tests/integration/cli-args.test.ts`.
 
 **INV-CB-16.** `--help` and `--version` short-circuit before mode-conflict validation, so they can
 never produce a usage error.
 Production: `packages/code/src/cli-args.ts`.
-Pinned indirectly: `packages/code/tests/unit/cli-args.test.ts` asserts the bare forms; **no test
+Pinned indirectly: `packages/code/tests/integration/cli-args.test.ts` asserts the bare forms; **no test
 asserts the short-circuit against a conflicting flag** (e.g. `--list --help`). Unpinned in that respect.
 
 **INV-CB-17.** A `--debug=<x>` naming no level is a usage error; the same typo in
 `CLARVIS_CODE_DEBUG_LEVEL` is ignored and the default level stands.
 Production: `packages/code/src/cli-args.ts`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts`.
+Pinned: `packages/code/tests/integration/cli-args.test.ts`.
 
 **INV-CB-18.** The `--debug` flag overrides the environment in both directions: it enables against
 `CLARVIS_CODE_DEBUG=off`, and `--debug=<level>` overrides `CLARVIS_CODE_DEBUG_LEVEL`.
 Production: `packages/code/src/cli-args.ts`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts`.
+Pinned: `packages/code/tests/integration/cli-args.test.ts`.
 
 **INV-CB-19.** `update`/`help`/`version`/`usage-error` never open a diagnostic session, whatever the
 environment says, because those `Mode` variants carry no `debug` member.
 Production: `packages/code/src/cli-args.ts` (union) (the `"debug" in mode` guard).
-Pinned: `packages/code/tests/unit/cli-args.test.ts`.
+Pinned: `packages/code/tests/integration/cli-args.test.ts`.
 
 **INV-CB-20.** `--continue` is strict to the current workspace and never falls back to a global most
 recent session.
@@ -1383,7 +1383,7 @@ Pinned: `packages/code/tests/integration/platform-lifecycle.test.ts` ( for stdin
 **INV-CB-24.** Worktree selection completes before any host service boots, and the selected canonical
 checkout is the process workspace for every mode that accepts `--worktree`.
 Production: `packages/code/src/runtime.tsx` (`runInteractiveMode`, `runHeadlessMode`).
-Pinned: `packages/code/tests/unit/cli-args.test.ts` (mode propagation) and
+Pinned: `packages/code/tests/integration/cli-args.test.ts` (mode propagation) and
 `packages/code/tests/integration/worktree-bootstrap.test.ts` (canonical create/reopen results).
 
 **INV-CB-25.** Git's registered worktree list is the sole registry; an existing destination that Git
@@ -1408,7 +1408,7 @@ the constant false value used by the generic App shell.
 Production: `packages/code/src/runtime.tsx` (`runControls.switching`);
 `WorkspaceClientManager.open` rejects any id other
 than its immutable current workspace (`packages/code/src/adapters/workspace-client-manager.ts`).
-Pinned: `packages/code/tests/component/workspace-client-manager.test.ts`.
+Pinned: `packages/code/tests/integration/workspace-client-manager.test.ts`.
 
 **INV-CB-29.** The layout floor is 24 columns × 6 rows; below either dimension the mode is `floor`.
 Production: `packages/code/src/app/layout.ts`.
@@ -1494,7 +1494,7 @@ kernel is constructed, and only if unset. The local launcher's policy identity u
 environment as the child host. Production: `packages/code/src/index.tsx` (`runInteractive`),
 `codeHostEnvironment` in `packages/code/src/adapters/host-kernel-options.ts`, and
 `WorkspaceClientManager` in `packages/code/src/adapters/workspace-client-manager.ts`. Test:
-`packages/code/tests/unit/host-kernel-options.test.ts`.
+`packages/code/tests/integration/host-kernel-options.test.ts`.
 
 **INV-CB-41.** Durable memory recovery follows the independent host lifecycle, not a TUI paint or
 transport reconnect. Production: `serveLocalFileKernel` in
@@ -1508,8 +1508,8 @@ highest-precedence selector across backend reconnects; it never writes persisted
 Production: `Mode.extensionProfileSelector` in `packages/code/src/cli-args.ts`, capture and constructor
 plumbing in `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts`, and
 `packages/code/src/adapters/workspace-client-manager.ts`. Test:
-`packages/code/tests/unit/cli-args.test.ts` and
-`packages/code/tests/component/workspace-client-manager.test.ts`.
+`packages/code/tests/integration/cli-args.test.ts` and
+`packages/code/tests/integration/workspace-client-manager.test.ts`.
 
 **INV-CB-43.** The first interactive frame preserves Clarvis visual continuity without entering the
 application parser or models-catalog path: one branded `StartupComposer` owns a focused input, a
@@ -1534,7 +1534,7 @@ exposes global-state and managed-temporary deletion only through explicit `--cle
 (`developmentLauncherSource`, `existingLauncher`, `cleanDevelopmentState`,
 `createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`,
 `cleanDevelopmentState`). Test:
-`packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup and shell delegation).
+`packages/code/tests/integration/development-install.test.ts` (launcher execution, ownership, cleanup and shell delegation).
 
 **INV-CB-45.** Resume/continue session preflight finishes before OpenTUI renderer creation, so a
 missing session never enters raw mode or the alternate screen. Once renderer creation begins,
@@ -1608,9 +1608,9 @@ not implement password or identity-file UI; operators prepare a verified, nonint
 before starting the TUI. Production: `packages/code/src/cli-args.ts`, `packages/code/src/remote-host.ts`,
 `packages/code/src/adapters/remote-kernel-arguments.ts`, and
 `packages/code/src/adapters/workspace-client-manager.ts`. Test:
-`packages/code/tests/unit/cli-args.test.ts`,
+`packages/code/tests/integration/cli-args.test.ts`,
 `packages/code/tests/unit/remote-kernel-arguments.test.ts`,
-`packages/code/tests/component/workspace-client-manager.test.ts`, and
+`packages/code/tests/integration/workspace-client-manager.test.ts`, and
 `packages/kernel/tests/integration/remote-ssh.test.ts`.
 
 **INV-CB-51.** Below the split threshold (24–99 columns) the default presentation of run activity is a
@@ -1828,6 +1828,6 @@ Its importers span every layer this document's boundary rules separate:
     invocation (`packages/code/src/cli-args.ts`) but only attaches it to the `run`/`resume`/`continue` variants of
     `Mode`; for `--print`/`--list`/`--delete`/`--refresh-models` the value is silently dropped rather
     than rejected the way `--agent`/`--format` are outside `--print`. No test in
-    `packages/code/tests/unit/cli-args.test.ts` asserts what `parseMode(["--refresh-models",
+    `packages/code/tests/integration/cli-args.test.ts` asserts what `parseMode(["--refresh-models",
 "--ascii"])` returns, so whether this asymmetry with `--agent`/`--format` is intentional is not
     determinable from the code.

@@ -55,6 +55,9 @@ The suite makes its effect boundary explicit:
 - `tests/component/` owns composition of `AiSdkAdapter` and the lazy provider with injected or
   intercepted collaborators;
 - `tests/integration/` owns the real AI SDK request wire exercised through intercepted `fetch`;
+- `tests/integration/stream-metrics.test.ts` owns the physical stream-debug file and child-process
+  environment selector; counter and lifecycle calculations stay in `tests/unit/` with injected
+  samples and sink.
 - `tests/architecture/` owns the static lazy-loading invariant.
 
 Run an individual layer with `test:unit`, `test:component`, `test:integration`, or
@@ -209,3 +212,10 @@ stable across turns while fitting providers with a 64-character wire limit.
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+
+## Test suites
+
+`bun --filter @clarvis/llm test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/llm test:integration` runs this package's common physical test cases. `bun --filter @clarvis/llm test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

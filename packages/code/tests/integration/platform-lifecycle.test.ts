@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test, vi } from "bun:test";
+import { beforeEach, expect, mock, test, vi } from "bun:test";
 
 const spyOn = vi.spyOn;
 import type { CliRenderer } from "@opentui/core";
@@ -9,56 +9,35 @@ import type {
 import {
   assertInteractiveTTY,
   buildRendererConfig,
-  createPlatform,
+  createPlatform as createRuntimePlatform,
   readClipboardImage,
+  type PlatformOptions,
 } from "../../src/adapters/platform.ts";
-import {
-  environmentFixture,
-  spyOnProcessEnv,
-  spyOnProcessPlatform,
-} from "../helpers/process-fixtures.ts";
 
 process.setMaxListeners(0);
 
 let ambient: NodeJS.ProcessEnv;
-let envSpy: ReturnType<typeof spyOnProcessEnv>;
-let platformSpy: ReturnType<typeof spyOnProcessPlatform>;
+let selectedPlatform: NodeJS.Platform;
 
 beforeEach(() => {
-  ambient = environmentFixture({
-    ...process.env,
-    SSH_TTY: undefined,
-    SSH_CONNECTION: undefined,
-    WAYLAND_DISPLAY: undefined,
-    DISPLAY: undefined,
-    NO_COLOR: undefined,
-    TERM_PROGRAM: undefined,
-  });
-  envSpy = spyOnProcessEnv(
-    environmentFixture({
-      ...ambient,
-      SSH_TTY: undefined,
-      SSH_CONNECTION: undefined,
-      WAYLAND_DISPLAY: undefined,
-      DISPLAY: undefined,
-      NO_COLOR: undefined,
-      TERM_PROGRAM: undefined,
-    }),
-  );
-  platformSpy = spyOnProcessPlatform("linux");
-});
-
-afterEach(() => {
-  platformSpy.mockRestore();
-  envSpy.mockRestore();
+  ambient = {};
+  selectedPlatform = "linux";
 });
 
 function setEnvironment(overrides: Readonly<Record<string, string | undefined>>): void {
-  envSpy.mockReturnValue(Object.freeze({ ...ambient, ...overrides }) as NodeJS.ProcessEnv);
+  ambient = { ...ambient, ...overrides };
 }
 
 function setPlatform(platform: NodeJS.Platform): void {
-  platformSpy.mockReturnValue(platform);
+  selectedPlatform = platform;
+}
+
+function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}) {
+  return createRuntimePlatform(renderer, {
+    ...opts,
+    processEnv: () => ambient,
+    runtimePlatform: () => selectedPlatform,
+  });
 }
 
 function okResult(stdout: Buffer = Buffer.alloc(0)): ClipboardProcessResult {
@@ -234,6 +213,25 @@ test("createPlatform: reports the client runtime, remote path, and terminal iden
   expect(p.capabilities.runtimePlatform()).toBe("macos");
   setPlatform("aix");
   expect(p.capabilities.runtimePlatform()).toBe("unknown");
+});
+
+test("createPlatform: independent environment and platform readers do not change the host", () => {
+  const hostEnv = process.env;
+  const hostPlatform = process.platform;
+  const remote = createRuntimePlatform(fakeRenderer(), {
+    processEnv: () => ({ SSH_TTY: "/dev/pts/1" }),
+    runtimePlatform: () => "darwin",
+  });
+  const local = createRuntimePlatform(fakeRenderer(), {
+    processEnv: () => ({}),
+    runtimePlatform: () => "linux",
+  });
+  expect(remote.capabilities.remote()).toBe(true);
+  expect(local.capabilities.remote()).toBe(false);
+  expect(remote.capabilities.runtimePlatform()).toBe("macos");
+  expect(local.capabilities.runtimePlatform()).toBe("linux");
+  expect(process.env).toBe(hostEnv);
+  expect(process.platform).toBe(hostPlatform);
 });
 
 test("createPlatform: missing capability flags fall back to legacy keyboard, no mouse, no osc52, 'none' multiplexer", async () => {
@@ -490,5 +488,5 @@ test("nativeClipboardCopy: a candidate error is treated as a miss, not a crash",
 test("readClipboardImage: a candidate error is skipped, not fatal", async () => {
   setEnvironment({ DISPLAY: ":0" });
   const run = clipboardRunner(() => failResult(new Error("spawn EPERM")));
-  expect(await readClipboardImage(undefined, run)).toBeNull();
+  expect(await readClipboardImage(undefined, run, { processEnv: () => ambient })).toBeNull();
 });

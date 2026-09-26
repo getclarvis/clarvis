@@ -1,7 +1,7 @@
-import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it, expect, spyOn } from "bun:test";
+import { describe, it, expect, spyOn, onTestFinished } from "bun:test";
 import { loadEnv, type ExecutionRecord } from "@clarvis/capability";
 import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-client";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
@@ -9,17 +9,26 @@ import { createMemoryTraceStore } from "@clarvis/trace/testing";
 import { MockLLM } from "@clarvis/loop/testing";
 import { memoizeByOwner, type ExecuteRunDeps } from "@clarvis/loop";
 import type { MemoryFactory } from "@clarvis/memory/capability";
-import { createFileMemoryStore, createMemory } from "@clarvis/memory";
-import {
-  createFilePlanRepository,
-  createPlanStore,
-  type PlanFactory,
-  type PlanStore,
-} from "@clarvis/plan";
-import { createInProcessKernel, createWorkflowStore } from "../../src/index.ts";
+import { createMemory } from "@clarvis/memory";
+import { createInMemoryMemoryStore } from "@clarvis/memory/testing";
+import { createPlanStore, type PlanFactory, type PlanStore } from "@clarvis/plan";
+import { createInMemoryPlanRepository } from "@clarvis/plan/testing";
+import { createInProcessKernel as rawCreateInProcessKernel } from "../../src/index.ts";
 import { createMemoryConfigStore } from "../../src/config.ts";
 import type { Logger } from "@clarvis/capability";
+import { memorySessionStore, memoryWorkflowStore } from "../helpers/memory-kernel-stores.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
+
+const createInProcessKernel: typeof rawCreateInProcessKernel = (options) => {
+  const kernel = rawCreateInProcessKernel(options);
+  onTestFinished(() => kernel.close());
+  return kernel;
+};
+
+let workspaceSerial = 0;
+function virtualWorkspace(): string {
+  return join(tmpdir(), `clarvis-owner-virtual-${process.pid}-${++workspaceSerial}`);
+}
 
 const PROVIDERS = [{ name: "anthropic", kind: "anthropic" }];
 const PROJECT_ID = "prj_test";
@@ -60,18 +69,20 @@ function makeKernel(
     stopOwner?: (owner: string) => Promise<void>;
     onOwnerRetired?: (owner: string) => void | Promise<void>;
   },
-  runDelayMs = 0,
+  runGate?: { entered: ReturnType<typeof deferred>; release: ReturnType<typeof deferred> },
   logger?: Logger,
 ) {
   const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_MCP_CONNECT_TIMEOUT_MS: "2000" });
   const traceStore = createMemoryTraceStore();
+  const memoryStoreFor = memoizeByOwner((_owner: string) => createInMemoryMemoryStore());
   const memoryFor = memoizeByOwner((owner: string) =>
-    createMemory({
-      store: createFileMemoryStore({
-        root: join(ws, ".clarvis", "owners", owner, "memory"),
-      }),
-    }),
+    createMemory({ store: memoryStoreFor(owner) }),
   );
+  const planStoreFor = memoizeByOwner((_owner: string) =>
+    createPlanStore({ repository: createInMemoryPlanRepository() }),
+  );
+  const sessionStoreFor = memoizeByOwner((_owner: string) => memorySessionStore());
+  const workflowStoreFor = memoizeByOwner((_owner: string) => memoryWorkflowStore());
   const startedMemoryOwners: string[] = [];
   let memoryStops = 0;
   const stoppedMemoryOwners: string[] = [];
@@ -91,10 +102,34 @@ function makeKernel(
     },
     subscribeToRun: () => () => {},
   };
+  const llm = new MockLLM({ script: [{ text: "Done." }, { text: "Done." }] });
+  if (runGate !== undefined) {
+    const originalCall = llm.call.bind(llm);
+    llm.call = async (params) => {
+      runGate.entered.resolve();
+      const abortError = (): Error =>
+        params.signal?.reason instanceof Error
+          ? params.signal.reason
+          : new DOMException("Model call aborted", "AbortError");
+      await new Promise<void>((resolve, reject) => {
+        if (params.signal?.aborted) {
+          reject(abortError());
+          return;
+        }
+        const onAbort = (): void => reject(abortError());
+        params.signal?.addEventListener("abort", onAbort, { once: true });
+        void runGate.release.promise.then(() => {
+          params.signal?.removeEventListener("abort", onAbort);
+          resolve();
+        });
+      });
+      return originalCall(params);
+    };
+  }
   const deps: ExecuteRunDeps = {
     executionVisibility: "public",
     env,
-    llm: new MockLLM({ script: [{ text: "Done.", delayMs: runDelayMs }] }),
+    llm,
     connections: createConnectionManager({
       workspace: ws,
       factory: defaultMCPClientFactory,
@@ -114,16 +149,9 @@ function makeKernel(
     globalConfigDir: join(ws, "global"),
     home: join(ws, "home"),
     memoryFactory,
-    planFactory: planFactoryFor(
-      memoizeByOwner((owner: string) =>
-        createPlanStore({
-          repository: createFilePlanRepository({
-            workspaceRoot: ws,
-            root: join(ws, ".clarvis", "owners", owner, "plans"),
-          }),
-        }),
-      ),
-    ),
+    planFactory: planFactoryFor(planStoreFor),
+    sessionStoreForOwner: sessionStoreFor,
+    workflowStoreForOwner: workflowStoreFor,
     ...(ownerCache === undefined ? {} : { ownerCache }),
     ...(retirement?.onOwnerRetired === undefined
       ? {}
@@ -133,6 +161,9 @@ function makeKernel(
     kernel,
     traceStore,
     deps,
+    memoryStoreFor,
+    planStoreFor,
+    workflowStoreFor,
     startedMemoryOwners,
     stoppedMemoryOwners,
     memoryStops: () => memoryStops,
@@ -185,7 +216,7 @@ function record(owner: string, id: string, startedAt: number): ExecutionRecord {
 
 describe("owner isolation", () => {
   it("keeps internal executions outside every public run surface", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-private-run-"));
+    const ws = virtualWorkspace();
     const { kernel, traceStore, deps } = makeKernel(ws);
     try {
       const hidden = {
@@ -231,7 +262,7 @@ describe("owner isolation", () => {
   });
 
   it("rejects invalid owner-cache bounds and a cross-project workspace", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-invalid-cache-"));
+    const ws = virtualWorkspace();
     expect(() => makeKernel(ws, { maxOwners: 0 })).toThrow("maxOwners");
     expect(() => makeKernel(ws, { idleMs: -1 })).toThrow("idleMs");
     const fixture = makeKernel(ws);
@@ -250,7 +281,7 @@ describe("owner isolation", () => {
   });
 
   it("retires an idle owner after a non-zero cache delay", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-idle-"));
+    const ws = virtualWorkspace();
     const { kernel, stoppedMemoryOwners } = makeKernel(ws, { idleMs: 5 });
     const owner = await kernel.acquireOwner("alice");
     owner.release();
@@ -262,17 +293,12 @@ describe("owner isolation", () => {
   });
 
   it("keeps plans separate: bob sees neither alice's list nor her plan by id", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
-    const { kernel } = makeKernel(ws);
+    const ws = virtualWorkspace();
+    const { kernel, planStoreFor } = makeKernel(ws);
     const alice = kernel.forOwner("alice");
     const bob = kernel.forOwner("bob");
 
-    const aliceStore = createPlanStore({
-      repository: createFilePlanRepository({
-        workspaceRoot: ws,
-        root: join(ws, ".clarvis", "owners", stateOwner("alice"), "plans"),
-      }),
-    });
+    const aliceStore = planStoreFor(stateOwner("alice"));
     const created = await aliceStore.create({
       title: "Alice's plan",
       objective: "hers",
@@ -284,10 +310,11 @@ describe("owner isolation", () => {
     expect((await bob.plans.list()).plans).toHaveLength(0);
     await expect(bob.plans.read(created.id)).rejects.toThrow(/Plan not found/);
     expect((await alice.plans.read(created.id)).title).toBe("Alice's plan");
+    expect(existsSync(ws)).toBe(false);
   });
 
   it("keeps sessions separate", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel } = makeKernel(ws);
     const alice = kernel.forOwner("alice");
     const bob = kernel.forOwner("bob");
@@ -308,14 +335,12 @@ describe("owner isolation", () => {
   });
 
   it("keeps memory documents separate", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
-    const { kernel } = makeKernel(ws);
+    const ws = virtualWorkspace();
+    const { kernel, memoryStoreFor } = makeKernel(ws);
     const alice = kernel.forOwner("alice");
     const bob = kernel.forOwner("bob");
 
-    await createFileMemoryStore({
-      root: join(ws, ".clarvis", "owners", stateOwner("alice"), "memory"),
-    }).write(
+    await memoryStoreFor(stateOwner("alice")).write(
       "preferences/editor/MEMORY.md",
       "---\ndescription: Alice editor preference\n---\nUses modal editing.\n",
     );
@@ -325,9 +350,9 @@ describe("owner isolation", () => {
   });
 
   it("keeps workflow records separate", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
-    const { kernel } = makeKernel(ws);
-    createWorkflowStore({ dir: join(ws, "global"), owner: stateOwner("alice") }).save({
+    const ws = virtualWorkspace();
+    const { kernel, workflowStoreFor } = makeKernel(ws);
+    workflowStoreFor(stateOwner("alice")).save({
       id: "workflow-a",
       root_run_id: "workflow-a",
       title: "Alice workflow",
@@ -354,7 +379,7 @@ describe("owner isolation", () => {
   });
 
   it("keeps traces separate: cross-owner get and delete both report not_found", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel, traceStore } = makeKernel(ws);
     await traceStore.insert(record(stateOwner("alice"), "a1", 1_000));
     await traceStore.insert(record(stateOwner("bob"), "b1", 2_000));
@@ -368,7 +393,7 @@ describe("owner isolation", () => {
   });
 
   it("memoizes each owner's scope and binds the unscoped services to the default owner", () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel } = makeKernel(ws);
 
     expect(kernel.forOwner("alice")).toBe(kernel.forOwner("alice"));
@@ -385,7 +410,7 @@ describe("owner isolation", () => {
   });
 
   it("leases owner scopes and evicts only after the last release", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel, stoppedMemoryOwners } = makeKernel(ws, { idleMs: 0 });
 
     const first = await kernel.acquireOwner("alice");
@@ -407,13 +432,15 @@ describe("owner isolation", () => {
   });
 
   it("keeps an owner resident until every run started from it is closed", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-run-"));
-    const { kernel, stoppedMemoryOwners } = makeKernel(ws, { idleMs: 0 }, undefined, 100);
+    const ws = virtualWorkspace();
+    const runGate = { entered: deferred(), release: deferred() };
+    const { kernel, stoppedMemoryOwners } = makeKernel(ws, { idleMs: 0 }, undefined, runGate);
     const owner = await kernel.acquireOwner("alice");
     const handle = await owner.value.runs.start({
       messages: [{ role: "user", content: "stay resident" }],
       agent: "solo",
     });
+    await runGate.entered.promise;
 
     owner.release();
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -427,10 +454,12 @@ describe("owner isolation", () => {
       owner.value.runs.start({ messages: [{ role: "user", content: "too late" }], agent: "solo" }),
     ).rejects.toMatchObject({ code: "unavailable" });
     await kernel.close();
+    runGate.release.resolve();
   });
 
   it("waits for an active owner run to close before retiring it during kernel shutdown", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-shutdown-run-"));
+    const ws = virtualWorkspace();
+    const runGate = { entered: deferred(), release: deferred() };
     let runClosed = false;
     let ownerStoppedAfterRun = false;
     const { kernel } = makeKernel(
@@ -441,13 +470,14 @@ describe("owner isolation", () => {
           ownerStoppedAfterRun = runClosed;
         },
       },
-      100,
+      runGate,
     );
     const owner = await kernel.acquireOwner("alice");
     const handle = await owner.value.runs.start({
       messages: [{ role: "user", content: "stop cleanly" }],
       agent: "solo",
     });
+    await runGate.entered.promise;
     owner.release();
     void handle.closed.then(() => {
       runClosed = true;
@@ -457,10 +487,11 @@ describe("owner isolation", () => {
 
     expect(runClosed).toBeTrue();
     expect(ownerStoppedAfterRun).toBeTrue();
+    runGate.release.resolve();
   });
 
   it("rejects admission when every resident owner is active or pinned", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel } = makeKernel(ws, { maxOwners: 2, idleMs: 60_000 });
     const alice = await kernel.acquireOwner("alice");
 
@@ -472,7 +503,7 @@ describe("owner isolation", () => {
   });
 
   it("counts an owner undergoing teardown against the admission limit", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const cleanup = deferred();
     const { kernel, startedMemoryOwners } = makeKernel(
       ws,
@@ -500,7 +531,7 @@ describe("owner isolation", () => {
   });
 
   it("waits for an owner's own teardown before rebuilding its scope", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const cleanup = deferred();
     const { kernel, startedMemoryOwners } = makeKernel(
       ws,
@@ -531,7 +562,7 @@ describe("owner isolation", () => {
   });
 
   it("observes detached cleanup rejection and waits for it during close", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const cleanup = deferred();
     const warning = spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const warned: { fields: unknown; message: unknown }[] = [];
@@ -549,7 +580,7 @@ describe("owner isolation", () => {
           stopOwner: (owner) =>
             owner === stateOwner("alice") ? cleanup.promise : Promise.resolve(),
         },
-        0,
+        undefined,
         recording,
       );
       const alice = await kernel.acquireOwner("alice");
@@ -581,7 +612,7 @@ describe("owner isolation", () => {
   });
 
   it("starts durable memory recovery only after the host releases boot", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel, startedMemoryOwners } = makeKernel(ws);
     const defaultOwner = ownerFromWorkspace(ws);
 
@@ -610,7 +641,7 @@ describe("owner isolation", () => {
   });
 
   it("owns the memory factory lifecycle in lower-level composition", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel, memoryStops } = makeKernel(ws);
 
     await kernel.close();
@@ -620,7 +651,7 @@ describe("owner isolation", () => {
   });
 
   it("does not recreate owner services after kernel shutdown", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel } = makeKernel(ws, { idleMs: 0 });
 
     await kernel.close();
@@ -630,7 +661,7 @@ describe("owner isolation", () => {
   });
 
   it("honours an explicit defaultOwner", () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
     const kernel = createInProcessKernel({
       deps: {
@@ -658,7 +689,7 @@ describe("owner isolation", () => {
   });
 
   it("rejects a blank forOwner call with a clear error instead of a raw TypeError from deep inside session-service construction", () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { kernel } = makeKernel(ws);
 
     expect(() => kernel.forOwner("")).toThrow(/InProcessKernel\.forOwner.*non-empty/);
@@ -666,7 +697,7 @@ describe("owner isolation", () => {
   });
 
   it("rejects a blank defaultOwner at construction, before any service is built", () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
     const build = () =>
       createInProcessKernel({
@@ -694,7 +725,7 @@ describe("owner isolation", () => {
   });
 
   it("rejects multi-owner construction without an owner-aware plan factory", () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
     expect(() =>
       createInProcessKernel({
@@ -721,7 +752,7 @@ describe("owner isolation", () => {
   });
 
   it("declares owner scope for plans and memory in explicit multi-owner mode", () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
+    const ws = virtualWorkspace();
     const { deps } = makeKernel(ws);
     const multi = createInProcessKernel({
       deps,
@@ -730,17 +761,15 @@ describe("owner isolation", () => {
       configStore: seededConfig(),
       ownershipMode: "multi",
       planFactory: planFactoryFor(
-        memoizeByOwner((owner: string) =>
+        memoizeByOwner((_owner: string) =>
           createPlanStore({
-            repository: createFilePlanRepository({
-              workspaceRoot: ws,
-              root: join(ws, ".clarvis", "owners", owner, "plans"),
-            }),
+            repository: createInMemoryPlanRepository(),
           }),
         ),
       ),
     });
     expect(multi.scopePolicy.plans).toBe("owner");
     expect(multi.scopePolicy.memory).toBe("owner");
+    onTestFinished(() => multi.close());
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { NOOP_LOGGER } from "@clarvis/capability";
 import {
   causeOf,
@@ -10,16 +10,6 @@ import {
 import { recordingLogger } from "../helpers/logging.ts";
 
 describe("warn", () => {
-  it("writes to stderr by default", () => {
-    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      warn("a message\n");
-      expect(spy).toHaveBeenCalledWith("a message\n");
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
   it("routes one call to a custom instance-local sink", () => {
     const seen: string[] = [];
     warn("captured", (m) => seen.push(m));

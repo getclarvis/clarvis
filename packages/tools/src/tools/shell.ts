@@ -3,7 +3,7 @@ import { constants as osConstants } from "node:os";
 import { ToolError } from "../errors.ts";
 import { resolvePath } from "../lib/paths.ts";
 import { statDirectory } from "../lib/files.ts";
-import type { SessionResult } from "../lib/execution-session.ts";
+import type { SessionResult, SpawnSessionChild } from "../lib/execution-session.ts";
 import { shellSessionView } from "./shell-session.ts";
 import type { RuntimeConfig } from "../config.ts";
 import type { ToolDef } from "./types.ts";
@@ -38,7 +38,9 @@ function computeExit(code: number | null, signal: NodeJS.Signals | null): number
 /** Injectable process and output seams for {@link createShell}. */
 interface ShellDependencies {
   /** Override process creation for lifecycle tests; defaults to Node's spawn. */
-  spawn?: typeof spawn;
+  spawn?: SpawnSessionChild;
+  /** Directory validation for process-free handler tests. */
+  statDirectory?: (path: string, displayPath: string) => Promise<void>;
   /** Override finalized text for lifecycle tests after the manager has drained both pipes. */
   finalizeOutput?: (result: SessionResult) => Promise<{ stdout: string; stderr: string }>;
 }
@@ -114,7 +116,8 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
       const yieldMs = args.yield_time_ms as number | undefined;
       const readyWhen = readinessPattern(args.ready_when as string | undefined);
 
-      await statDirectory(cwd, cwdArg ?? cwd);
+      if (dependencies.statDirectory) await dependencies.statDirectory(cwd, cwdArg ?? cwd);
+      else await statDirectory(cwd, cwdArg ?? cwd);
 
       return runCommand(
         command,
@@ -146,14 +149,15 @@ async function runCommand(
   finalize?: (result: SessionResult) => Promise<{ stdout: string; stderr: string }>,
   onOutput?: (chunk: string) => void,
   onExecutionStarted?: () => void,
-  spawnChild: typeof spawn = spawn,
+  spawnChild: SpawnSessionChild = spawn,
   yieldMs?: number,
   readyWhen?: RegExp,
 ): Promise<string> {
   if (signal?.aborted) {
     throw new ToolError("aborted", "Command aborted", { stdout: "", stderr: "" });
   }
-  const startedAt = Date.now();
+  const clock = config.sessionManager.clock;
+  const startedAt = clock.now();
   const session = await config.sessionManager.launch({
     config,
     agent: config.sessionAgent,
@@ -172,14 +176,14 @@ async function runCommand(
       if (readyWhen !== undefined) await session.waitReady(yieldMs, signal);
       else
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, yieldMs);
+          const timer = clock.setTimeout(resolve, yieldMs);
           session.completed.then(
             () => {
-              clearTimeout(timer);
+              clock.clearTimeout(timer);
               resolve();
             },
             () => {
-              clearTimeout(timer);
+              clock.clearTimeout(timer);
               resolve();
             },
           );
@@ -213,7 +217,7 @@ async function runCommand(
         stdout_bytes: result.stdoutBytes,
         stderr_bytes: result.stderrBytes,
         ...outputMeta,
-        duration_ms: Date.now() - startedAt,
+        duration_ms: clock.now() - startedAt,
       },
       "a shell command settled under the run-owned process manager",
     );

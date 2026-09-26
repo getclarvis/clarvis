@@ -4,12 +4,12 @@
  * this table instead of carrying four hand-maintained name matrices.
  *
  * @remarks It is also the one place the surface *size* is written down.
- * `tests/component/tool-surface.test.ts` pins it at 9 full / 3 read-only, so
+ * `tests/integration/common/tool-surface.test.ts` pins it at 9 full / 3 read-only, so
  * growing or shrinking the surface is a deliberate edit here rather than silent
  * drift. Each row once carried a third field gating it on an optional runtime
  * that could fail to load; nothing conditions the surface any more, and no
  * capability may make it conditional again without adding a column back — which
- * `tests/component/core.test.ts` turns into a visible failure by pinning the
+ * `tests/integration/common/core.test.ts` turns into a visible failure by pinning the
  * descriptor's exact key set.
  */
 export const EXPECTED_TOOL_DESCRIPTORS = [

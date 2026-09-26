@@ -6,10 +6,16 @@ import type { ToolsLogger } from "./log.ts";
 /** A live process whose child handle and process-group identity belong to one run. */
 export interface OwnedProcess {
   readonly pid: number;
-  readonly child: ChildProcess;
+  readonly child: Pick<ChildProcess, "exitCode" | "signalCode">;
 }
 
-const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/** Effects used by the stop policy; production probes and signals the owned OS tree. */
+export interface ProcessOwnerDeps {
+  now(): number;
+  wait(ms: number): Promise<void>;
+  isRunning(owner: OwnedProcess): boolean;
+  signal(owner: OwnedProcess, signal: NodeJS.Signals, logger: ToolsLogger): void;
+}
 
 /** Report whether a process ID still names a running process; Linux zombies count as exited. */
 export function isAlive(pid: number): boolean {
@@ -73,19 +79,28 @@ function signalOwnedTree(
   }
 }
 
+const REAL_OWNER_DEPS: ProcessOwnerDeps = {
+  now: Date.now,
+  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  isRunning: ownedTreeRunning,
+  signal: signalOwnedTree,
+};
+
 /** Stop only a child held in this process; a saved PID never grants authority. */
 export async function stopOwnedProcess(
   processOwner: OwnedProcess,
   logger: ToolsLogger,
-  deadline = Date.now() + 1_200,
+  deadline?: number,
+  deps: ProcessOwnerDeps = REAL_OWNER_DEPS,
 ): Promise<boolean> {
-  if (!ownedTreeRunning(processOwner)) return true;
-  signalOwnedTree(processOwner, "SIGTERM", logger);
-  const graceEnd = Math.min(deadline, Date.now() + 400);
-  while (ownedTreeRunning(processOwner) && Date.now() < graceEnd)
-    await wait(Math.min(25, graceEnd - Date.now()));
-  if (ownedTreeRunning(processOwner)) signalOwnedTree(processOwner, "SIGKILL", logger);
-  while (ownedTreeRunning(processOwner) && Date.now() < deadline)
-    await wait(Math.min(25, deadline - Date.now()));
-  return !ownedTreeRunning(processOwner);
+  const stopDeadline = deadline ?? deps.now() + 1_200;
+  if (!deps.isRunning(processOwner)) return true;
+  deps.signal(processOwner, "SIGTERM", logger);
+  const graceEnd = Math.min(stopDeadline, deps.now() + 400);
+  while (deps.isRunning(processOwner) && deps.now() < graceEnd)
+    await deps.wait(Math.min(25, graceEnd - deps.now()));
+  if (deps.isRunning(processOwner)) deps.signal(processOwner, "SIGKILL", logger);
+  while (deps.isRunning(processOwner) && deps.now() < stopDeadline)
+    await deps.wait(Math.min(25, stopDeadline - deps.now()));
+  return !deps.isRunning(processOwner);
 }

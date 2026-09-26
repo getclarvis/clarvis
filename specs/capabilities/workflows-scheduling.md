@@ -418,7 +418,7 @@ a leader run owns no bridge of its own. A prompt parked in the tree-wide queue s
 window only after it reaches the front and a frontend confirms it is on screen, so queue time never
 consumes the window. Production: `packages/workflows/src/elicit-mux.ts`,
 `packages/kernel/src/workflows/workflows-service.ts` (`elicitWindowFor` on the manager's start
-params). Test: `packages/workflows/tests/contract/elicit-mux.test.ts` (the leader channel preserves
+params). Test: `packages/workflows/tests/contract/memory/elicit-mux.test.ts` (the leader channel preserves
 the request params behind its label) and `packages/kernel/tests/unit/elicit-bridge.test.ts` (the
 window keys on provenance and starts on presentation, for whatever enters that bridge).
 
@@ -853,14 +853,14 @@ rather than against `ExecuteRunDeps` precisely so this module adds no such impor
 
 **INV-W3 (INV-175).** `createWorkflowSemaphore` is `@clarvis/capability`'s `createSemaphore` by
 identity, not a wrapper. Production: `packages/workflows/src/concurrency.ts`. Test:
-`packages/workflows/tests/contract/concurrency.test.ts` (`toBe`).
+`packages/workflows/tests/contract/memory/concurrency.test.ts` (`toBe`).
 
 **INV-W4 (INV-176).** A workflow semaphore bounds concurrent leaders to its size and, on release,
 wakes the longest-waiting acquirer first. A leader reserves ledger headroom only after that admission,
 so a queued serial successor can reuse its predecessor's released share. Production:
 `createSemaphore` in `packages/capability/src/semaphore.ts`, `runOne` in
 `packages/workflows/src/dispatch.ts`, and `buildRunLeaderHandler` in
-`packages/workflows/src/capability.ts`. Test: `packages/workflows/tests/contract/concurrency.test.ts`
+`packages/workflows/src/capability.ts`. Test: `packages/workflows/tests/contract/memory/concurrency.test.ts`
 (`bounds leader fan-out and hands a released slot to the longest waiter`); end-to-end at
 `packages/workflows/tests/component/dispatch.test.ts` (`serial concurrency admits the queued tail
 against headroom released by each predecessor`) and
@@ -869,7 +869,7 @@ semaphore, sums usage, and records the tree edges`).
 
 **INV-W5 (INV-177).** A queued acquisition whose `AbortSignal` fires rejects with the abort's error
 instead of hanging. Production: `packages/capability/src/semaphore.ts`. Test:
-`packages/workflows/tests/contract/concurrency.test.ts`. The workflow-side consequence — the
+`packages/workflows/tests/contract/memory/concurrency.test.ts`. The workflow-side consequence — the
 child settles `stopped`, not `failed` — is in `buildRunLeaderHandler` and `runOne`, pinned by
 `an item cancelled while queued for a concurrency slot is settled, not left hanging`.
 

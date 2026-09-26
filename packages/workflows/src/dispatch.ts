@@ -106,6 +106,8 @@ export interface DispatchDeps {
    * the dispatch's behaviour depends on it.
    */
   now?: () => number;
+  /** Capacity-poll scheduler; tests supply a case-local clock. */
+  delay?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
 /** A decision to skip a unit before it costs anything, with the reason why. */
@@ -530,7 +532,7 @@ const CAPACITY_POLL_MAX_MS = 500;
  * @remarks The listener is removed on both paths, so a dispatch that waits many
  * times over a long run does not accumulate abort listeners on the run signal.
  */
-function delayOrAbort(ms: number, signal: AbortSignal): Promise<void> {
+export function delayOrAbort(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve) => {
     const done = (): void => {
       clearTimeout(timer);
@@ -609,7 +611,7 @@ async function waitForCapacity(
     foreignLive,
     elapsed: now() - log.wait.since,
   });
-  await delayOrAbort(delay, deps.ctx.signal);
+  await (deps.delay ?? delayOrAbort)(delay, deps.ctx.signal);
   return !deps.ctx.signal.aborted;
 }
 

@@ -123,7 +123,6 @@ describe("llm.retry.gave_up", () => {
     let calls = 0;
     const inner = (): Promise<never> => {
       calls += 1;
-      if (calls === 1) setTimeout(() => controller.abort(), 5);
       return Promise.reject(transient());
     };
     const wrapped = withTransportRetry(
@@ -131,7 +130,14 @@ describe("llm.retry.gave_up", () => {
       { maxRetries: 3, baseDelayMs: 500, maxDelayMs: 500, logger: log.logger },
     );
 
-    await expect(wrapped.call(params({ signal: controller.signal }))).rejects.toThrow("boom");
+    await expect(
+      wrapped.call(
+        params({
+          signal: controller.signal,
+          onRetry: () => queueMicrotask(() => controller.abort()),
+        }),
+      ),
+    ).rejects.toThrow("boom");
     expect(calls).toBe(1);
     expect(log.one("llm.retry.gave_up").fields).toMatchObject({ reason: "aborted", attempt: 1 });
   });

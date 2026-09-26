@@ -250,3 +250,10 @@ Explicitly versioned usage corrections accept signed deltas, ignore older revisi
 conflicting values at the same revision. Unversioned measurements must still add information.
 
 Pending resumes can link a limits edit through `resume_operation_id`; a plain edit never starts work. Partial usage gaps preserve bounded call provenance.
+
+## Test suites
+
+`bun --filter @clarvis/goal test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/goal test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

@@ -191,7 +191,7 @@ The client is constructed as `{ name: CLIENT_NAME, version: VERSION }`
 from the root product manifest (`packages/mcp-client/src/version.ts`, `VERSION`). Capabilities are
 `{ elicitation: {} }` when a relay was supplied and `{}` otherwise
 (`packages/mcp-client/src/client.ts`).
-`packages/mcp-client/tests/unit/version.test.ts` (`MCP client identity`) pins both identity fields to
+`packages/mcp-client/tests/integration/version.test.ts` (`MCP client identity`) pins both identity fields to
 their owned sources.
 
 ### 3.2 The stdio child's environment

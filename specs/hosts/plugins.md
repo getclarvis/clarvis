@@ -329,7 +329,7 @@ Production: `pluginSkillScanRoots`, `normalizeAgentMcp`, `normalizeAgentMcpServe
 `ensurePluginDataDir` in `packages/kernel/src/plugins/plugin-runtime.ts`; and the
 `expandVariables`/`cwd` path through `@clarvis/loop` and `@clarvis/mcp-client`. Tests:
 `packages/kernel/tests/integration/{plugin-manifest,plugin-contributions}.test.ts`,
-`packages/kernel/tests/unit/plugin-runtime.test.ts`, and
+`packages/kernel/tests/integration/plugin-runtime.test.ts`, and
 `packages/mcp-client/tests/component/transport-builder.test.ts`.
 
 A borrowed-host package with `.codex-plugin/plugin.json`, root `.mcp.json`, `agents/`, and `skills/`
@@ -405,7 +405,7 @@ decoding or retaining the complete resource. The values come from
 `MAX_SKILL_RESOURCE_FILE_BYTES` and `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` in
 `packages/skills/src/limits.ts`. Test: the large binary/text, per-file-bound, and aggregate-bound
 cases in `packages/kernel/tests/integration/plugin-contributions.test.ts` and `hashBoundedFile`
-cases in `packages/skills/tests/unit/bounded-read.test.ts`.
+cases in `packages/skills/tests/integration/bounded-read.test.ts`.
 
 An authored list may contain more than four locations. `compactSkillRoots` collapses direct-skill
 siblings to their parent only when the list exhausts every real child directory and the parent has
@@ -922,7 +922,7 @@ the repository owns those trees. Removing or replacing a checkout does not remov
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts` and `pluginDataDir` in
 `packages/kernel/src/plugins/plugin-runtime.ts`. Tests:
 `packages/kernel/tests/integration/plugin-service.test.ts` and
-`packages/kernel/tests/unit/plugin-runtime.test.ts`.
+`packages/kernel/tests/integration/plugin-runtime.test.ts`.
 
 `update`: only an exact **globally** installed, non-linked plugin; its `source` selects the same
 global inventory for lookup/replacement. A linked external checkout is visible and activatable but
@@ -1262,7 +1262,7 @@ All of the following are derived directly from this document's own source and te
 38. **The plugin protocol exposes lifecycle for the atomic plugin, not approval for internal
     contributions.** `PluginService` in `packages/protocol/src/plugins.ts` and the plugin operation
     registrations in `packages/kernel/src/transport/operations.ts`. Pinned:
-    `packages/kernel/tests/contract/transport-codecs.test.ts`.
+    `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 39. **Focused Marketplace install is the consent action for the complete plugin.**
     `installAndActivatePlugin` in `packages/code/src/app/commands.tsx`. Pinned:
@@ -1322,7 +1322,7 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/src/plugins/plugin-executable-snapshot.ts` and `contributionSnapshot` in
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the process-file fingerprint and
     drift cases in
-    `packages/kernel/tests/component/plugin-executable-snapshot.test.ts`,
+    `packages/kernel/tests/integration/plugin-executable-snapshot.test.ts`,
     `packages/kernel/tests/integration/extension-profile-manager.test.ts` and
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
@@ -1337,7 +1337,7 @@ All of the following are derived directly from this document's own source and te
     `PLUGIN_SKILL_RESOURCE_LIMITS`, `snapshotFileDigest`, `skillSurface`, `contributionSnapshot`,
     `verifyPinnedSkillCatalog`, and `skillRoots` in
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test:
-    `packages/skills/tests/unit/bounded-read.test.ts` and the canonical framing, manifest limit,
+    `packages/skills/tests/integration/bounded-read.test.ts` and the canonical framing, manifest limit,
     sidecar, post-watch verification, invalid-sibling, aggregate-bound, and lazy drift cases in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
@@ -1383,7 +1383,7 @@ All of the following are derived directly from this document's own source and te
     `createSettingsRunAssembler` (`pluginMcpServerNames` and `auto_tools`), file-kernel composition
     in `packages/kernel/src/file-kernel.ts`, and `addAutomaticMcpTools` in the loop.
     Test: the "attaches an active plugin server independently of persisted agent tools" case in
-    `packages/kernel/tests/component/settings-assembler.test.ts`, its operator-override case,
+    `packages/kernel/tests/integration/settings-assembler.test.ts`, its operator-override case,
     `packages/kernel/tests/integration/file-config-store.test.ts` (winning MCP origin),
     `packages/loop/tests/unit/automatic-mcp-tools.test.ts`, and the "host-composed automatic server
     tools" case in `packages/loop/tests/integration/open-tool-pool.test.ts`.
@@ -1585,7 +1585,7 @@ All of the following are derived directly from this document's own source and te
     `ensurePluginDataDir`; transport propagation through `@clarvis/loop` and
     `@clarvis/mcp-client`. Test:
     `packages/kernel/tests/integration/plugin-manifest.test.ts`,
-    `packages/kernel/tests/unit/plugin-runtime.test.ts`, and
+    `packages/kernel/tests/integration/plugin-runtime.test.ts`, and
     `packages/mcp-client/tests/component/transport-builder.test.ts`.
 
 85. **Borrowed-host `userConfig` is a shape check, not a secret store.** Only a whole

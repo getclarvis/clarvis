@@ -1,10 +1,11 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import type { Readable } from "node:stream";
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
 import { resolveShell, shellArgs, type ShellSpec } from "../shell.ts";
 import { ownProcessGroup } from "./process.ts";
-import { ownedTreeRunning, stopOwnedProcess } from "./process-owner.ts";
+import { ownedTreeRunning, stopOwnedProcess, type OwnedProcess } from "./process-owner.ts";
 import { allocateBudget, createOutputCoalescer, type OutputCoalescer } from "./output.ts";
 import { createScanBudget } from "./scan-budget.ts";
 import { SessionWindow, decodeCursor, encodeCursor, type OutputSlice } from "./session-window.ts";
@@ -12,6 +13,57 @@ import { SessionWindow, decodeCursor, encodeCursor, type OutputSlice } from "./s
 const SESSION_WINDOW_BYTES = 256 * 1024;
 const READY_WINDOW_BYTES = 64 * 1024;
 const STDIO_DRAIN_MS = 100;
+
+/** Child events, streams, status and release consumed by a live session. */
+export interface SessionChild {
+  readonly pid?: number;
+  readonly exitCode: number | null;
+  readonly signalCode: NodeJS.Signals | null;
+  readonly stdout: Pick<Readable, "setEncoding" | "on" | "removeAllListeners" | "destroy"> | null;
+  readonly stderr: Pick<Readable, "setEncoding" | "on" | "removeAllListeners" | "destroy"> | null;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(
+    event: "exit" | "close",
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): unknown;
+  once(event: "spawn", listener: () => void): unknown;
+  unref(): unknown;
+}
+
+/** Launch contract used by the shell handler and session manager. */
+export type SpawnSessionChild = (
+  file: string,
+  args: string[],
+  options: Parameters<typeof spawn>[2],
+) => SessionChild;
+
+/** One session manager's clock and scheduled work. */
+export interface SessionClock {
+  now(): number;
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+/** Tree probes and confirmed termination for children admitted by one manager. */
+export interface SessionOwnership {
+  isRunning(owner: OwnedProcess): boolean;
+  stop(owner: OwnedProcess, logger: RuntimeConfig["logger"], deadline: number): Promise<boolean>;
+}
+
+/** Effects owned by a session manager, including its children. */
+export interface ExecutionSessionDependencies {
+  clock: SessionClock;
+  ownership: SessionOwnership;
+}
+
+const REAL_SESSION_DEPS: ExecutionSessionDependencies = {
+  clock: {
+    now: Date.now,
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  },
+  ownership: { isRunning: ownedTreeRunning, stop: stopOwnedProcess },
+};
 
 interface LaunchRequest {
   readonly config: RuntimeConfig;
@@ -24,7 +76,7 @@ interface LaunchRequest {
   readonly signal?: AbortSignal;
   readonly onOutput?: (chunk: string) => void;
   readonly onExecutionStarted?: () => void;
-  readonly spawnChild?: typeof spawn;
+  readonly spawnChild?: SpawnSessionChild;
 }
 
 export interface SessionPage {
@@ -67,7 +119,7 @@ export interface ExecutionSession {
   readonly command: string;
   readonly cwd: string;
   readonly startedAt: number;
-  readonly child: ChildProcess;
+  readonly child: SessionChild;
   readonly completed: Promise<SessionResult>;
   readonly running: boolean;
   readonly terminationConfirmed: boolean;
@@ -91,7 +143,7 @@ function utf8Tail(buf: Buffer, maxBytes: number): Buffer {
 }
 
 class LiveSession implements ExecutionSession {
-  readonly startedAt = Date.now();
+  readonly startedAt: number;
   readonly completed: Promise<SessionResult>;
   private resolveCompleted!: (result: SessionResult) => void;
   private rejectCompleted!: (error: Error) => void;
@@ -107,8 +159,8 @@ class LiveSession implements ExecutionSession {
   private wasAborted = false;
   private stopConfirmed = false;
   private spawned = false;
-  private timer: ReturnType<typeof setTimeout> | undefined;
-  private drainTimer: ReturnType<typeof setTimeout> | undefined;
+  private timer: unknown;
+  private drainTimer: unknown;
   private abortListener: (() => void) | undefined;
   private readonly activityListeners = new Set<() => void>();
 
@@ -117,18 +169,20 @@ class LiveSession implements ExecutionSession {
     readonly agent: object,
     readonly command: string,
     readonly cwd: string,
-    readonly child: ChildProcess,
+    readonly child: SessionChild,
     private readonly config: RuntimeConfig,
     private readonly readyWhen: RegExp | undefined,
     onOutput: ((chunk: string) => void) | undefined,
+    private readonly deps: ExecutionSessionDependencies,
   ) {
+    this.startedAt = deps.clock.now();
     this.completed = new Promise((resolve, reject) => {
       this.resolveCompleted = resolve;
       this.rejectCompleted = reject;
     });
     this.completed.catch(() => undefined);
-    this.readyBudget = createScanBudget(config.regexScanBudgetMs);
-    this.live = onOutput ? createOutputCoalescer(onOutput) : undefined;
+    this.readyBudget = createScanBudget(config.regexScanBudgetMs, () => deps.clock.now());
+    this.live = onOutput ? createOutputCoalescer(onOutput, 200, deps.clock) : undefined;
   }
 
   get running(): boolean {
@@ -183,7 +237,7 @@ class LiveSession implements ExecutionSession {
   }
 
   treeRunning(): boolean {
-    return this.child.pid !== undefined && ownedTreeRunning(this.ownedProcess());
+    return this.child.pid !== undefined && this.deps.ownership.isRunning(this.ownedProcess());
   }
 
   private ownedProcess() {
@@ -194,11 +248,11 @@ class LiveSession implements ExecutionSession {
   }
 
   start(signal?: AbortSignal, timeoutMs?: number, onExecutionStarted?: () => void): void {
-    const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
+    const deadline = timeoutMs === undefined ? undefined : this.deps.clock.now() + timeoutMs;
     const expire = () => {
       if (this.didTimeOut || this.settled || !this.running) return;
       this.didTimeOut = true;
-      this.stop(Date.now() + 1_200).catch((error: unknown) => {
+      this.stop(this.deps.clock.now() + 1_200).catch((error: unknown) => {
         this.config.logger.warn(
           {
             event: "tools.session_stop_failed",
@@ -209,7 +263,7 @@ class LiveSession implements ExecutionSession {
       });
     };
     const capture = (stream: "stdout" | "stderr") => (text: string) => {
-      if (deadline !== undefined && Date.now() >= deadline) expire();
+      if (deadline !== undefined && this.deps.clock.now() >= deadline) expire();
       this.live?.push(text);
       (stream === "stdout" ? this.stdoutWindow : this.stderrWindow).push(text);
       this.scanReady(text);
@@ -219,12 +273,12 @@ class LiveSession implements ExecutionSession {
     this.child.stderr?.setEncoding("utf8");
     this.child.stdout?.on("data", capture("stdout"));
     this.child.stderr?.on("data", capture("stderr"));
-    if (timeoutMs !== undefined) this.timer = setTimeout(expire, timeoutMs);
+    if (timeoutMs !== undefined) this.timer = this.deps.clock.setTimeout(expire, timeoutMs);
     if (signal !== undefined) {
       this.abortListener = () => {
         if (this.settled || !this.running) return;
         this.wasAborted = true;
-        this.stop(Date.now() + 1_200).catch((error: unknown) => {
+        this.stop(this.deps.clock.now() + 1_200).catch((error: unknown) => {
           this.config.logger.warn(
             {
               event: "tools.session_stop_failed",
@@ -242,9 +296,9 @@ class LiveSession implements ExecutionSession {
       this.rejectCompleted(new ToolError("io_error", `Failed to run command: ${error.message}`));
     });
     this.child.on("exit", (code, exitSignal) => {
-      if (this.timer !== undefined) clearTimeout(this.timer);
-      if (this.drainTimer !== undefined) clearTimeout(this.drainTimer);
-      this.drainTimer = setTimeout(
+      if (this.timer !== undefined) this.deps.clock.clearTimeout(this.timer);
+      if (this.drainTimer !== undefined) this.deps.clock.clearTimeout(this.drainTimer);
+      this.drainTimer = this.deps.clock.setTimeout(
         () => void this.finish(code, exitSignal, signal),
         STDIO_DRAIN_MS,
       );
@@ -303,12 +357,12 @@ class LiveSession implements ExecutionSession {
     await new Promise<void>((resolve) => {
       const wake = () => {
         if (!changed()) return;
-        clearTimeout(timer);
+        this.deps.clock.clearTimeout(timer);
         this.activityListeners.delete(wake);
         signal?.removeEventListener("abort", wake);
         resolve();
       };
-      const timer = setTimeout(() => {
+      const timer = this.deps.clock.setTimeout(() => {
         this.activityListeners.delete(wake);
         signal?.removeEventListener("abort", wake);
         resolve();
@@ -320,19 +374,37 @@ class LiveSession implements ExecutionSession {
   }
 
   async waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
-    const deadline = Date.now() + timeoutMs;
-    while (!this.readyMatched && !this.settled && Date.now() < deadline && !signal?.aborted) {
-      if (this.readyError !== undefined) throw this.readyError;
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
     if (this.readyError !== undefined) throw this.readyError;
     if (signal?.aborted) throw new ToolError("aborted", "Session readiness wait aborted");
-    return this.readyMatched;
+    if (this.readyMatched || this.settled || timeoutMs <= 0) return this.readyMatched;
+    return new Promise<boolean>((resolve, reject) => {
+      const finish = (ready: boolean, error?: Error) => {
+        if (timer !== undefined) this.deps.clock.clearTimeout(timer);
+        this.activityListeners.delete(check);
+        signal?.removeEventListener("abort", check);
+        if (error !== undefined) reject(error);
+        else resolve(ready);
+      };
+      const check = () => {
+        if (this.readyError !== undefined) finish(false, this.readyError);
+        else if (signal?.aborted)
+          finish(false, new ToolError("aborted", "Session readiness wait aborted"));
+        else if (this.readyMatched || this.settled) finish(this.readyMatched);
+      };
+      this.activityListeners.add(check);
+      signal?.addEventListener("abort", check, { once: true });
+      const timer = this.deps.clock.setTimeout(() => finish(false), timeoutMs);
+      check();
+    });
   }
 
-  async stop(deadline = Date.now() + 1_200): Promise<boolean> {
+  async stop(deadline = this.deps.clock.now() + 1_200): Promise<boolean> {
     if (this.child.pid === undefined) return !this.running;
-    const confirmed = await stopOwnedProcess(this.ownedProcess(), this.config.logger, deadline);
+    const confirmed = await this.deps.ownership.stop(
+      this.ownedProcess(),
+      this.config.logger,
+      deadline,
+    );
     if (confirmed) this.stopConfirmed = true;
     return confirmed;
   }
@@ -340,8 +412,8 @@ class LiveSession implements ExecutionSession {
   private beginSettle(signal?: AbortSignal): boolean {
     if (this.settled) return false;
     this.settled = true;
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    if (this.drainTimer !== undefined) clearTimeout(this.drainTimer);
+    if (this.timer !== undefined) this.deps.clock.clearTimeout(this.timer);
+    if (this.drainTimer !== undefined) this.deps.clock.clearTimeout(this.drainTimer);
     if (signal !== undefined && this.abortListener !== undefined)
       signal.removeEventListener("abort", this.abortListener);
     this.live?.settle();
@@ -404,7 +476,14 @@ export class ExecutionSessionManager {
   private readonly sessions = new Map<string, LiveSession>();
   private closed = false;
 
-  constructor(private readonly afterSpawn?: (child: ChildProcess) => void) {}
+  constructor(
+    private readonly afterSpawn?: (child: SessionChild) => void,
+    private readonly deps: ExecutionSessionDependencies = REAL_SESSION_DEPS,
+  ) {}
+
+  get clock(): SessionClock {
+    return this.deps.clock;
+  }
 
   async launch(request: LaunchRequest): Promise<ExecutionSession> {
     if (this.closed) throw new ToolError("aborted", "Process admission is closed");
@@ -466,7 +545,7 @@ export class ExecutionSessionManager {
     if (request.config.actionValid?.() === false || request.signal?.aborted) {
       throw new ToolError("sandbox_denied", "Action authority changed before process launch");
     }
-    let child: ChildProcess;
+    let child: SessionChild;
     try {
       child = (request.spawnChild ?? spawn)(spec.file, spec.args, {
         ...spec.options,
@@ -490,6 +569,7 @@ export class ExecutionSessionManager {
       request.config,
       request.readyWhen,
       request.onOutput,
+      this.deps,
     );
     try {
       this.sessions.set(id, session);
@@ -522,7 +602,7 @@ export class ExecutionSessionManager {
   /** Close admission, stop every tracked process and confirm physical exit. */
   async close(budgetMs = 1_200): Promise<boolean> {
     this.closed = true;
-    const deadline = Date.now() + budgetMs;
+    const deadline = this.deps.clock.now() + budgetMs;
     const outcomes = await Promise.all([
       ...[...this.sessions.values()].map((session) => session.stop(deadline)),
     ]);

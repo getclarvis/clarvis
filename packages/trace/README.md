@@ -242,3 +242,10 @@ An explicitly requested settled-context compaction uses `replaceFinalContext` to
 only `final_context` and add any summarizer usage to the record totals. The replacement holds the
 same owner deletion lease and per-record lease as `deleteById`, so neither record deletion nor owner
 deletion can race the rewrite and resurrect stale context.
+
+## Test suites
+
+`bun --filter @clarvis/trace test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/trace test:integration` runs this package's common physical test cases. `bun --filter @clarvis/trace test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

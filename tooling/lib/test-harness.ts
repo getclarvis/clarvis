@@ -1,3 +1,5 @@
+import { testFileLevel } from "./source-policy.ts";
+
 /**
  * The per-test timeout every `bun test` invocation must carry on its command line.
  *
@@ -157,7 +159,10 @@ export function checkPackageHarness(pkg) {
     );
   }
 
-  for (const invocation of invocations) {
+  const allInvocations = Object.keys(pkg.scripts ?? {})
+    .filter((name) => name === "test" || name.startsWith("test:"))
+    .flatMap((name) => bunTestInvocations(pkg.scripts, name));
+  for (const invocation of allInvocations) {
     if (!invocation.includes(REQUIRED_TIMEOUT)) {
       failures.push(
         `${pkg.name}: \`${invocation}\` omits \`${REQUIRED_TIMEOUT}\`, so it runs on Bun's 5 s default`,
@@ -260,6 +265,205 @@ export function checkGateChain(script) {
     failures.push(
       `\`check:pre-commit\` runs \`${phases.join(" -> ")}\`; expected \`${GATE_PHASES.join(" -> ")}\``,
     );
+  }
+  return failures;
+}
+
+/**
+ * Expand the deliberately small test-script vocabulary used by this repository.
+ * Unknown commands fail closed; this is not a general shell parser.
+ */
+export function expandTestSuite(
+  rootScripts: Record<string, string>,
+  packages: Array<{ name: string; scripts: Record<string, string>; testFiles: string[] }>,
+  entry: string,
+) {
+  const failures = [];
+  const calls = [];
+  const packageByName = new Map(packages.map((pkg) => [pkg.name, pkg] as const));
+
+  function expand(owner, name, stack = []) {
+    const id = `${owner}:${name}`;
+    if (stack.includes(id)) {
+      failures.push(`${entry}: cyclic script ${[...stack, id].join(" -> ")}`);
+      return;
+    }
+    const scripts = owner === "root" ? rootScripts : packageByName.get(owner)?.scripts;
+    const body = scripts?.[name];
+    if (typeof body !== "string") {
+      failures.push(`${entry}: missing script ${id}`);
+      return;
+    }
+    for (const raw of body.split("&&")) {
+      const segment = raw.trim();
+      let match = /^bun run ([\w:.-]+)$/.exec(segment);
+      if (match) {
+        expand(owner, match[1], [...stack, id]);
+        continue;
+      }
+      match = /^bun --filter (@clarvis\/[\w-]+) ([\w:.-]+)$/.exec(segment);
+      if (match && owner === "root") {
+        if (!packageByName.has(match[1])) {
+          failures.push(`${entry}: unknown workspace ${match[1]}`);
+        } else {
+          expand(match[1], match[2], [...stack, id]);
+        }
+        continue;
+      }
+      match = /^(?:[A-Z_]+=[^ ]+ )?bun test(?: (.*))?$/.exec(segment);
+      if (match) {
+        const args = (match[1] ?? "").split(/\s+/).filter(Boolean);
+        if (!args.includes("--timeout") || args[args.indexOf("--timeout") + 1] !== "60000") {
+          failures.push(`${entry}: ${id} omits --timeout 60000`);
+        }
+        calls.push({ owner, paths: args.filter((arg) => !arg.startsWith("-") && arg !== "60000") });
+        continue;
+      }
+      if (owner !== "root" && /^tsc -p [\w./-]+$/.test(segment)) continue;
+      failures.push(`${entry}: unsupported script segment ${id}: ${segment}`);
+    }
+  }
+
+  expand("root", entry);
+  return { calls, failures };
+}
+
+/** Verify every discovered case is reached by the suite matching its resource level. */
+export function checkSuiteComposition(
+  rootScripts: Record<string, string>,
+  packages: Array<{ name: string; scripts: Record<string, string>; testFiles: string[] }>,
+  toolingFiles: string[],
+) {
+  const failures = [];
+  if (
+    rootScripts["test:coverage"] !==
+    "bun --workspaces --sequential --if-present test:coverage && bun run coverage:check"
+  ) {
+    failures.push("test:coverage: must run every workspace once, then coverage:check");
+  }
+  const suites = new Map();
+  for (const entry of ["test", "test:fast", "test:integration", "test:tooling"]) {
+    const expanded = expandTestSuite(rootScripts, packages, entry);
+    suites.set(entry, expanded.calls);
+    failures.push(...expanded.failures);
+  }
+  const moduleResolution = expandTestSuite(rootScripts, packages, "test:module-resolution");
+  failures.push(...moduleResolution.failures);
+  if (
+    !moduleResolution.calls.some(
+      (call) =>
+        call.owner === "root" &&
+        call.paths.includes("tooling/tests/integration/module-resolution.test.ts"),
+    )
+  ) {
+    failures.push("test:module-resolution: focused canary is not reached");
+  }
+  const coverage = new Map();
+  for (const pkg of packages) {
+    for (const name of Object.keys(pkg.scripts).filter((script) => script.startsWith("test:"))) {
+      failures.push(
+        ...expandTestSuite(
+          { "package-entry": `bun --filter ${pkg.name} ${name}` },
+          packages,
+          "package-entry",
+        ).failures,
+      );
+    }
+    const expanded = expandTestSuite(
+      { "package-coverage": `bun --filter ${pkg.name} test:coverage` },
+      packages,
+      "package-coverage",
+    );
+    coverage.set(pkg.name, expanded.calls);
+    failures.push(...expanded.failures);
+  }
+
+  const reached = (entry, owner, file) =>
+    (suites.get(entry) ?? []).some((call) => {
+      if (call.owner !== owner) return false;
+      const relative = owner === "root" ? file : file.replace(/^packages\/[^/]+\//, "");
+      return (
+        call.paths.length === 0 ||
+        call.paths.some((path) => relative === path || relative.startsWith(`${path}/`))
+      );
+    });
+
+  const moduleResolutionFile = "tooling/tests/integration/module-resolution.test.ts";
+  const moduleResolutionRuns = (suites.get("test:tooling") ?? []).filter(
+    (call) =>
+      call.owner === "root" &&
+      (call.paths.length === 0 ||
+        call.paths.some(
+          (path) => moduleResolutionFile === path || moduleResolutionFile.startsWith(`${path}/`),
+        )),
+  ).length;
+  if (moduleResolutionRuns !== 1) {
+    failures.push(
+      `test:tooling: module resolution runs ${moduleResolutionRuns} times, expected once`,
+    );
+  }
+
+  const isNativeTest = (file: string): boolean =>
+    file.includes("/integration/native/") || file.endsWith("/native-sandbox.test.ts");
+  const files = [
+    ...packages.flatMap((pkg) => pkg.testFiles.map((file) => ({ owner: pkg.name, file }))),
+    ...toolingFiles.map((file) => ({ owner: "root", file })),
+  ];
+  if (
+    packages.some((pkg) => pkg.name === "@clarvis/protocol") &&
+    !rootScripts.test?.includes("bun --filter @clarvis/protocol test")
+  ) {
+    failures.push("test: type-only @clarvis/protocol contract is omitted");
+  }
+  for (const { owner, file } of files) {
+    const level = testFileLevel(file);
+    if (!level) continue;
+    if (
+      level === "contract" &&
+      !file.includes("/contract/memory/") &&
+      !file.includes("/contract/physical/")
+    ) {
+      failures.push(`contract: classify ${file} under memory or physical`);
+    }
+    const native = isNativeTest(file);
+    const physical = level === "integration" || file.includes("/contract/physical/");
+    const fast = level === "unit" || level === "component" || file.includes("/contract/memory/");
+    const required = native
+      ? []
+      : ["test", ...(fast ? ["test:fast"] : []), ...(physical ? ["test:integration"] : [])];
+    for (const entry of required) {
+      if (!reached(entry, owner, file)) failures.push(`${entry}: undiscovered test ${file}`);
+    }
+    for (const entry of ["test:fast", "test:integration"]) {
+      const allowed = entry === "test:fast" ? fast : physical && !native;
+      if (!allowed && reached(entry, owner, file)) {
+        failures.push(`${entry}: wrong resource level for ${file}`);
+      }
+    }
+    if (owner === "root" && !reached("test:tooling", owner, file)) {
+      failures.push(`test:tooling: undiscovered test ${file}`);
+    }
+    if (owner !== "root") {
+      const relative = file.replace(/^packages\/[^/]+\//, "");
+      if (
+        !(coverage.get(owner) ?? []).some(
+          (call) =>
+            call.owner === owner &&
+            (call.paths.length === 0 ||
+              call.paths.some((path) => relative === path || relative.startsWith(`${path}/`))),
+        )
+      ) {
+        failures.push(`test:coverage: undiscovered test ${file}`);
+      }
+    }
+  }
+  for (const pkg of packages) {
+    const commonFiles = pkg.testFiles.filter(
+      (file) => testFileLevel(file) !== undefined && !isNativeTest(file),
+    );
+    if (commonFiles.length > 0 && !commonFiles.some((file) => reached("test", pkg.name, file))) {
+      failures.push(`test: workspace ${pkg.name} is omitted`);
+    }
   }
   return failures;
 }

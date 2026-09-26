@@ -13,7 +13,7 @@ an agent affects future runs, not the admitted tree. Production:
 `CoordinatedToolExecutor` in
 `packages/tools/src/execution/coordinator.ts`. Test:
 `packages/kernel/tests/integration/isolation-settings.test.ts`,
-`packages/kernel/tests/unit/isolation-service.test.ts`, and
+`packages/kernel/tests/integration/isolation-service.test.ts`, and
 `packages/tools/tests/unit/execution-coordinator.test.ts`.
 
 The global judge configuration and approval mode are operator-owned. Workspace
@@ -26,7 +26,7 @@ inspection backend does not fall back to Host. Production: `operatorLayers` in
 `packages/kernel/src/execution/judge-runner.ts`. Test: `global isolation settings`
 in `packages/kernel/tests/integration/isolation-settings.test.ts` and
 `inspection reads but cannot change workspace data` in
-`packages/kernel/tests/unit/judge-runner.test.ts`.
+`packages/kernel/tests/integration/judge-runner.test.ts`.
 
 Rule editing uses authenticated `ConfigService` operations. The client supplies a command for a
 read-only check or a rule document with an expected digest for replacement; it cannot assert
@@ -46,8 +46,8 @@ host requirements rather than a built-in home deny list. The exact restrictions 
 [the native execution contract](../execution/sandbox.md). Production:
 `createExecutionPolicy`, `BubblewrapBackend.prepare`, and `seatbeltProfile` in
 `packages/sandbox/src/`. Test:
-`packages/sandbox/tests/integration/host-tools-native.test.ts` and
-`packages/sandbox/tests/integration/linux-native.test.ts`.
+`packages/sandbox/tests/integration/native/host-tools-native.test.ts` and
+`packages/sandbox/tests/integration/native/linux-native.test.ts`.
 
 > Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
@@ -175,8 +175,8 @@ cannot force a literal `null` through this same hatch.
 
 `resolveToolPath(input, workspaceRoot)` resolves relative paths and preserves absolute paths;
 it does not grant access. Production: `resolveToolPath` in
-`packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/paths.test.ts` and
-`packages/tools/tests/integration/open-authority.test.ts`.
+`packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/common/paths.test.ts` and
+`packages/tools/tests/integration/common/open-authority.test.ts`.
 
 The grant ceiling (`CLARVIS_AGENT_TOOLS_MAX_GRANT`) separately gates read, edit, and exec surfaces.
 Production: `packages/loop/src/runtime/tools/builtin/grants.ts`. Test:
@@ -399,7 +399,7 @@ fallback.
 `resolveToolPath` makes relative paths absolute under the workspace and preserves absolute paths.
 This selects a path; host filesystem permissions determine access. Production: `resolveToolPath` in
 `packages/tools/src/lib/paths.ts` and `dispatch` in `packages/tools/src/core.ts`. Test:
-`packages/tools/tests/integration/open-authority.test.ts`.
+`packages/tools/tests/integration/common/open-authority.test.ts`.
 
 ### 4.2 Environment authority
 
@@ -408,7 +408,7 @@ environments. The loop allocates run-owned scratch and removes it after tracked 
 Production: `resolveConfig` in `packages/tools/src/config.ts`, `ExecutionSessionManager.launch`
 in `packages/tools/src/lib/execution-session.ts`, and `createAgentToolsCapability` in
 `packages/loop/src/runtime/capabilities/tools.ts`. Test:
-`packages/tools/tests/integration/execution-session.test.ts` and
+`packages/tools/tests/integration/common/execution-session.test.ts` and
 `packages/loop/tests/integration/tools.test.ts`.
 
 ### 4.3 Bounded reads
@@ -417,8 +417,8 @@ in `packages/tools/src/lib/execution-session.ts`, and `createAgentToolsCapabilit
 and during the read. Model file reads have no special state-artifact gate.
 
 Production: `readRawFile` in `packages/tools/src/lib/files.ts` and `dispatch` in
-`packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/bounded-read.test.ts`
-and `packages/tools/tests/integration/explicit-state-paths.test.ts`.
+`packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/common/bounded-read.test.ts`
+and `packages/tools/tests/integration/common/explicit-state-paths.test.ts`.
 
 ### 4.4 Mutating writes
 
@@ -427,8 +427,8 @@ symlink targets and roll back failed batches. Ordinary file calls can target abs
 parent-directory replacement race.
 
 Production: `writeAtomic` and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`.
-Test: `packages/tools/tests/integration/atomic.test.ts` and
-`packages/tools/tests/integration/open-authority.test.ts`.
+Test: `packages/tools/tests/integration/common/atomic.test.ts` and
+`packages/tools/tests/integration/common/open-authority.test.ts`.
 
 ### 4.5 Building a hook subprocess's environment
 
@@ -648,11 +648,11 @@ TOCTOU family between validation and rename, as described in §4.4.
 
 1. **Workspace is a relative base, not a file-access boundary.** External paths follow host
    process permissions. Production: `resolveToolPath` in `packages/tools/src/lib/paths.ts`.
-   Test: `packages/tools/tests/integration/open-authority.test.ts`.
+   Test: `packages/tools/tests/integration/common/open-authority.test.ts`.
 7. **A read uses one regular-file descriptor and a byte ceiling.** Production: `readRawFile` in
-   `packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/bounded-read.test.ts`.
+   `packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/common/bounded-read.test.ts`.
 9. **Native mutation refuses symlink targets.** Production: `assertNotSymlink` in
-   `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/symlink.test.ts`.
+   `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/common/symlink.test.ts`.
 11. **`sanitizeToolPayload` never applies the coarse fallback.** Production
     `packages/capability/src/sanitize.ts`; pinned
     `packages/capability/tests/unit/sanitize.test.ts`.
@@ -769,7 +769,7 @@ TOCTOU family between validation and rename, as described in §4.4.
 42. **An agent name is one filename segment.** No separator, no drive/stream separator, no leading dot,
     no `..`, no `:`. Production `packages/kernel/src/config/config-service.ts`;
     pinned across all four name-taking methods at
-    `packages/kernel/tests/contract/config-service.test.ts`, and for the file store.
+    `packages/kernel/tests/contract/physical/config-service.test.ts`, and for the file store.
 43. **A forbidden provider `body` key is refused by the schema *and* stripped by the adapter.**
     Production `packages/loop/src/validation/request/provider-rules.ts` and
     `packages/llm/src/openai-compatible-request.ts`; the constant is pinned against the TUI's
@@ -799,8 +799,8 @@ TOCTOU family between validation and rename, as described in §4.4.
     relative spelling only. Access follows host process permissions. Production:
     `resolvePath` and `resolveFileToolPath` in
     `packages/tools/src/lib/paths.ts`. Test:
-    `packages/tools/tests/integration/paths.test.ts` and
-    `packages/tools/tests/integration/host-access.test.ts`.
+    `packages/tools/tests/integration/common/paths.test.ts` and
+    `packages/tools/tests/integration/common/host-access.test.ts`.
 49. **A Clarvis-owned Git command that selects its own repository cannot inherit another repository's
     routing, index, object store, shallow/graft/replace state, or local config.** The shared helper
     removes the complete set returned by `git rev-parse --local-env-vars`, case-insensitively, while
@@ -869,7 +869,7 @@ TOCTOU family between validation and rename, as described in §4.4.
     `packages/skills/src/registry.ts`,
     `packages/loop/src/runtime/build-run-deps.ts`, `packages/tools/src/config.ts`, and
     `packages/tools/src/core.ts`. Test: `packages/skills/tests/integration/api.test.ts` and
-    `packages/tools/tests/integration/api.test.ts`.
+    `packages/tools/tests/integration/common/api.test.ts`.
 
 58. **Borrowed `userConfig` is a name mapping, never a secret import.** Only a shape-matched borrowed
     manifest may map a whole `${user_config.key}` string in a stdio server's `env` to the destination
@@ -918,7 +918,7 @@ TOCTOU family between validation and rename, as described in §4.4.
     [remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts),
     [remote-stdio-host.test.ts](../../packages/kernel/tests/integration/remote-stdio-host.test.ts),
     [remote-kernel-arguments.test.ts](../../packages/code/tests/unit/remote-kernel-arguments.test.ts),
-    and [host-kernel-options.test.ts](../../packages/code/tests/unit/host-kernel-options.test.ts).
+    and [host-kernel-options.test.ts](../../packages/code/tests/integration/host-kernel-options.test.ts).
 
 ## 6. Failure modes and degradation
 
@@ -927,7 +927,7 @@ permissions determine access. Configuration loaders validate documents when cons
 trust still governs activation. Production: `dispatch` in
 [core.ts](../../packages/tools/src/core.ts) and `createFileConfigStore` in
 [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts). Test:
-[open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts) and
+[open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts) and
 [configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
 
 | Condition | Handler | Outcome |
@@ -968,7 +968,7 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | --- | --- | --- |
 | `@clarvis/hooks` → `@clarvis/capability` | runtime, static | `import { extractEnvRefs } from "@clarvis/capability"` (`packages/hooks/src/env.ts`); declared in `packages/hooks/package.json` |
 | `@clarvis/tools` → `@clarvis/paths` | runtime, static | `workspaceStatePaths` for `stateRoot` (`packages/tools/src/config.ts`); `TMP_GLOB`/`writeFileDurable` in `packages/tools/src/lib/atomic.ts` |
-| `@clarvis/tools` → `@clarvis/sandbox` | runtime, static | `prepareLaunch` in `packages/tools/src/lib/execution-session.ts` wraps shell children and `SandboxToolExecutor` in `packages/tools/src/execution/sandbox.ts` wraps the file worker. Test: `packages/tools/tests/integration/native-sandbox.test.ts` |
+| `@clarvis/tools` → `@clarvis/sandbox` | runtime, static | `prepareLaunch` in `packages/tools/src/lib/execution-session.ts` wraps shell children and `SandboxToolExecutor` in `packages/tools/src/execution/sandbox.ts` wraps the file worker. Test: `packages/tools/tests/integration/native/native-sandbox.test.ts` |
 | `@clarvis/kernel` → `@clarvis/paths` | runtime, static | `globalPaths(...).keysFile` / `.workspaceTrustFile`, `writeFileAtomicSync` (`packages/kernel/src/secrets/secret-store.ts`, `packages/kernel/src/config/workspace-trust.ts`) |
 | `@clarvis/kernel` → `@clarvis/protocol` | type-only for `SecretService` | `import type { SecretService }` (`packages/kernel/src/secrets/secret-store.ts`) |
 | `@clarvis/kernel/config/workspace-trust` → `@clarvis/loop/host` | runtime, static | `readJsonFile` (`packages/kernel/src/config/workspace-trust.ts`) |
@@ -1013,7 +1013,7 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
 
 - **Path-based file mutation has a parent-directory replacement race.** Closing it requires
   descriptor-relative mutation across native write handlers. Production: `applyOpsAtomic` in
-  `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/atomic.test.ts`
+  `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/common/atomic.test.ts`
   covers atomic failure but does not prove that the parent-directory race is closed.
 - ~~**A stale rationale in `packages/hooks/src/env.ts`.**~~ **Resolved.** The comment claimed the
   secret-name vocabulary was duplicated because the two sides "live on opposite sides of a dependency

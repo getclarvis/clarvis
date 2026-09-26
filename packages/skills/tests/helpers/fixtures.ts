@@ -9,8 +9,6 @@ import { clarvisSkillRoots } from "../../src/preset.ts";
 import { agentsSkillsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
 import type { SkillRootInput } from "../../src/types.ts";
 
-export { makeInfo } from "./skill-fixtures.ts";
-
 export function makeHome(): string {
   return realpathSync(mkdtempSync(path.join(tmpdir(), "clarvis-skills-home-")));
 }

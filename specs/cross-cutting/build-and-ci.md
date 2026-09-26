@@ -64,16 +64,18 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `build:packages` | `tsc -b`, then sandbox native assets and the tools worker bundle | `package.json` (`scripts.build:packages`) |
 | `build:watch` | `tsc -b --watch` | `package.json` (`scripts.build:watch`) |
 | `clean` | `tsc -b --clean && bun --workspaces clean` | `package.json` (`scripts.clean`) |
-| `test` | `test:tooling`, followed by 18 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
-| `test:tooling` | unit and architecture tests, then the isolated module-resolution integration canary | `package.json` (`scripts.test:tooling`) |
+| `test` | `test:tooling`, followed by every sequential package suite, all `&&`-chained | `package.json` (`scripts.test`) |
+| `test:fast` | tooling unit tests and in-memory package suites, isolated by workspace | `package.json` (`scripts.test:fast`) |
+| `test:integration` | tooling and package physical suites, isolated by workspace | `package.json` (`scripts.test:integration`) |
+| `test:tooling` | unit and architecture tests, then all tooling integration canaries once | `package.json` (`scripts.test:tooling`) |
+| `test:tooling:fast` | in-memory tooling unit cases | `package.json` (`scripts.test:tooling:fast`) |
 | `test:module-resolution` | compiler and Bun runtime canary in a disposable workspace | `package.json` (`scripts.test:module-resolution`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
 | `typecheck` | workspace typechecks followed by `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
 | `lint` | `lint:eslint && lint:intent && knip` | `package.json` (`scripts.lint`) |
 | `lint:eslint` | workspace lint followed by `lint:tooling` | `package.json` (`scripts.lint:eslint`) |
-| `lint:intent` | `test:tooling`, then source-policy, test determinism, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
-| `check:test-determinism` | AST census in check mode; accepts `--report` and `--json` for migration and inspection | `package.json` (`scripts.check:test-determinism`) |
+| `lint:intent` | `test:tooling`, then source-policy, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
 | `check:graph` | `bun run tooling/checks/package-graph.ts --check-doc` | `package.json` (`scripts.check:graph`) |
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
 | `knip` | `knip` (root only; no package declares a `knip` script) | `package.json` (`scripts.knip`) |
@@ -89,6 +91,16 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `check:harness` | `bun run tooling/checks/test-harness.ts` | `package.json` (`scripts.check:harness`) |
 | `check:bun-version` | `bun run tooling/checks/bun-version.ts` | `package.json` (`scripts.check:bun-version`) |
 | `check:bun-sources` | `bun run tooling/checks/bun-sources.ts` | `package.json` (`scripts.check:bun-sources`) |
+
+The Linux `checks` job runs the structural gates and complete tooling suite through
+`lint:intent`; the `coverage` job runs the complete package suites in one LCOV pass per workspace,
+followed by source-presence and floor checks. The separate `sandbox-macos-intel` and
+`keyboard-macos` jobs retain native qualification. `test:fast` and `test:integration` are focused
+development entries, and CI does not repeat the fast suite after coverage. Production:
+`.github/workflows/ci.yml` (`checks`, `coverage`, `sandbox-macos-intel`, `keyboard-macos`) and
+`tooling/lib/ci-coverage.ts` (`runCiCoverage`). Test:
+`tooling/tests/architecture/ci-workflow.test.ts` and
+`tooling/tests/integration/ci-coverage.test.ts`.
 
 Root tooling keeps executable checks under `tooling/checks/`, shared libraries under `tooling/lib/`,
 isolated-runtime build/manifest support under `tooling/runtime/`, and classified tests under
@@ -124,7 +136,6 @@ that matter:
 | --- | --- | --- |
 | `@clarvis/code` | `build` invokes the package-local artifact builder rather than `tsc`; `build:install` selects the map-free install artifact; also adds artifact/release/installer smokes, native release packaging, two benchmarks, deterministic `setup`, `start`, `dev`, and `link` | `packages/code/package.json` (`scripts`), `packages/code/tooling/artifact/build.ts` |
 | `@clarvis/protocol` | `test` is `bun run test:contract`, which is `tsc -p tsconfig.json` — it runs no `bun test` at all | `packages/protocol/package.json` |
-| `@clarvis/workflows` | every test script carries `--isolate` | `packages/workflows/package.json` |
 | `@clarvis/llm`, `@clarvis/loop`, `@clarvis/workflows` | declare `prebuild: bun run clean` | `packages/llm/package.json`, `packages/loop/package.json`, `packages/workflows/package.json` |
 | `@clarvis/kernel`, `@clarvis/protocol` | `typecheck` is `tsc -p tsconfig.json` with no `--noEmit` flag (their `tsconfig.json` sets `noEmit: true` itself) | `packages/kernel/package.json`, `packages/kernel/tsconfig.json` |
 | `@clarvis/code` | `typecheck` is bare `tsc --noEmit` (no `-p`) | `packages/code/package.json` |
@@ -271,13 +282,13 @@ plain pushes and closed unmerged PRs cannot create tags. Checkout uses the PR he
 synthetic merge SHA. Before acquiring Publisher credentials, the workflow verifies that the live PR
 is still open at that head and still targets `main`. Retries reuse the same candidate tag.
 Production: `.github/workflows/gitflow-release.yml` (candidate PR guard).
-Test: `tooling/tests/unit/gitflow-workflow.test.ts` (PR triggers and credential ordering).
+Test: `tooling/tests/architecture/gitflow-workflow.test.ts` (PR triggers and credential ordering).
 `.github/workflows/release.yml` excludes RC pushes and admits stable version tags for
 publication. `.github/workflows/candidate.yml` publishes source prereleases for signed RC tags.
 Both workflows request Publisher installation tokens scoped to their target repository.
 Production: `tooling/release/gitflow.ts` (`main`) and `tooling/lib/gitflow-release.ts`
 (`planGitflowRelease`, `candidateTag`). Test: `tooling/tests/unit/gitflow-release.test.ts` and
-`tooling/tests/unit/gitflow-release-git.test.ts`. External App installation, signing secrets, and tag
+`tooling/tests/integration/gitflow-release-git.test.ts`. External App installation, signing secrets, and tag
 creation permissions require live validation; local Git tests do not prove GitHub enforcement.
 
 Every checkout and setup action is pinned to a commit SHA and checkout
@@ -517,7 +528,7 @@ admits the aggregator; the explicit result check decides success.
 Production: [CI workflow](../../.github/workflows/ci.yml), `jobs`;
 [workflow validator](../../tooling/lib/ci-workflow.ts), `ciWorkflowFailures`;
 [Bun version checker](../../tooling/checks/bun-version.ts), `bunVersionFailures`.
-Test: [CI workflow tests](../../tooling/tests/unit/ci-workflow.test.ts), including mutations that
+Test: [CI workflow tests](../../tooling/tests/architecture/ci-workflow.test.ts), including mutations that
 remove each gate/dependency and fixtures executing the actual YAML Bash body;
 [Bun version tests](../../tooling/tests/unit/bun-version.test.ts), per-job setup/evidence validation.
 The validator reuses `workflowSecurityFailures`; other workflows retain their existing policies.
@@ -530,7 +541,7 @@ with `always()` and explicitly requires the Intel job's success before it can
 pass, so both architectures gate the existing permanent-branch context.
 Production: `.github/workflows/ci.yml` (`jobs.sandbox-macos-intel` and
 `jobs.keyboard-macos`). Test: `ciWorkflowFailures` in
-`tooling/lib/ci-workflow.ts` and `tooling/tests/unit/ci-workflow.test.ts`.
+`tooling/lib/ci-workflow.ts` and `tooling/tests/architecture/ci-workflow.test.ts`.
 
 All host Bun jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public
@@ -547,7 +558,7 @@ creates the sandbox namespaces and applies Clarvis's seccomp filter. This does n
 declarations or Code bundle.
 Production: `.github/workflows/ci.yml` (`jobs.coverage`), `.gitignore`, and each owning package's
 `build:assets` script. Test: `ciWorkflowFailures` in `tooling/lib/ci-workflow.ts` and the missing
-coverage-prerequisite regression in `tooling/tests/unit/ci-workflow.test.ts`.
+coverage-prerequisite regression in `tooling/tests/architecture/ci-workflow.test.ts`.
 
 The build tar contains exclusively workspace `dist` directories, their internal incremental files,
 and `ci-build-manifest.json`. The manifest records schema, actual `git rev-parse HEAD`, run ID,
@@ -578,7 +589,7 @@ Production: [artifact library](../../tooling/lib/ci-artifacts.ts), `packCiBuild`
 `validateCiBuild`, `restoreCiBuild`, `readBuildIdentity`, and `requireBuildProducer`;
 [workspace inventory](../../tooling/lib/ci-workspaces.ts), `readCiWorkspaces`;
 [artifact CLI](../../tooling/checks/ci-artifacts.ts).
-Test: [artifact tests](../../tooling/tests/unit/ci-artifacts.test.ts), round trip, modes/dotfiles,
+Test: [artifact tests](../../tooling/tests/integration/ci-artifacts.test.ts), round trip, modes/dotfiles,
 identity/integrity failures, invalid members/destinations and earlier-producer reruns.
 
 Artifact logs and step summaries record size, packaging, upload, download and restoration time.
@@ -677,7 +688,7 @@ pinned deep parent cannot make the fixture's address unreservable. `SmokeContext
 test; a host where no socket parent can hold an address short enough for a socket name fails
 `smoke_socket_root_unavailable` naming every refusal. Production:
 `createSmokeContext`, `validateParents`, `allocateFixtureRoot` and `allocateSocketRoot` in
-`packages/code/tooling/artifact/isolation.ts`. Tests: `packages/code/tests/unit/artifact-isolation.test.ts`.
+`packages/code/tooling/artifact/isolation.ts`. Tests: `packages/code/tests/integration/artifact-isolation.test.ts`.
 
 The PTY is obtained by `script(1)` where available, with a platform-split argv — `script -q /dev/null …`
 on darwin, `script -qec '<quoted argv>' /dev/null` elsewhere
@@ -691,7 +702,7 @@ root of its own. Cleanup removes it after the children settle. Every PTY child r
 `environmentFor(...)`. When neither `script(1)` nor tmux is available, the harness reports
 `"observing a boot requires either script(1) or tmux to provide a PTY"`.
 
-The cross-runner contract canary is `tooling/tests/unit/harness-isolation-contract.test.ts`; it
+The cross-runner contract canary is `tooling/tests/integration/harness-isolation-contract.test.ts`; it
 keeps artifact, release and installer runners on fixture-owned roots and explicit child
 environments. `packages/code/tests/architecture/artifact-contract.test.ts` covers the release
 packager's allowlisted locale environment, while the direct Linux installer journey is exercised
@@ -805,40 +816,40 @@ has no `tsconfig.build.json`.
 Pinned indirectly: `tooling/lib/package-graph.ts` requires the root solution's references to
 be exactly the set of packages that have a `tsconfig.build.json`, so adding one for `code` without a
 root reference (or vice versa) is an error. That rule is unit-tested at
-`tooling/tests/unit/package-graph.test.ts`.
+`tooling/tests/architecture/package-graph.test.ts`.
 
 **BUILD-8 (INV-309 d).** A package's `dependencies` + `optionalDependencies` on other workspaces must equal its
 `tsconfig.build.json` `references` set, in both directions.
 Production: `tooling/lib/package-graph.ts` (errors `"dependency without project reference X"`
 and `"project reference without runtime dependency X"`).
-Test: `tooling/tests/unit/package-graph.test.ts`.
+Test: `tooling/tests/architecture/package-graph.test.ts`.
 
 **BUILD-9 (INV-309 f).** A `src` file may not import a subpath the target package's `exports` map does not
 publish, and a type-only import may additionally use a `types`-only condition where a value import may
 not.
 Production: `tooling/lib/package-graph.ts`.
-Test: `tooling/tests/unit/package-graph.test.ts` (unexported and accepted deep subpaths) (wildcards and type-only conditions).
+Test: `tooling/tests/architecture/package-graph.test.ts` (unexported and accepted deep subpaths) (wildcards and type-only conditions).
 
 **BUILD-10 (INV-309 a).** A `src` file may not import its own package's public entrypoint — by package name or by
 a relative path that resolves to it.
 Production: `tooling/lib/package-graph.ts`.
-Test: `tooling/tests/unit/package-graph.test.ts`.
+Test: `tooling/tests/architecture/package-graph.test.ts`.
 
 **BUILD-11 (INV-309 b).** A `src` **value** import of an internal package declared only under `devDependencies` is
 an error; the same import from `tests/` or package `tooling/` is allowed.
 Production: `tooling/lib/package-graph.ts` (`sourceTree === "src" && !edge.typeOnly`).
-Test: `tooling/tests/unit/package-graph.test.ts`.
+Test: `tooling/tests/architecture/package-graph.test.ts`.
 A real instance of exactly this pattern: `@clarvis/kernel` declares `@clarvis/mcp-client` under
 `devDependencies` (`packages/kernel/package.json`) and no file in `packages/kernel/src` imports it.
 
 **BUILD-12 (INV-309 g).** No relative import may cross a package root.
 Production: `tooling/lib/package-graph.ts`.
-Test: `tooling/tests/unit/package-graph.test.ts`.
+Test: `tooling/tests/architecture/package-graph.test.ts`.
 
 **BUILD-13 (INV-309 e).** The declared workspace graph and the compilation graph are both acyclic, and no
 package's `src` contains a value-import module cycle.
 Production: `tooling/lib/package-graph.ts`.
-Test: `tooling/tests/unit/package-graph.test.ts` (package cycles) (module cycles, with
+Test: `tooling/tests/architecture/package-graph.test.ts` (package cycles) (module cycles, with
 the type-only back edge shown not to count).
 
 **BUILD-14 (INV-310, timeout half).** Every `bun test` invocation reachable from a workspace's
@@ -891,7 +902,7 @@ Test: `packages/code/tests/architecture/cli-fast-path.test.ts`.
 **BUILD-21.** The CI retry accepts only Code exits 132/134/139, with three additional attempts, and
 never retries 130/143 or another package. Production: `tooling/lib/ci-coverage.ts`, `runCiCoverage`
 and `normalizeCoverageExit`; `tooling/ci/retry-code-coverage.sh` is only the CLI entry.
-Test: `tooling/tests/unit/ci-coverage.test.ts`, classified retry, continuation, cancellation and the
+Test: `tooling/tests/integration/ci-coverage.test.ts`, classified retry, continuation, cancellation and the
 pinned Bun subprocess signal boundary.
 
 **BUILD-21.** Line endings are normalized to LF for every text file at checkout, and `bun.lock` is
@@ -905,12 +916,12 @@ Test: `packages/tools/tests/unit/shell.test.ts`.
 
 **BUILD-23.** Owned processes use a POSIX process group so termination reaches descendants.
 Production: `packages/tools/src/lib/process.ts` and `packages/tools/src/lib/process-owner.ts`.
-Test: `packages/tools/tests/integration/execution-session.test.ts`.
+Test: `packages/tools/tests/integration/common/execution-session.test.ts`.
 
 **BUILD-25.** Session capture is exercised through the `shell` and `shell_session` tests.
 Production: `packages/tools/src/lib/execution-session.ts`.
-Test: `packages/tools/tests/integration/shell-session.test.ts` and
-`packages/tools/tests/integration/execution-session.test.ts`.
+Test: `packages/tools/tests/integration/common/shell-session.test.ts` and
+`packages/tools/tests/integration/common/execution-session.test.ts`.
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun
 version in `mise.toml`: every host Bun CI job, the release package matrix, the release publication gate,
@@ -961,7 +972,7 @@ Production: `packages/code/package.json` (`bin`), `packages/code/tooling/setup.t
 ownership check and unlink/link phase), `packages/code/src/cli-args.ts` (`usageText`, `helpText`, `versionText`) and
 `packages/code/src/cli-entry.ts` (`resolveEntry`).
 Test: `packages/code/tests/architecture/cli-fast-path.test.ts` (manifest bin case) and
-`packages/code/tests/unit/cli-args.test.ts` (`versionText`).
+`packages/code/tests/integration/cli-args.test.ts` (`versionText`).
 
 **BUILD-32.** Clarvis uses a single product version: root `package.json` owns one exact SemVer;
 every workspace manifest is private and omits `version`, as does every workspace entry in
@@ -972,9 +983,9 @@ Production: root `package.json` (`version`); `tooling/lib/package-architecture.t
 (`PRODUCT_VERSION_IMPORTERS`, `productVersionPolicyErrors`, `productLockfileVersionErrors`,
 `productManifestImportViolation`); `tooling/lib/package-graph.ts` (`analyzePackageGraph`);
 `packages/{code,loop,mcp-client}/src` version consumers.
-Test: `tooling/tests/unit/package-architecture.test.ts` (product-version policy and importer cases),
-`packages/code/tests/unit/cli-args.test.ts`, `packages/loop/tests/unit/version.test.ts`,
-and `packages/mcp-client/tests/unit/version.test.ts`.
+Test: `tooling/tests/architecture/package-architecture.test.ts` (product-version policy and importer cases),
+`packages/code/tests/integration/cli-args.test.ts`, `packages/loop/tests/integration/version.test.ts`,
+and `packages/mcp-client/tests/integration/version.test.ts`.
 
 **BUILD-33.** The POSIX checkout bootstrap `dev-install.sh` delegates to typed Code tooling and
 installs `clarvis-develop`, never a second product `bin`. It requires the exact pinned Bun, performs
@@ -988,7 +999,7 @@ complete root by type, current-user ownership, and exact marker before removal. 
 `package.json` (`scripts.dev:install`), `dev-install.sh`, and
 `packages/code/tooling/development-install.ts` (`main`, `developmentLauncherSource`,
 `cleanDevelopmentState`, `createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`).
-Test: `packages/code/tests/unit/development-install.test.ts` (argument, launcher, ownership,
+Test: `packages/code/tests/integration/development-install.test.ts` (argument, launcher, ownership,
 cleanup, empty-workspace, and shell-delegation cases).
 
 **BUILD-36.** The crash-retirement canary remains an explicitly dispatched, read-only workflow. It
@@ -1131,4 +1142,4 @@ Production: [CI](../../.github/workflows/ci.yml),
 [deterministic runner](../../tooling/cache/deterministic.ts).
 Test: [metric evaluation](../../tooling/tests/unit/prompt-cache-evaluation.test.ts),
 [HTTP capture](../../tooling/tests/unit/prompt-cache-recorder.test.ts), and
-[loaded artifact observation](../../tooling/tests/unit/prompt-cache-artifact.test.ts).
+[loaded artifact observation](../../tooling/tests/integration/prompt-cache-artifact.test.ts).

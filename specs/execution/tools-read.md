@@ -6,8 +6,8 @@ from the workspace root; absolute paths use host filesystem permissions.
 
 Production: `toolDescriptors` in [registry.ts](../../packages/tools/src/tools/registry.ts)
 and `resolveToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts).
-Test: [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts)
-and [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
+Test: [tool-surface.test.ts](../../packages/tools/tests/integration/common/tool-surface.test.ts)
+and [open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts).
 
 ## Operations
 
@@ -26,8 +26,8 @@ and `maxOutputBytes` settings bound the read and its rendered result. The same
 Production: `readFile` in [read-file.ts](../../packages/tools/src/tools/read-file.ts),
 `readRawFile` in [files.ts](../../packages/tools/src/lib/files.ts), and
 `renderNumberedSlice` in [render-lines.ts](../../packages/tools/src/lib/render-lines.ts).
-Test: [read-file.test.ts](../../packages/tools/tests/integration/read-file.test.ts)
-and [bounded-read.test.ts](../../packages/tools/tests/integration/bounded-read.test.ts).
+Test: [read-file.test.ts](../../packages/tools/tests/integration/common/read-file.test.ts)
+and [bounded-read.test.ts](../../packages/tools/tests/integration/common/bounded-read.test.ts).
 
 `read_image` recognizes PNG, JPEG, GIF and WebP from bytes, including PNG chunk
 validation, and respects `maxImageBytes`. `list_dir` reads only the selected
@@ -37,8 +37,8 @@ with `maxTraversalEntries` and sorts the result.
 Production: `readImage` in [read-image.ts](../../packages/tools/src/tools/read-image.ts),
 `sniffImageMime` in [image.ts](../../packages/tools/src/lib/image.ts), and
 `listDir` in [list-dir.ts](../../packages/tools/src/tools/list-dir.ts).
-Test: [read-image.test.ts](../../packages/tools/tests/integration/read-image.test.ts)
-and [list-dir.test.ts](../../packages/tools/tests/integration/list-dir.test.ts).
+Test: [read-image.test.ts](../../packages/tools/tests/integration/common/read-image.test.ts)
+and [list-dir.test.ts](../../packages/tools/tests/integration/common/list-dir.test.ts).
 
 Dispatch, input validation and configuration are specified in
 [tools-contract.md](tools-contract.md); file changes in

@@ -33,3 +33,10 @@ script contents or filesystem integrity. This package has no Windows or PowerShe
 
 See [the execution policy spec](../../specs/execution/execpolicy.md). Run
 `bun --filter @clarvis/execpolicy test`, `build` and `typecheck` from the repository root.
+
+## Test suites
+
+`bun --filter @clarvis/execpolicy test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/execpolicy test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

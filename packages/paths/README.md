@@ -191,6 +191,8 @@ workspace instances use that workspace's machine-local `plugin-data/<source>/<na
 ## Executable lookup
 
 `which.ts` resolves executable files through `PATH`, checking the execute bit and rejecting directories.
+`resolveCommand(command, path?)` accepts an explicit search path for isolated callers; omitting it
+reads the live process `PATH`, and each command's first resolution remains memoized.
 
 `which.ts` arrived from `@clarvis/tools`, which already depended on this package — so the move added
 no edge, and it is what kept `@clarvis/mcp-client` from having to depend on `@clarvis/tools` for one
@@ -414,3 +416,10 @@ nothing beyond the Node path and crypto primitives. `@clarvis/loop` re-exports t
 never saw the move.
 
 `configurationTarget` locates an already resolved path within the shared roots and returns the same five-way classification. Kernel configuration services consume it. It does not canonicalize disk links or authorize writes.
+
+## Test suites
+
+`bun --filter @clarvis/paths test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/paths test:integration` runs this package's common physical test cases. `bun --filter @clarvis/paths test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

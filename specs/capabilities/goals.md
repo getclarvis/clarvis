@@ -1330,13 +1330,13 @@ host state is removed. ChatGPT affinity compares hashes according to the subscri
 the session header already contains the SHA-256 of the composed cache key.
 Production: `goalArgumentShape` and `goalChatGptAffinity` in
 [evidence.ts](../../tooling/goal/evidence.ts). Test: safe diagnostic structure and absent/foreign
-affinity controls in [goal-live-fixture.test.ts](../../tooling/tests/unit/goal-live-fixture.test.ts).
+affinity controls in [goal-live-fixture.test.ts](../../tooling/tests/integration/goal-live-fixture.test.ts).
 
 Production: `runGoalLive`, `runGoalLiveWorker` and `prepareGoalLiveFixture` in
 [live.ts](../../tooling/goal/live.ts), [goal-live-worker.ts](../../packages/kernel/tests/helpers/goal-live-worker.ts) and
 [fixture.ts](../../tooling/goal/fixture.ts), with the host-only
 [authentication view](../../tooling/cache/host-auth-view.ts).
-Test: [goal-live-fixture.test.ts](../../tooling/tests/unit/goal-live-fixture.test.ts) verifies the
+Test: [goal-live-fixture.test.ts](../../tooling/tests/integration/goal-live-fixture.test.ts) verifies the
 negative baseline, absence of fixture credentials and bounded call admission without live traffic.
 Only a completed live report supplies real-provider evidence; the fixture unit test cannot.
 

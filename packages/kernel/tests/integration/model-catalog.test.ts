@@ -1,8 +1,8 @@
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
 import {
   closeSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   openSync,
   readFileSync,
   truncateSync,
@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { globalPaths } from "@clarvis/paths";
 import { recordingLogger } from "../helpers/logger.ts";
 import {
@@ -27,14 +27,8 @@ import {
 } from "../../src/config.ts";
 
 function tmpConfigDir(): string {
-  return mkdtempSync(join(tmpdir(), "clarvis-model-catalog-"));
+  return ownedTempDirSync(join(tmpdir(), "clarvis-model-catalog-"));
 }
-
-const originalFetch = globalThis.fetch;
-
-afterEach(() => {
-  globalThis.fetch = originalFetch;
-});
 
 describe("ModelCatalogService (bundle-backed)", () => {
   it("get() serves the bundled catalog mapped to protocol DTOs", async () => {
@@ -305,27 +299,27 @@ describe("projectModelsDevApi", () => {
 
 describe("fetchModelsDevApi", () => {
   it("returns the decoded JSON on a successful response", async () => {
-    globalThis.fetch = (async () =>
+    const fetcher = (async () =>
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
       })) as unknown as typeof fetch;
-    const payload = await fetchModelsDevApi();
+    const payload = await fetchModelsDevApi(fetcher);
     expect(payload).toEqual({ ok: true });
   });
 
   it("throws with the status when the response is not ok", async () => {
-    globalThis.fetch = (async () =>
+    const fetcher = (async () =>
       new Response("nope", {
         status: 503,
         statusText: "Service Unavailable",
       })) as unknown as typeof fetch;
-    await expect(fetchModelsDevApi()).rejects.toThrow(/503/);
+    await expect(fetchModelsDevApi(fetcher)).rejects.toThrow(/503/);
   });
 
   it("cancels a streamed response at the catalog byte bound", async () => {
     let pulls = 0;
-    globalThis.fetch = (async () =>
+    const fetcher = (async () =>
       new Response(
         new ReadableStream<Uint8Array>({
           pull(controller) {
@@ -337,15 +331,24 @@ describe("fetchModelsDevApi", () => {
         { status: 200 },
       )) as unknown as typeof fetch;
 
-    await expect(fetchModelsDevApi()).rejects.toThrow(/exceeds/);
+    await expect(fetchModelsDevApi(fetcher)).rejects.toThrow(/exceeds/);
     expect(pulls).toBeLessThan(20);
   });
 });
 
 describe("refreshModelsCatalog", () => {
+  it("uses a supplied fetcher even when it rejects before a response", async () => {
+    const dir = tmpConfigDir();
+    const fetcher = (async () => {
+      throw new Error("injected fetch failure");
+    }) as unknown as typeof fetch;
+    await expect(refreshModelsCatalog(dir, fetcher)).rejects.toThrow("injected fetch failure");
+    expect(loadCatalogData(dir).source).toBe("bundle");
+  });
+
   it("downloads, projects, and caches the models.dev payload", async () => {
     const dir = tmpConfigDir();
-    globalThis.fetch = (async () =>
+    const fetcher = (async () =>
       new Response(
         JSON.stringify({
           acme: {
@@ -357,7 +360,7 @@ describe("refreshModelsCatalog", () => {
         { status: 200 },
       )) as unknown as typeof fetch;
 
-    const result = await refreshModelsCatalog(dir);
+    const result = await refreshModelsCatalog(dir, fetcher);
     expect(result.providers).toBe(1);
     expect(result.models).toBe(1);
     expect(existsSync(result.path)).toBe(true);
@@ -373,7 +376,7 @@ describe("refreshModelsCatalog", () => {
     // is preferred over the bundle, so such a projection would shadow a good catalog permanently,
     // and `--refresh` could not repair it: the same fetch produces the same cache.
     const dir = tmpConfigDir();
-    globalThis.fetch = (async () =>
+    const fetcher = (async () =>
       new Response(
         JSON.stringify({
           providers: {
@@ -387,18 +390,18 @@ describe("refreshModelsCatalog", () => {
         { status: 200 },
       )) as unknown as typeof fetch;
 
-    await expect(refreshModelsCatalog(dir)).rejects.toThrow(/no models at all/);
+    await expect(refreshModelsCatalog(dir, fetcher)).rejects.toThrow(/no models at all/);
     expect(loadCatalogData(dir).source).toBe("bundle");
   });
 
   it("propagates the fetch failure without writing a cache", async () => {
     const dir = tmpConfigDir();
-    globalThis.fetch = (async () =>
+    const fetcher = (async () =>
       new Response("nope", {
         status: 500,
         statusText: "Internal Server Error",
       })) as unknown as typeof fetch;
-    await expect(refreshModelsCatalog(dir)).rejects.toThrow(/500/);
+    await expect(refreshModelsCatalog(dir, fetcher)).rejects.toThrow(/500/);
     expect(loadCatalogData(dir).source).toBe("bundle");
   });
 });
@@ -406,7 +409,7 @@ describe("refreshModelsCatalog", () => {
 describe("createModelCatalogService.refresh", () => {
   it("refreshes the cache from models.dev then serves the rebuilt catalog", async () => {
     const dir = tmpConfigDir();
-    globalThis.fetch = (async () =>
+    const fetcher = (async () =>
       new Response(
         JSON.stringify({
           acme: {
@@ -418,7 +421,7 @@ describe("createModelCatalogService.refresh", () => {
         { status: 200 },
       )) as unknown as typeof fetch;
 
-    const service = createModelCatalogService(dir);
+    const service = createModelCatalogService(dir, undefined, fetcher);
     const refreshed = await service.refresh();
     expect(refreshed.source).toBe("cache");
     const acme = refreshed.providers.find((p) => p.id === "acme");

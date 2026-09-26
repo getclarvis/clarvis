@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { onTestFinished } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TraceEvent } from "@clarvis/capability";
@@ -24,6 +25,7 @@ export async function goalHostFixture(
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-goal-host-"));
+  onTestFinished(() => rm(root, { recursive: true, force: true }));
   const workspaceRoot = join(root, "workspace");
   await mkdir(workspaceRoot);
   const storeOptions = {

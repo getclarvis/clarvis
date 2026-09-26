@@ -26,7 +26,7 @@ function within<T>(ms: number, work: Promise<T>): Promise<T> {
   ]);
 }
 
-const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
+const tick = (): Promise<void> => Promise.resolve();
 
 describe("withFileLocks", () => {
   it("does not deadlock when two callers request the same pair in opposite orders", async () => {

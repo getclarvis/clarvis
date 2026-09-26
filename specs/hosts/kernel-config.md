@@ -29,7 +29,7 @@ optional catalog model, bounded guidance, one deadline, attempt cap and fallback
 can discard them. Host execution is refused when it cannot preserve these paths. Production:
 `createIsolationService` in [isolation-service.ts](../../packages/kernel/src/execution/isolation-service.ts).
 Test: `mandatory filesystem requirements survive approved deltas and reject Host execution` in
-[isolation-service.test.ts](../../packages/kernel/tests/unit/isolation-service.test.ts). The workspace
+[isolation-service.test.ts](../../packages/kernel/tests/integration/isolation-service.test.ts). The workspace
 cannot contribute these host-owned blocks, even after trust approval.
 Production: `judgeSettingsSchema` in
 `packages/kernel/src/config/judge-settings.ts`, `kernelCapabilityRegistry` in
@@ -55,6 +55,13 @@ frontmatter against `agentFrontmatterSchema`, agent names against a path guard. 
 documentation states the division explicitly: "Validation of settings and agent frontmatter is the
 service's job, not the store's" (`packages/kernel/src/config/config-store.ts`). Two stores exist:
 file-backed (`packages/kernel/src/config/file-config-store.ts`) and in-memory (`packages/kernel/src/config/memory-config-store.ts`).
+
+The cross-scope agent-name matrix constructs each store through a case-owned fixture with an explicit
+`dispose` callback. Memory cases create no directory; file cases retain the physical storage proof
+and remove their owned root after the case. Production: `createConfigService` in
+`packages/kernel/src/config/config-service.ts`; `createMemoryConfigStore` and
+`createFileConfigStore` in their respective store modules. Test:
+`packages/kernel/tests/contract/physical/config-service.test.ts` (`STORE_FACTORIES`, cross-scope agent-name uniqueness).
 
 The agent fleet is shipped **as TypeScript data**, not as files scaffolded into a user's directory:
 `BUILTIN_AGENTS` at `packages/kernel/src/config/builtin-agents/index.ts` is the five profiles, and
@@ -129,7 +136,7 @@ Not exported from `./config` but exported from their module and imported by test
 `createConfigService` takes two optional host collaborators (`packages/kernel/src/config/config-service.ts`):
 `SettingsView.known_grants` is left **absent rather than empty**, `packages/kernel/src/config/config-service.ts`). The kernel
 resolving through the service — is pinned at
-`packages/kernel/tests/contract/config-service.test.ts`; the absent-collaborator path is the one
+`packages/kernel/tests/contract/physical/config-service.test.ts`; the absent-collaborator path is the one
 cited above in Section 6.
 
 ### 2.3 `ConfigStore` port (`packages/kernel/src/config/config-store.ts`)
@@ -259,7 +266,7 @@ Two shapes, both carrying `scope` and `revision`:
 { "scope": "workspace", "revision": "<sha256hex>", "action": "reset", "reason": "settings JSON must be an object" }
 ```
 
-Both examples are literal test expectations (`packages/kernel/tests/contract/config-service.test.ts`).
+Both examples are literal test expectations (`packages/kernel/tests/contract/physical/config-service.test.ts`).
 
 ### 3.5 `workspace-trust.json`
 
@@ -420,7 +427,7 @@ with `store.readAgent` and throws `conflict` with `{name, scope, conflictingScop
 there. Its own docstring records the limitation: "This check-then-write is not atomic
 across processes… Agent writes have no lock/CAS today".
 
-Consequences the tests pin (`packages/kernel/tests/contract/config-service.test.ts`, run
+Consequences the tests pin (`packages/kernel/tests/contract/physical/config-service.test.ts`, run
 `describe.each` over **both** stores):
 
 - writing a name held by the other scope ⇒ `conflict`, and the target is still `not_found`;
@@ -434,7 +441,7 @@ Order of checks: name guard on both names → `newName !== oldName` (`invalid_re
 source exists (`not_found`) → target free in the same scope (`conflict`) → target free
 in the other scope (`conflict`). Then **write-new, delete-old** — not an atomic
 filesystem transaction; the docstring names the crash residue as "a same-scope leftover, not a new
-cross-scope conflict". Tests at `packages/kernel/tests/contract/config-service.test.ts`.
+cross-scope conflict". Tests at `packages/kernel/tests/contract/physical/config-service.test.ts`.
 
 ### 4.7 The three agent reads
 
@@ -471,7 +478,7 @@ through `recordToDoc`. Both projections lift fields only when present, never as 
 - `recordToDoc` (`packages/kernel/src/config/config-service.ts`) carries `malformed` through only when the record has
   one.
 
-Pinned: `packages/kernel/tests/contract/config-service.test.ts` ("projects grants/can_spawn/budget from frontmatter onto the
+Pinned: `packages/kernel/tests/contract/physical/config-service.test.ts` ("projects grants/can_spawn/budget from frontmatter onto the
 summary") ("omits grants/can_spawn/budget when the frontmatter declares none").
 
 ### 4.8 Overlay resolution — `resolveEffectiveAgent` (`packages/kernel/src/config/agent-overlay.ts`)
@@ -604,7 +611,7 @@ resource bound and a first-match-wins candidate order, same as any other read on
   through, otherwise `path` defaults to `""` when the store's record carried none.
 
 The selection is pinned across the config/run boundary by
-`packages/kernel/tests/component/settings-assembler.test.ts`: no file leaves the agent prompt
+`packages/kernel/tests/integration/settings-assembler.test.ts`: no file leaves the agent prompt
 unchanged, `AGENTS.md` is used as the fallback, and seeding both candidates puts only `CLARVIS.md` in
 the assembled entry profile. The lower-level empty-scope and oversized-file cases remain covered by
 `packages/kernel/tests/integration/file-config-store.test.ts`.
@@ -617,26 +624,26 @@ Each entry: **rule** — production anchor — test anchor.
    stays separately visible.** `packages/kernel/src/config/file-config-store.ts` orders `[...pluginScopes, global, workspace]`
    into `mergeSettings`, whose contract is ascending precedence
    (`packages/loop/src/settings/settings-merge.ts`); `scopes` reports raw layers
-   (`packages/kernel/src/config/file-config-store.ts`). Pinned: `packages/kernel/tests/contract/config-service.test.ts`.
+   (`packages/kernel/src/config/file-config-store.ts`). Pinned: `packages/kernel/tests/contract/physical/config-service.test.ts`.
 
 2. **INV-197 — `updateSettings` rejects an invalid patch with `invalid_request` and a stale revision
    with `conflict`, and the stale write never overwrites the concurrent writer.**
    `packages/kernel/src/config/config-service.ts`; the store compares before mutating
    (`packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/config/memory-config-store.ts`). Pinned:
-   `packages/kernel/tests/contract/config-service.test.ts` (the last assertion reads back the concurrent writer's
+   `packages/kernel/tests/contract/physical/config-service.test.ts` (the last assertion reads back the concurrent writer's
    value).
 
 3. **INV-198 — every name-guarded path rejects a name that could escape the agents directory, and a
    dotted name is accepted on all of them.** `AGENT_NAME_RE` and the `..` check in
    `packages/kernel/src/config/config-service.ts`. Pinned:
-   `packages/kernel/tests/contract/config-service.test.ts` — the table covers traversal, both
+   `packages/kernel/tests/contract/physical/config-service.test.ts` — the table covers traversal, both
    separators, absolute paths, `C:coder`, `plugin:coder`, a space,
    a newline, a NUL, `%2F` and `café`, against all four methods. The basic legal-name round trip these
    guards sit in front of — `writeAgent` → `getAgent` → `listAgents` → `deleteAgent` all succeeding on
-   an ordinary name — is pinned separately at `packages/kernel/tests/contract/config-service.test.ts`.
+   an ordinary name — is pinned separately at `packages/kernel/tests/contract/physical/config-service.test.ts`.
 
 4. **INV-199 — a rejected traversal name never reaches disk.** The guard runs before any store call
-   (`packages/kernel/src/config/config-service.ts`). Pinned: `packages/kernel/tests/contract/config-service.test.ts` on the **file** store, asserting
+   (`packages/kernel/src/config/config-service.ts`). Pinned: `packages/kernel/tests/contract/physical/config-service.test.ts` on the **file** store, asserting
    `listAgents()` minus builtins is empty afterward.
 
 5. **INV-200 — unknown Agent Profile fields fail before mutation.** The service validates with
@@ -647,28 +654,28 @@ Each entry: **rule** — production anchor — test anchor.
    `buildProfile` in [settings-assembler.ts](../../packages/kernel/src/runs/settings-assembler.ts)
    repeats validation during entry and delegated profile admission, including files written outside
    the configuration service. Test: `rejects authority overrides read from entry or delegated profile files`
-   in [settings-assembler.test.ts](../../packages/kernel/tests/component/settings-assembler.test.ts).
+   in [settings-assembler.test.ts](../../packages/kernel/tests/integration/settings-assembler.test.ts).
    Test: `rejects unknown frontmatter before changing an agent` in
-   [config-service.test.ts](../../packages/kernel/tests/contract/config-service.test.ts).
+   [config-service.test.ts](../../packages/kernel/tests/contract/physical/config-service.test.ts).
 
 6. **INV-201 — an agent name is unique across `global` and `workspace` together, and a pre-existing
    cross-scope duplicate makes both copies un-writable through the service while both stay readable.**
    The collision checks in `packages/kernel/src/config/config-service.ts`. Pinned:
-   `packages/kernel/tests/contract/config-service.test.ts` (`describe.each` over memory **and** file stores).
+   `packages/kernel/tests/contract/physical/config-service.test.ts` (`describe.each` over memory **and** file stores).
 
 7. **INV-202 — `renameAgent` moves within a scope; it rejects same-scope and cross-scope collisions
    (leaving the source intact), 404s a missing source, and rejects a rename to the same name.**
-   `packages/kernel/src/config/config-service.ts`. Pinned: `packages/kernel/tests/contract/config-service.test.ts`.
+   `packages/kernel/src/config/config-service.ts`. Pinned: `packages/kernel/tests/contract/physical/config-service.test.ts`.
 
 8. **INV-203 — repair is CAS-guarded and field-scoped.** `previewSettingsRepair`/`repairSettings` bind
    to the SHA-256 of exact bytes (`packages/kernel/src/config/config-service.ts`); a source that became valid, or
    changed, is a `conflict` and mutates nothing. `stripInvalidSettings` removes only
    the invalid leaf and falls back to `reset` past 64 rounds. Pinned:
-   `packages/kernel/tests/contract/config-service.test.ts` (absent source) (non-object ⇒ reset) (array member) (object field, siblings untouched) (65 invalid members ⇒ reset) (already
+   `packages/kernel/tests/contract/physical/config-service.test.ts` (absent source) (non-object ⇒ reset) (array member) (object field, siblings untouched) (65 invalid members ⇒ reset) (already
    valid ⇒ conflict); and on the file store `packages/kernel/tests/integration/file-config-store.test.ts`.
 
 9. **INV-204 — `writeAgent` validates frontmatter before the store is asked to write anything.**
-   `packages/kernel/src/config/config-service.ts` precedes. Pinned: `packages/kernel/tests/contract/config-service.test.ts` — after a
+   `packages/kernel/src/config/config-service.ts` precedes. Pinned: `packages/kernel/tests/contract/physical/config-service.test.ts` — after a
    rejected `model: 123`, `getAgent` reports `not_found`.
 
 10. **A shipped agent appears exactly once in `listAgents`, already resolved.**
@@ -748,7 +755,7 @@ Each entry: **rule** — production anchor — test anchor.
     approved". `coder` being a shipped name is what makes the assertion sharp: the question is never
     whether the agent is listed, only whether the repository's file overlays it. Shared prompt:
     `packages/kernel/src/config/shared-prompt.ts` (`resolveStoreSharedPrompt`). Pinned:
-    `packages/kernel/tests/component/shared-prompt.test.ts` ("does not inject an untrusted workspace
+    `packages/kernel/tests/integration/shared-prompt.test.ts` ("does not inject an untrusted workspace
     shared prompt" and "uses the workspace override after approval").
 
 21. **Approval binds to the surface, not to the path.** The fingerprint covers the risky settings,
@@ -858,7 +865,7 @@ Each entry: **rule** — production anchor — test anchor.
     as a negative; the positive composition is at `packages/kernel/src/kernel.ts`.
 
 38. **`subscribe` filters to the requested kinds and a store without `watch` yields a no-op
-    unsubscribe.** `packages/kernel/src/config/config-service.ts`. Pinned: `packages/kernel/tests/contract/config-service.test.ts` (an `agents`
+    unsubscribe.** `packages/kernel/src/config/config-service.ts`. Pinned: `packages/kernel/tests/contract/physical/config-service.test.ts` (an `agents`
     subscriber sees only `"agents"`, and nothing after `off()`); the no-op branch is **unpinned**.
 
 39. **`AgentSummary`/`AgentDoc` projection lifts a field only when it is present, never as an empty
@@ -867,7 +874,7 @@ Each entry: **rule** — production anchor — test anchor.
     and `budgetFrom` each return `undefined` — not `[]` or `{}` — for anything not of
     the expected shape, so an absent or malformed `grants`/`can_spawn`/`budget` is omitted from the
     summary rather than represented empty. `recordToDoc` carries `malformed` through
-    only when the record has one. Pinned: `packages/kernel/tests/contract/config-service.test.ts` ("projects
+    only when the record has one. Pinned: `packages/kernel/tests/contract/physical/config-service.test.ts` ("projects
     grants/can_spawn/budget from frontmatter onto the summary") ("omits grants/can_spawn/budget
     when the frontmatter declares none").
 
@@ -914,7 +921,7 @@ Each entry: **rule** — production anchor — test anchor.
 | Ill-formed agent name | `packages/kernel/src/config/config-service.ts` | `invalid_request`; store never called |
 | Cross-scope name collision | `packages/kernel/src/config/config-service.ts` | `conflict` with `{name, scope, conflictingScope}` |
 | Missing agent on `getAgent`/`renameAgent` | `packages/kernel/src/config/config-service.ts` | `not_found` |
-| Store lacks `setWorkspaceTrust` | `packages/kernel/src/config/config-service.ts` | **degrades**: re-reads settings, "the same answer an inert workspace gets"; pinned on the memory store at `packages/kernel/tests/contract/config-service.test.ts` |
+| Store lacks `setWorkspaceTrust` | `packages/kernel/src/config/config-service.ts` | **degrades**: re-reads settings, "the same answer an inert workspace gets"; pinned on the memory store at `packages/kernel/tests/contract/physical/config-service.test.ts` |
 | Store lacks `watch` | `packages/kernel/src/config/config-service.ts` | **degrades** to a no-op unsubscribe |
 | Scope not configured on the file store | `packages/kernel/src/config/file-config-store.ts` | plain `Error: config store has no '<scope>' scope configured`; `rewriteUnderLease` throws it **before** taking the lock, pinned `packages/kernel/tests/integration/file-config-store.test.ts` |
 | Settings lock held by a live holder past 2 s | `packages/kernel/src/config/file-config-store.ts` | plain `Error: settings are locked by another process (<path>)` |
@@ -1029,7 +1036,7 @@ type-only import plus an injected `opts.plugins` object.
 3. **A plugin-shipped agent can never be opened through `ConfigService.getAgent`.** The store supports
    it (`packages/kernel/src/config/file-config-store.ts`, and `packages/kernel/tests/integration/file-config-store.test.ts` pins the store-level
    fallback), but the service's `requireAgentName` rejects any `:` (`packages/kernel/src/config/config-service.ts`, and
-   `packages/kernel/tests/contract/config-service.test.ts` pins `plugin:coder` as rejected). Whether plugin agents are meant to
+   `packages/kernel/tests/contract/physical/config-service.test.ts` pins `plugin:coder` as rejected). Whether plugin agents are meant to
    be readable through some other route is not visible here.
 
 4. **No test covers an untrusted workspace's `agents/` directory.** The gate exists

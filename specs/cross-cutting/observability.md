@@ -1,5 +1,15 @@
 # The one diagnostic channel: Logger port, vocabulary, cost and audit
 
+Optional stream-debug metrics are a separate operator-selected JSONL sink. Their counters calculate
+windows from an injected clock and memory sample; the runtime adapter alone owns the timer, exit
+listener and append, and `dispose` releases them with one final flush. Failed debug writes remain
+tolerated and do not become trace events. Production: `createStreamMetricsCounter` and
+`createStreamMetrics` and `selectStreamMetrics` in `packages/llm/src/stream-metrics.ts` and
+`packages/code/src/adapters/stream-metrics.ts`. Test: `packages/llm/tests/unit/stream-metrics.test.ts`,
+`packages/llm/tests/integration/stream-metrics.test.ts`,
+`packages/code/tests/unit/stream-metrics.test.ts` and
+`packages/code/tests/integration/stream-metrics.test.ts`.
+
 For a Sandbox-requested tool, durable approval, policy and attempt events record
 the action identity, reason and requested/effective execution modes. Backend
 failure does not turn into a Host execution. A run selected for Host still has
@@ -13,8 +23,8 @@ and any execution failure. Production:
 `engineEventToProto` in `packages/kernel/src/runs/map-events.ts`. Test:
 `packages/tools/tests/unit/execution-coordinator.test.ts` and
 `packages/trace/tests/unit/trace-mapper.test.ts` and
-`packages/kernel/tests/unit/isolation-service.test.ts` and
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/integration/isolation-service.test.ts` and
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 > Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
@@ -260,7 +270,7 @@ logger.info(
 
 ```ts
 // packages/tools/src/config.ts (via tools.config_resolved, observed in
-// packages/tools/tests/unit/observability.test.ts, "reports the flags that decide the advertised surface")
+// packages/tools/tests/integration/common/observability.test.ts, "reports the flags that decide the advertised surface")
 {
   event: "tools.config_resolved",
   read_only: true,
@@ -282,7 +292,7 @@ they cannot assume every non-error field is scalar.
 counts. These fields describe output retention, not a
 process-failure cause; timeout and abort remain separate. Production: `runCommand` in
 `packages/tools/src/tools/shell.ts` and `LiveSession` in `packages/tools/src/lib/execution-session.ts`.
-Test: `packages/tools/tests/integration/shell.test.ts` ("returns exit zero and honest truncation
+Test: `packages/tools/tests/integration/common/shell.test.ts` ("returns exit zero and honest truncation
 after output exceeds the spill quota") ("keeps cancellation ahead of truncation after a large
 output burst").
 

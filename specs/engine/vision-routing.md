@@ -31,7 +31,7 @@ Production: `composeWithAttachments` and `appendMentionImages` in
   `packages/tools/src/tools/read-image.ts` and `runAgent` in
   `packages/loop/src/runtime/loop/run-agent.ts`. Test:
   `packages/loop/tests/integration/vision-tool-gating.test.ts` and
-  `packages/tools/tests/integration/read-image.test.ts`.
+  `packages/tools/tests/integration/common/read-image.test.ts`.
 - `spawn_subagent.image_refs` indexes images from the current turn. The option is offered when a
   spawnable profile declares `vision`; the named target is checked again before its image bytes are
   included. Production: `buildSpawnSubagentTool` in `packages/loop/src/runtime/delegation.ts`,

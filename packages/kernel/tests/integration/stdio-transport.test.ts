@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { ownedTempDirSync, trackOwnedResource } from "../helpers/owned-root.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -11,7 +11,7 @@ import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import { createAskUserCapability, type ExecuteRunDeps } from "@clarvis/loop";
 import type { RunEvent } from "@clarvis/protocol";
 import {
-  createInProcessKernel,
+  createInProcessKernel as rawCreateInProcessKernel,
   createKernelServer,
   createStdioTransport,
   serveKernelOverStdio,
@@ -19,6 +19,12 @@ import {
 } from "../../src/index.ts";
 import { createMemoryConfigStore } from "../../src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
+
+const createInProcessKernel: typeof rawCreateInProcessKernel = (options) => {
+  const kernel = rawCreateInProcessKernel(options);
+  trackOwnedResource(options.workspaceRoot, () => kernel.close());
+  return kernel;
+};
 
 function buildDeps(workspaceRoot: string): ExecuteRunDeps {
   const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_MCP_CONNECT_TIMEOUT_MS: "2000" });
@@ -39,7 +45,7 @@ function buildDeps(workspaceRoot: string): ExecuteRunDeps {
 }
 
 it("streams one real kernel run over the stdio NDJSON byte boundary", async () => {
-  const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-kernel-stdio-"));
+  const workspaceRoot = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-stdio-"));
   const kernel = createInProcessKernel({
     deps: buildDeps(workspaceRoot),
     workspaceRoot,

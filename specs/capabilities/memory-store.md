@@ -88,7 +88,7 @@ the type system rather than by convention (`packages/memory/src/types.ts`).
 | `rankByOverlap` | `(items, query, keyOf, limit) => T[]` — **no production caller** | `packages/memory/src/similar.ts` |
 | `buildDigest` / `renderDigest` | `packages/memory/src/digest.ts` |
 | `extractTitle` / `isIndexFile` | `packages/memory/src/tree.ts` |
-| `captureWorkspaceState` | `(cwd, logger?) => Promise<WorkspaceState \| undefined>` | `packages/memory/src/workspace-state.ts` |
+| `captureWorkspaceState` | `(cwd, logger?, environment?) => Promise<WorkspaceState \| undefined>` | `packages/memory/src/workspace-state.ts` |
 | `readUtf8FileBounded` / `readUtf8PrefixSync` / `scanDirectoryBounded` | `packages/memory/src/bounded-io.ts` |
 | `assertMemoryPayloadBytes` / `assertMemoryStorageCount` | `packages/memory/src/storage-limits.ts` |
 | `bestEffortFileStore` / `detachFileStoreTask` | `packages/memory/src/file-store/tasks.ts` |
@@ -759,7 +759,7 @@ asserting through `node:assert/strict`, so an adapter in another package or runn
 it and the flag are gone, because neither shipped adapter rolls back and none was ever going to —
 `packages/memory/src/file-store.ts` states "exclusion only, not rollback".
 
-`packages/memory/tests/contract/store.test.ts` drives every case against both shipped backends:
+`packages/memory/tests/contract/physical/store.test.ts` drives every case against both shipped backends:
 the file store over a fresh temp root (with `poke` writing straight to disk) and the in-memory store
 (with `poke` writing through the store itself).
 
@@ -784,7 +784,7 @@ Each rule below carries its production site and the test that pins it, or `unpin
 (`/etc/passwd.md`), or is not `.md` (`a/b.txt`) is rejected with a `MemoryPathError` whose `code` is
 `memory_path_invalid`.
 Production: `packages/memory/src/paths.ts`.
-Test: `packages/memory/src/testing.ts`, driven at `packages/memory/tests/contract/store.test.ts`
+Test: `packages/memory/src/testing.ts`, driven at `packages/memory/tests/contract/physical/store.test.ts`
 against both backends.
 
 **MS-02 (INV-121).** `./infra/bun/MEMORY.md`, `infra//bun/MEMORY.md` and `infra\bun\MEMORY.md` all
@@ -1130,7 +1130,7 @@ and asserts that the absolute floor of three revisions, including both artifacts
 Production: `packages/memory/src/file-store/documents.ts`,
 `packages/memory/src/batch.ts`.
 Test: `packages/memory/src/testing.ts` ("reports an absent document as null and delete as
-false"), driven at `packages/memory/tests/contract/store.test.ts` against both backends.
+false"), driven at `packages/memory/tests/contract/physical/store.test.ts` against both backends.
 
 **MS-61.** The run-dedup ledger is independent per run id and idempotent: `wasIndexed(runId)` is
 `false` before `markIndexed(runId, …)` and `true` after, marking the same run id a second time is

@@ -31,8 +31,8 @@ workspace access preference.
 
 Production: `toolDescriptors` in [registry.ts](src/tools/registry.ts),
 `dispatch` in [core.ts](src/core.ts), and `resolveToolPath` in
-[paths.ts](src/lib/paths.ts). Test: [tool-surface.test.ts](tests/component/tool-surface.test.ts)
-and [open-authority.test.ts](tests/integration/open-authority.test.ts).
+[paths.ts](src/lib/paths.ts). Test: [tool-surface.test.ts](tests/integration/common/tool-surface.test.ts)
+and [open-authority.test.ts](tests/integration/common/open-authority.test.ts).
 
 ## Usage
 
@@ -78,7 +78,7 @@ Worker shutdown waits for its process tree and reports an unconfirmed stop.
 File mutations already covered by `executionPolicy.additionalWriteRoots` request no new permission;
 read-only paths retain precedence. Production: `prepareToolAction` in
 [action.ts](src/execution/action.ts). Test:
-[action-authorization.test.ts](tests/unit/action-authorization.test.ts).
+[action-authorization.test.ts](tests/integration/common/action-authorization.test.ts).
 
 ## Execution and limits
 
@@ -87,6 +87,16 @@ read-only paths retain precedence. Production: `prepareToolAction` in
 agent. Output capture uses bounded per-stream windows. Text reads use bounded
 descriptor reads and reject non-regular files. An omitted or empty cursor
 starts a `shell_session` read at the first retained output page.
+The session manager owns one clock, timer scheduler and tree-ownership adapter;
+its shell handler uses that same clock for yield and duration. Defaults probe and
+signal the real owned process tree. Controlled tests deliver child events and
+advance time without running commands; physical integration tests retain signal,
+pipe and process-group evidence. Production: `ExecutionSessionManager`,
+`stopOwnedProcess` and `runCommand` in `src/lib/execution-session.ts`,
+`src/lib/process-owner.ts` and `src/tools/shell.ts`. Test:
+`tests/unit/execution-session-policy.test.ts`,
+`tests/unit/process-owner-policy.test.ts` and
+`tests/integration/process-owner.test.ts`.
 `list` ignores session, cursor and wait fields; `stop` ignores cursor and wait
 fields while still requiring a run-owned session ID.
 `read_image` recognizes PNG, JPEG, GIF and WebP from bytes. `apply_patch` stages a complete multi-file
@@ -101,15 +111,15 @@ inspection runner uses this toolset behind a read-only native Sandbox and expose
 only read, list, image and shell tools to its reviewer. Production: `dispatch` in
 `src/core.ts` and `createJudgeRunner` in
 `packages/kernel/src/execution/judge-runner.ts`. Test:
-`tests/unit/action-authorization.test.ts` and
-`packages/kernel/tests/unit/judge-runner.test.ts`.
+`tests/integration/common/action-authorization.test.ts` and
+`packages/kernel/tests/integration/judge-runner.test.ts`.
 
 Production: `readRawFile` in [files.ts](src/lib/files.ts),
 `ExecutionSessionManager` in [execution-session.ts](src/lib/execution-session.ts),
 and `applyOpsAtomic` in [atomic.ts](src/lib/atomic.ts).
-Test: [bounded-read.test.ts](tests/integration/bounded-read.test.ts),
-[execution-session.test.ts](tests/integration/execution-session.test.ts), and
-[atomic.test.ts](tests/integration/atomic.test.ts).
+Test: [bounded-read.test.ts](tests/integration/common/bounded-read.test.ts),
+[execution-session.test.ts](tests/integration/common/execution-session.test.ts), and
+[atomic.test.ts](tests/integration/common/atomic.test.ts).
 
 ## Entry points
 
@@ -121,3 +131,10 @@ Test: [bounded-read.test.ts](tests/integration/bounded-read.test.ts),
 Run `bun --filter @clarvis/tools build`, `typecheck`, `test`, `lint` and
 `format:check` from the repository root during development. The root
 `bun run test` script runs the supported workspace suite.
+
+## Test suites
+
+`bun --filter @clarvis/tools test:fast` runs the in-memory unit cases. `bun --filter @clarvis/tools test:integration` runs this package's common physical test cases. `bun --filter @clarvis/tools test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

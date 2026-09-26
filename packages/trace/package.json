@@ -1,7 +1,7 @@
 {
   "name": "@clarvis/trace",
   "private": true,
-  "description": "Records and persists a Clarvis run's trace \u2014 the trace handle, the JSON store, the crash journal and its recovery, event mapping and retention.",
+  "description": "Records and persists a Clarvis run's trace — the trace handle, the JSON store, the crash journal and its recovery, event mapping and retention.",
   "license": "MIT",
   "author": "getclarvis",
   "type": "module",
@@ -35,13 +35,14 @@
     "test:unit": "bun test tests/unit --timeout 60000",
     "test:component": "bun test tests/component --timeout 60000",
     "test:contract": "bun test tests/contract --timeout 60000",
-    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:integration": "bun test tests/integration tests/contract/physical --timeout 60000",
     "test:architecture": "bun test tests/architecture --timeout 60000",
     "test:coverage": "bun test tests/unit tests/component tests/contract tests/integration --timeout 60000 --coverage && bun run test:architecture",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "test:fast": "bun test tests/unit tests/component --timeout 60000"
   },
   "dependencies": {
     "@clarvis/capability": "workspace:*",

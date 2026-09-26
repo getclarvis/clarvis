@@ -241,7 +241,16 @@ function socketParentRequest(
  *   still prove is its own allocation.
  */
 function releaseAllocations(allocations: readonly ShortTemporaryRoot[]): void {
-  for (const allocation of [...allocations].reverse()) allocation.remove();
+  const errors: unknown[] = [];
+  for (const allocation of [...allocations].reverse()) {
+    try {
+      allocation.remove();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0)
+    throw new AggregateError(errors, "smoke fixture allocation cleanup failed");
 }
 
 function isWithin(candidate: string, root: string): boolean {
@@ -471,32 +480,51 @@ export async function createSmokeContext(
       },
       async cleanup() {
         if (cleaned) return;
-        cleaned = true;
         const owned = [...children];
+        const errors: unknown[] = [];
         for (const child of owned) {
           try {
             child.kill("SIGTERM");
-          } catch {}
+          } catch (error) {
+            errors.push(error);
+          }
         }
-        await Promise.all(
+        const settled = await Promise.allSettled(
           owned.map(async (child) => {
+            let timer: ReturnType<typeof setTimeout> | undefined;
             try {
               await Promise.race([
                 child.exited,
-                new Promise<never>((_, reject) =>
-                  setTimeout(() => reject(new Error("smoke_child_shutdown_timeout")), 3000),
+                new Promise<never>(
+                  (_, reject) =>
+                    (timer = setTimeout(
+                      () => reject(new Error("smoke_child_shutdown_timeout")),
+                      3000,
+                    )),
                 ),
               ]);
-            } catch {
-              try {
+            } catch (error) {
+              if (error instanceof Error && error.message === "smoke_child_shutdown_timeout") {
                 child.kill("SIGKILL");
-              } catch {}
-              await child.exited.catch(() => undefined);
+                await child.exited;
+              } else {
+                throw error;
+              }
+            } finally {
+              if (timer !== undefined) clearTimeout(timer);
             }
           }),
         );
+        for (const result of settled) if (result.status === "rejected") errors.push(result.reason);
+        if (errors.length > 0) {
+          throw new AggregateError(
+            errors,
+            `smoke fixture child shutdown failed; roots retained: ${root}`,
+          );
+        }
         children.clear();
         releaseAllocations(allocations);
+        cleaned = true;
       },
     };
     await mkdir(join(directories.home, ".config"), { recursive: true, mode: 0o700 });
@@ -505,7 +533,13 @@ export async function createSmokeContext(
     await assertOwnedDirectory(directories.global, root);
     return context;
   } catch (error) {
-    releaseAllocations(allocations);
+    try {
+      releaseAllocations(allocations);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "smoke fixture setup and cleanup failed", {
+        cause: cleanupError,
+      });
+    }
     throw error;
   }
 }
@@ -627,7 +661,13 @@ export async function createSmokeFixture(
     await writeFile(context.paths.settingsFile, settings, { flag: "wx", mode: 0o600 });
     return context;
   } catch (error) {
-    await context.cleanup();
+    try {
+      await context.cleanup();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "smoke fixture setup and cleanup failed", {
+        cause: cleanupError,
+      });
+    }
     throw error;
   }
 }

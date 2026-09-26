@@ -620,7 +620,7 @@ qualified generic command, plus zero fires without the context; a rejecting stru
 also swallowed and reported (`packages/hooks/tests/component/capability.test.ts`). The settings assembler creates that
 context only for a resolved user-invoked skill and omits it for ordinary prompts and model-initiated
 loads (`packages/kernel/src/runs/settings-assembler.ts`; tests
-`packages/kernel/tests/component/settings-assembler.test.ts`).
+`packages/kernel/tests/integration/settings-assembler.test.ts`).
 
 The `Capability` object itself (returned by `createWorkspaceHooksCapability`, not its activation)
 **always** declares `seedMarker: HOOKS_SEED_MARKER` regardless of whether any hook is configured, so a stale `<workspace-hooks>` block from a prior run is stripped even on a later run
@@ -790,7 +790,7 @@ The following invariants govern the behaviour covered above.
     `packages/hooks/src/capability.ts`; the host supplies it only from a resolved
     skill invocation at `packages/kernel/src/runs/settings-assembler.ts`. Pinned:
     `packages/hooks/tests/component/capability.test.ts` and
-    `packages/kernel/tests/component/settings-assembler.test.ts`.
+    `packages/kernel/tests/integration/settings-assembler.test.ts`.
 24. **Tool hook matching keeps both wire and canonical identities, while compatible stdin uses the
     external spelling.** Production: `packages/hooks/src/event-serialization.ts`,
     `packages/hooks/src/match.ts`, and `packages/loop/src/runtime/loop/loop.ts`.

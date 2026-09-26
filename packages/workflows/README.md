@@ -423,7 +423,7 @@ The suite is classified by its primary effect boundary:
 - `tests/helpers/` contains typed, per-context execution and registry fakes plus local authored
   workflow definitions. Helpers are not test entrypoints and own no behavior matrix.
 
-The default `test` and `test:coverage` commands run all four tiers in one isolated Bun invocation,
+The default `test` and `test:coverage` commands run all declared test levels in one Bun invocation,
 so classification preserves the supported suite and its LCOV inventory. Each tier also has a
 targeted `test:<level>` command.
 
@@ -443,3 +443,11 @@ bun --filter @clarvis/workflows format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
+## Test suites
+
+`bun --filter @clarvis/workflows test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/workflows test:integration` runs this package's common physical test cases. `bun --filter @clarvis/workflows test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint. The capacity-wait tests in `tests/component/dispatch.test.ts` and `tests/component/observability.test.ts` pass a case-local scheduler through `DispatchDeps.delay`; after removing their global timer spies, five consecutive full package runs passed under Bun's shared runner, so the package scripts no longer use `--isolate`.
+`tests/integration/capacity-poll-timer.test.ts` verifies the default scheduler against a real timer and abort signal.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

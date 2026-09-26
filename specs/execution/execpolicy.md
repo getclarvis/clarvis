@@ -8,7 +8,7 @@
 > `packages/paths/src/global.ts` / `workspace.ts` (execution rule paths).
 >
 > Test: `packages/execpolicy/tests/unit/policy.test.ts` and
-> `packages/kernel/tests/unit/execpolicy-loader.test.ts`.
+> `packages/kernel/tests/integration/execpolicy-loader.test.ts`.
 
 ## Purpose and boundary
 
@@ -106,7 +106,7 @@ no persistence path here. Production:
 `packages/paths/src/workspace.ts`, and `loadExecutionRules` / `writeExecutionRules` in
 `packages/kernel/src/execution/execpolicy-loader.ts`. Test:
 `packages/paths/tests/component/paths.test.ts` and
-`packages/kernel/tests/unit/execpolicy-loader.test.ts`.
+`packages/kernel/tests/integration/execpolicy-loader.test.ts`.
 
 `ConfigService.getExecutionRules`, `checkExecutionRule` and `updateExecutionRules` expose the
 effective sources, a no-execution check and a compare-and-swap replacement to authenticated
@@ -144,7 +144,7 @@ literal prefix` in `packages/execpolicy/tests/unit/policy.test.ts`.
 **INV-EP2.** A malformed file never causes partial file-layer loading; host requirements remain.
 Production: `loadExecutionRules` in `packages/kernel/src/execution/execpolicy-loader.ts`. Test:
 `invalid file discards file layers but preserves host requirements` in
-`packages/kernel/tests/unit/execpolicy-loader.test.ts`.
+`packages/kernel/tests/integration/execpolicy-loader.test.ts`.
 
 **INV-EP3.** The engine has no dependency on this package. Kernel owns rule loading and evaluation
 behind the neutral action port. Production: `packages/loop/package.json`, `packages/kernel/package.json`,

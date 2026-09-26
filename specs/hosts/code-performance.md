@@ -631,7 +631,7 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
     `packages/code/src/update/check.ts`, and
     `packages/code/src/update/github-releases.ts` (`fetchReleaseIndex`). Test:
     `packages/code/tests/architecture/{architecture-boundary,cli-fast-path}.test.ts` and
-    `packages/code/tests/unit/update-check.test.ts`.
+    `packages/code/tests/integration/update-check.test.ts`.
 
 The near-250 ms and below-500 ms functional startup targets are review criteria on a comparable
 named host, not cross-platform invariants. No invariant currently sets an absolute complete-app or

@@ -88,7 +88,15 @@ behind every claim there.
 | `assertInteractiveTTY(io?)` | exits process with code `2` and a stderr usage line if stdin/stdout are not a TTY | `packages/code/src/adapters/renderer-bootstrap.ts` |
 | `buildRendererConfig(opts?): CliRendererConfig` | the OpenTUI renderer config `code` boots with | `packages/code/src/adapters/renderer-bootstrap.ts` |
 | `createPlatform(renderer, opts?): Platform` | constructs the adapter around a live `CliRenderer` | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
-| `readClipboardImage(signal?, run?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform` | `packages/code/src/adapters/platform.ts` |
+| `readClipboardImage(signal?, run?, selection?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform`; selection supplies environment and platform readers | `packages/code/src/adapters/platform.ts` |
+
+`createPlatform` retains dynamic environment and runtime-platform reads through the supplied readers;
+two adapters can therefore make different clipboard and capability decisions concurrently without
+changing process globals. The clipboard decision tests use explicit inputs under `tests/unit/`,
+while shutdown and real process behavior remain in integration. Production:
+`packages/code/src/adapters/platform.ts` (`createPlatform`, `readClipboardImage`). Test:
+`packages/code/tests/unit/platform.test.ts`, `packages/code/tests/unit/platform-copy.test.ts`, and
+`packages/code/tests/integration/platform-lifecycle.test.ts`.
 
 ### 2.5 `adapters/clipboard-process.ts`
 
@@ -232,7 +240,7 @@ files are kept before opening a new one (`retainNewest`, `packages/code/src/adap
 }
 ```
 (`buildLine`, `packages/code/src/adapters/diagnostic-session.ts`; example fields pinned by
-`packages/code/tests/unit/diagnostics.test.ts`.)
+`packages/code/tests/integration/diagnostics.test.ts`.)
 
 - `source` is `"code"` for this UI's own calls (`event`/`count`/lifecycle records) and `"kernel"` for
   anything written through the `DiagnosticLogger` handed to the kernel (`packages/code/src/adapters/diagnostic-session.ts`).
@@ -241,7 +249,7 @@ files are kept before opening a new one (`retainNewest`, `packages/code/src/adap
   unrecognized event-name shape (must match `/^[a-z0-9][a-z0-9._-]*$/`, ≤160 chars) is replaced with
   `diagnostics.invalid-event` (`eventName`/`validDiagnosticName`).
 - `memory` is attached for every record at `warn`/`error`, and otherwise only on the first record and
-  every 32nd one after (`samplesMemory`, pinned by `packages/code/tests/unit/diagnostics.test.ts`).
+  every 32nd one after (`samplesMemory`, pinned by `packages/code/tests/integration/diagnostics.test.ts`).
 - A line whose serialized form exceeds `MAX_RECORD_BYTES` (16 KiB) is replaced wholesale with a `{
   truncated: true, reason: "record exceeded 16 KiB" }` details block.
 - Reserved envelope keys `v, at, seq, level, source, event, pid, memory, details` cannot be overwritten
@@ -253,10 +261,10 @@ every bound field, and bounds: string length (2,000 chars, longer strings trunca
 `__truncated_keys: true` past that), recursion depth (5), and total visited nodes across one call (256,
 returning `"[node-limit]"` past that). A getter/accessor property is **never invoked** — its descriptor
 is read and `"[accessor]"` substituted instead (pinned by
-`packages/code/tests/unit/diagnostics.test.ts`). Circular-reference detection tracks only the current recursion
+`packages/code/tests/integration/diagnostics.test.ts`). Circular-reference detection tracks only the current recursion
 *path* (a `WeakSet` added-to and deleted-from around each recursive call), so the same object reachable
 from two different keys is serialized twice rather than reported as `"[circular]"`
-(pinned by `packages/code/tests/unit/diagnostics.test.ts`).
+(pinned by `packages/code/tests/integration/diagnostics.test.ts`).
 
 **Redaction.** A key is redacted (value replaced with `"[redacted]"`) when, after normalizing to
 snake_case, it matches `SECRET_KEY` (`api_key`/`authorization`/`cookie`/`credential`/`password`/`secret`/
@@ -282,7 +290,7 @@ regular budget (`regularLimit = maxBytes - finalReserve`) would be exceeded, one
 record is appended and all further non-`force` writes are dropped. At most `keepFiles`
 (default 5) files are kept per directory, oldest deleted first by mtime (`retainNewest`).
 Non-finite/invalid `maxBytes`/`keepFiles` seams fall back to the production defaults
-(pinned by `packages/code/tests/unit/diagnostics.test.ts`).
+(pinned by `packages/code/tests/integration/diagnostics.test.ts`).
 
 **Two concrete record shapes the session constructs directly, beside the generic envelope above:**
 
@@ -456,7 +464,7 @@ remote (SSH_TTY or SSH_CONNECTION set)?
   no  -> try native tool first; on success return true
          else -> try OSC-52 (only path where local falls back to OSC-52)
 ```
-Pinned exactly by `packages/code/tests/integration/platform-copy.test.ts`.
+Pinned exactly by `packages/code/tests/unit/platform-copy.test.ts`.
 
 Native-tool candidate lists, tried **in order** until one succeeds (`exitCode===0`, no error, not timed
 out):
@@ -465,7 +473,7 @@ out):
   (`packages/code/src/adapters/platform.ts`).
 - paste-image: darwin→`pngpaste`; `WAYLAND_DISPLAY`→`wl-paste
   --type image/png`; `DISPLAY`→`xclip -selection clipboard -t image/png -o` — **`xsel` is never tried for
-  image paste** (`packages/code/src/adapters/platform.ts`, pinned by `packages/code/tests/integration/platform.test.ts`). A
+  image paste** (`packages/code/src/adapters/platform.ts`, pinned by `packages/code/tests/unit/platform.test.ts`). A
   candidate's output must start with the 8-byte PNG signature or it is rejected as not-an-image
   (`isPng`, `packages/code/src/adapters/platform.ts`).
 
@@ -511,7 +519,7 @@ the *original* `process.stderr.write` in one `Buffer.concat` write.
 | a **foreign** session installed (opened by `--debug` at boot, not by this controller) | `open(level?)` | unchanged | retunes the *foreign* session in place (since `activeDiagnosticSession()` still finds it) and reports `retuned:true` | `packages/code/src/adapters/debug-session.ts` |
 | this controller's session installed | `close()` | none installed | uninstalls, closes the file, returns its path | `packages/code/src/adapters/debug-session.ts` |
 | a foreign session installed | `close()` | unchanged | returns `null` — "left for its own owner to close" | `packages/code/src/adapters/debug-session.ts` remark |
-| none installed | `close()` | none | returns `null` | pinned `packages/code/tests/unit/debug-session.test.ts` |
+| none installed | `close()` | none | returns `null` | pinned `packages/code/tests/integration/debug-session.test.ts` |
 
 `open()` always reports `retuned:true` whenever a session was already installed (own or foreign),
 whether or not the requested `level` differs from the one already active — it does not itself
@@ -572,7 +580,7 @@ derived logger's own `level` getter reports `DIAGNOSTIC_LEVELS[Math.max(floor, o
 everything), `"silent"` yields one past the last real level (suppress everything), and any other
 unrecognized string also yields `0` — an unrecognized level is treated as "no additional restriction"
 rather than as `"silent"`, so a typo widens rather than silences. Pinned by
-`packages/code/tests/unit/diagnostics.test.ts` ("CLARVIS_LOG scopes reach this sink: a component's records carry it
+`packages/code/tests/integration/diagnostics.test.ts` ("CLARVIS_LOG scopes reach this sink: a component's records carry it
 and honour its level") ("a component scope composes with the session floor, and a silent scope
 writes nothing") ("a derived logger reports its own effective level and keeps its parent's
 bindings").
@@ -630,38 +638,38 @@ recovery screen with no further keypress — pinned by
     a `diagnostics.level` record — when `next === level`, so retuning to the level already active leaves
     no trace on the line (`packages/code/src/adapters/diagnostic-session.ts`). —
     `packages/code/src/adapters/diagnostic-session.ts` —
-    pinned by `packages/code/tests/unit/diagnostics.test.ts` (level floor) and
+    pinned by `packages/code/tests/integration/diagnostics.test.ts` (level floor) and
     `tests/integration/diagnostics... "file size and retention remain bounded"` (saturation).
 12. **A diagnostic accessor property is read via its descriptor, never invoked**, so a logged payload
     cannot trigger side effects during sanitization. — `packages/code/src/adapters/diagnostic-session.ts` — pinned by
-    `packages/code/tests/unit/diagnostics.test.ts`.
+    `packages/code/tests/integration/diagnostics.test.ts`.
 13. **Circular-reference detection in `sanitize` tracks only the current recursion path**, so the same
     object reachable through two sibling keys is serialized twice, not folded to `"[circular]"` on its
     second occurrence. — `packages/code/src/adapters/diagnostic-session.ts` — pinned by
-    `packages/code/tests/unit/diagnostics.test.ts`.
+    `packages/code/tests/integration/diagnostics.test.ts`.
 14. **`path` is excluded from the content-redaction key list on purpose** — including it redacted the
     diagnostic session's own announcement of where it writes. — `packages/code/src/adapters/diagnostic-session.ts` — no test
     directly asserts the *absence* of the exclusion (unpinned as a negative claim), but
-    `packages/code/tests/unit/diagnostics.test.ts` asserts the `diagnostics.start` record's `path` field is
+    `packages/code/tests/integration/diagnostics.test.ts` asserts the `diagnostics.start` record's `path` field is
     readable, which the redaction would have defeated.
 15. **The debug-session controller retunes an already-installed session in place rather than opening a
     second file** — including a *foreign* session it did not itself open — and reports whether a given
     `open()` call was the first (`retuned:false`) or a retune (`retuned:true`). — `packages/code/src/adapters/debug-session.ts`
-    — pinned by `packages/code/tests/unit/debug-session.test.ts`.
+    — pinned by `packages/code/tests/integration/debug-session.test.ts`.
 16. **`close()` on the debug-session controller only ever closes the session *this controller* opened**;
     closing a foreign (e.g. boot-time `--debug`) session is refused, returning `null`. —
-    `packages/code/src/adapters/debug-session.ts` — pinned by `packages/code/tests/unit/debug-session.test.ts`.
+    `packages/code/src/adapters/debug-session.ts` — pinned by `packages/code/tests/integration/debug-session.test.ts`.
 17. **`--debug` on the command line always enables the session, even when `CLARVIS_CODE_DEBUG=off` is set
     in the environment**, and an explicit `--debug=<level>` always wins over
     `CLARVIS_CODE_DEBUG_LEVEL`/an env-supplied level — the flag wins in both directions. —
-    `packages/code/src/cli-args.ts` — pinned by `packages/code/tests/unit/cli-args.test.ts` ("resolveDebugRequest
+    `packages/code/src/cli-args.ts` — pinned by `packages/code/tests/integration/cli-args.test.ts` ("resolveDebugRequest
     folds the environment in, with the flag winning both ways"), though `cli-args.ts` itself belongs to
     [hosts/code-bootstrap.md](code-bootstrap.md) per §8.
 18. **An unrecognized diagnostic level in the *environment* is silently ignored (falls back to
     `debug`), while the same typo on the command line is a usage error.** —
     `packages/code/src/cli-args.ts` (`debugLevel` returns `undefined` on no match)
     (`usageError` on an unmatched `--debug=<level>`, directly implementing the command-line half) — pinned
-    by `packages/code/tests/unit/cli-args.test.ts` (bad `--debug=loud` is a `usage-error` naming the flag) (an unrecognized `CLARVIS_CODE_DEBUG_LEVEL` silently falls back rather than erroring).
+    by `packages/code/tests/integration/cli-args.test.ts` (bad `--debug=loud` is a `usage-error` naming the flag) (an unrecognized `CLARVIS_CODE_DEBUG_LEVEL` silently falls back rather than erroring).
 19. **`installTerminalGuard`'s restore is idempotent**: a second call neither restores twice nor
     re-flushes the buffer. — `packages/code/src/adapters/terminal-guard.ts` — pinned by
     `packages/code/tests/unit/terminal-guard.test.ts`.
@@ -672,13 +680,13 @@ recovery screen with no further keypress — pinned by
     is withheld and later flushed).
 21. **Locally (no SSH env vars), `copyText` never invokes OSC-52 when the native tool already
     succeeded**; over SSH, OSC-52 is tried first and the native tool is skipped when it succeeds. —
-    `packages/code/src/adapters/platform.ts` (`copyText`) — pinned by `packages/code/tests/integration/platform-copy.test.ts`.
+    `packages/code/src/adapters/platform.ts` (`copyText`) — pinned by `packages/code/tests/unit/platform-copy.test.ts`.
 22. **`readClipboardImage` never falls back to `xsel` for image paste**, even though `xsel` is a text-copy
-    candidate. — `packages/code/src/adapters/platform.ts` — pinned by `packages/code/tests/integration/platform.test.ts`.
+    candidate. — `packages/code/src/adapters/platform.ts` — pinned by `packages/code/tests/unit/platform.test.ts`.
 23. **A clipboard helper process is force-killed (`SIGTERM` then, after `killGraceMs`, `SIGKILL`) on
     timeout, abort, or oversized stdout**, and stdout past `maxStdoutBytes` is truncated rather than
     buffered without bound. — `packages/code/src/adapters/clipboard-process.ts` — pinned by
-    `packages/code/tests/integration/clipboard-process.test.ts` (timeout→SIGTERM→SIGKILL) (oversized output capped and terminated).
+    `packages/code/tests/unit/clipboard-process.test.ts` (controlled timeout→SIGTERM→SIGKILL and oversized output cap).
 ## 6. Failure modes and degradation
 
 | Failure | Handling | Cite |
@@ -692,11 +700,11 @@ recovery screen with no further keypress — pinned by
 | A registered `onShutdown` hook throws or its promise rejects | Wrapped in `Promise.resolve().then(...)`, awaited via `Promise.allSettled`, so one hook's failure never blocks another's | `packages/code/src/adapters/platform.ts` (`createPlatform`), pinned `packages/code/tests/integration/platform-lifecycle.test.ts` |
 | Shutdown hooks collectively exceed `SHUTDOWN_BUDGET_MS` | The `Promise.race` against a timer proceeds to `restore()` anyway — hooks may still be in flight | `packages/code/src/adapters/platform.ts` (`SHUTDOWN_BUDGET_MS`, `createPlatform`) |
 | Diagnostic session's file write itself fails (`writeSync` throws) | Session marks itself `saturated` and drops further non-forced writes; does not throw out to the caller | `packages/code/src/adapters/diagnostic-session.ts` |
-| A diagnostic record would exceed `MAX_RECORD_BYTES` | Replaced with a `{truncated:true, reason:"record exceeded 16 KiB"}` details stand-in, same envelope | `packages/code/src/adapters/diagnostic-session.ts`, pinned `packages/code/tests/unit/diagnostics.test.ts` |
-| A pathological/oversized event or counter name | Normalized to `diagnostics.invalid-event`/`diagnostics.invalid-counter`, never persisted verbatim | `packages/code/src/adapters/diagnostic-session.ts`, pinned `packages/code/tests/unit/diagnostics.test.ts` |
+| A diagnostic record would exceed `MAX_RECORD_BYTES` | Replaced with a `{truncated:true, reason:"record exceeded 16 KiB"}` details stand-in, same envelope | `packages/code/src/adapters/diagnostic-session.ts`, pinned `packages/code/tests/integration/diagnostics.test.ts` |
+| A pathological/oversized event or counter name | Normalized to `diagnostics.invalid-event`/`diagnostics.invalid-counter`, never persisted verbatim | `packages/code/src/adapters/diagnostic-session.ts`, pinned `packages/code/tests/integration/diagnostics.test.ts` |
 | `debugSession.close()` called with nothing this controller opened | Returns `null`; a foreign (`--debug`-at-boot) session is left alone | `packages/code/src/adapters/debug-session.ts` |
 | `diagnosticAsync`'s `onSlow` callback itself throws | Caught, reported as an `async.slow-handler-failed` error event, and does not propagate to the awaited operation | `packages/code/src/core/diagnostic-events.ts` |
-| Non-finite/NaN `maxBytes`/`keepFiles` options | Silently fall back to the production defaults rather than producing an unbounded or zero-capacity session | `packages/code/src/adapters/diagnostic-session.ts`, pinned `packages/code/tests/unit/diagnostics.test.ts` |
+| Non-finite/NaN `maxBytes`/`keepFiles` options | Silently fall back to the production defaults rather than producing an unbounded or zero-capacity session | `packages/code/src/adapters/diagnostic-session.ts`, pinned `packages/code/tests/integration/diagnostics.test.ts` |
 | `openUniqueFile` exhausts 100 same-second/same-pid filename collisions | Throws `"could not allocate a unique Clarvis diagnostic log"`, which propagates out of `createDiagnosticSession` itself — construction, not just a later write, fails | `packages/code/src/adapters/diagnostic-session.ts` — no test in this document's scope exercises the 100-collision path (see §8) |
 
 ## 7. Coupling

@@ -31,7 +31,7 @@ The user-facing surfaces are:
 
 Production: `packages/code/src/cli-args.ts` (`FLAGS`, `Mode`), root and Code `package.json`
 scripts, `tooling/release/prepare.ts`, `packages/code/src/update-contract.ts` (`ReleaseTarget`, `releaseAssetName`), and
-`.github/workflows/release.yml`. Test: `packages/code/tests/unit/cli-args.test.ts`,
+`.github/workflows/release.yml`. Test: `packages/code/tests/integration/cli-args.test.ts`,
 `packages/code/tests/unit/update-contract.test.ts`, and
 `tooling/tests/unit/release-readiness.test.ts`.
 
@@ -67,9 +67,9 @@ left untouched. Production: `CLARVIS_DOCS_FIRST_VERSION` and `verifyReleaseTree`
 `packages/code/src/bootstrap/system-docs-cli.ts`, `reconcileSystemDocs` in
 `packages/kernel/src/skills/system-docs.ts`, root `install.sh` and and
 `publishStagedSystemDocs` in `packages/code/src/update/installation.ts`. Test:
-`packages/code/tests/unit/release-manifest.test.ts`,
-`packages/code/tests/unit/candidate-install.test.ts`, and
-`packages/kernel/tests/unit/system-docs-publication.test.ts`.
+`packages/code/tests/integration/release-manifest.test.ts`,
+`packages/code/tests/integration/candidate-install.test.ts`, and
+`packages/kernel/tests/integration/system-docs-publication.test.ts`.
 
 The generated notice routes to the static inventory and lists the exact target closure; license files
 supplied by those packages remain in their copied package directories. Production:
@@ -107,7 +107,7 @@ verifier. Production:
 `packages/code/src/update/release-manifest.ts` (`parseReleaseManifest`, `manifestFiles`,
 `verifyReleaseTree`, `restoreReleaseModes`). After content verification, extractors that discard
 tar modes restore the validated modes, keeping the native deny mask at `000` and launchers
-executable after a managed update. Test: `packages/code/tests/unit/release-manifest.test.ts`.
+executable after a managed update. Test: `packages/code/tests/integration/release-manifest.test.ts`.
 
 A managed installation is:
 
@@ -146,7 +146,7 @@ Production:
 `packages/code/tooling/release/runtime-package-discovery.ts`. The runtime closure follows workspace
 and third-party package manifests, including nested dependency manifests. Invalid package roots
 are rejected before reading their manifests; Clarvis source packages come from the workspace.
-Test: `packages/code/tests/unit/runtime-package-discovery.test.ts` and
+Test: `packages/code/tests/integration/runtime-package-discovery.test.ts` and
 `packages/code/tests/architecture/artifact-contract.test.ts`. The release smoke re-extracts the
 archive, verifies the manifest, required notices/licenses, and zero-map rule, runs `--version` and
 `--help`, and on POSIX observes the complete-app marker under a real PTY using the packaged runtime.
@@ -209,7 +209,7 @@ draft and prerelease flags, exact asset identity, `uploaded` state, size, GitHub
 `sha256:` digest. A stable current version rejects prereleases; a prerelease current version may
 advance to a higher prerelease or stable version and never downgrades. Production:
 `packages/code/src/update/github-releases.ts` and `packages/code/src/update-contract.ts`
-(`selectUpdateRelease`). Test: `packages/code/tests/unit/github-releases.test.ts` and
+(`selectUpdateRelease`). Test: `packages/code/tests/integration/github-releases.test.ts` and
 `packages/code/tests/unit/update-contract.test.ts`.
 
 The interactive TUI separately performs a passive release check. It is default-on only for an
@@ -223,7 +223,7 @@ transient hint and persistent header marker, but the checker never acquires `upd
 stages, or activates anything. Production: `packages/code/src/update/check.ts`
 (`createUpdateChecker`, `checkForUpdate`), `packages/code/src/update/github-releases.ts`
 (`fetchReleaseIndex`), and `packages/code/src/runtime.tsx` (`update_check`). Test:
-`packages/code/tests/unit/update-check.test.ts`,
+`packages/code/tests/integration/update-check.test.ts`,
 `packages/code/tests/architecture/architecture-boundary.test.ts`, and
 `packages/code/tests/integration/app-shell-render.test.tsx`.
 
@@ -248,7 +248,7 @@ and executes the candidate's included Bun with `--version`. It renames a new ver
 one and durably replaces `current` last. Failure before that write leaves the active version and all
 user state unchanged. Production: `packages/code/src/update/index.ts` and
 `packages/code/src/update/installation.ts`. Test:
-`packages/code/tests/unit/update-command.test.ts` (verified activation and preserved predecessor).
+`packages/code/tests/integration/update-command.test.ts` (verified activation and preserved predecessor).
 
 The source archive includes Code's TypeScript local host. Its launcher resolves the source entry
 and runtime beneath the current concrete version directory before starting the workspace host.
@@ -262,7 +262,7 @@ guarantee. Developer builds likewise remain mutable checkout artifacts. Producti
 in [package.ts](../../packages/code/tooling/release/package.ts), and `activateStagedRelease` in
 [installation.ts](../../packages/code/src/update/installation.ts).
 Test: the verified activation and preserved predecessor cases in
-[update-command.test.ts](../../packages/code/tests/unit/update-command.test.ts), plus portable
+[update-command.test.ts](../../packages/code/tests/integration/update-command.test.ts), plus portable
 payload verification in [smoke.ts](../../packages/code/tooling/release/smoke.ts).
 
 The release workflow builds and smokes all four target archives independently. The final publish
@@ -272,7 +272,7 @@ a cross-repository publication credential exists. Only then does the workflow mi
 GitHub App installation token scoped to `getclarvis/clarvis-releases`, create a draft, upload the
 allowlisted assets, and remove the draft flag in the final step. Manual dispatch builds portable
 workflow artifacts but cannot publish. Production: `.github/workflows/release.yml` and
-`tooling/checks/release-assets.ts`. Test: `tooling/tests/unit/release-assets.test.ts` and
+`tooling/checks/release-assets.ts`. Test: `tooling/tests/architecture/release-assets.test.ts` and
 `tooling/tests/unit/release-readiness.test.ts`. Publication follows the authorized release promotion:
 the Gitflow workflow creates the signed final tag after CI passes on the exact main merge commit.
 Local builds and installers never create tags.
@@ -286,7 +286,7 @@ still at the merge SHA. Existing tags must peel to the same commit and verify wi
 signer; conflicting tags stop the run. Production: `tooling/lib/gitflow-release.ts`
 (`planGitflowRelease`, `candidateTag`, `validateGitflowVersion`), `tooling/release/gitflow.ts` (`main`),
 and `.github/workflows/gitflow-release.yml`. Test: `tooling/tests/unit/gitflow-release.test.ts`
-and `tooling/tests/unit/gitflow-release-git.test.ts`. The source App must be authorized to create
+and `tooling/tests/integration/gitflow-release-git.test.ts`. The source App must be authorized to create
 protected tags; signing keys and external permissions are operator configuration, not established by
 these local tests.
 
@@ -297,8 +297,8 @@ candidates carry no portable stable installers. The reader requires an exact man
 and rejects older candidate formats. Production: `packages/code/src/adapters/source-candidate.ts`
 (`parseSourceCandidate`), `packages/code/tooling/candidate-install.ts` (`installCandidate`), and
 `tooling/release/candidate.ts` (`candidateIdentity`). Test:
-`packages/code/tests/unit/candidate-install.test.ts` and
-`tooling/tests/unit/distribution-workflows.test.ts`.
+`packages/code/tests/integration/candidate-install.test.ts` and
+`tooling/tests/architecture/distribution-workflows.test.ts`.
 
 ## 5. Invariants
 
@@ -318,7 +318,7 @@ publication gate extracts and scans everything again before minting its credenti
 `packages/code/tooling/release/smoke.ts` (`sourceMaps`), and
 `tooling/checks/release-assets.ts` (`archiveFailures`). Test:
 `packages/code/tests/{architecture/artifact-contract,unit/release-manifest}.test.ts`,
-`tooling/tests/unit/release-assets.test.ts`, and the native release smoke.
+`tooling/tests/architecture/release-assets.test.ts`, and the native release smoke.
 
 **DIST-3.** Release identity is exact across repository, SemVer tag, target, asset name, asset URL,
 size, state, and SHA-256; an ambiguous or partial match is ineligible. Production:
@@ -340,19 +340,19 @@ and preference, and authenticates the install plus mutation lock before fetching
 
 **DIST-5.** Activation is last and retains the previous version. Production:
 `packages/code/src/update/installation.ts` (`activateStagedRelease`, `durableCurrent`). Test:
-`packages/code/tests/unit/update-command.test.ts` (eligible archive case).
+`packages/code/tests/integration/update-command.test.ts` (eligible archive case).
 
 **DIST-6.** An update archive is trusted only after both release-metadata SHA-256 and internal
 regular-file manifest verification. Production: `downloadReleaseAsset` in
 `packages/code/src/update/github-releases.ts` and `verifyStagedRelease` in
-`packages/code/src/update/installation.ts`. Test: `packages/code/tests/unit/github-releases.test.ts`,
-`packages/code/tests/unit/release-manifest.test.ts`, and
-`packages/code/tests/unit/update-command.test.ts`.
+`packages/code/src/update/installation.ts`. Test: `packages/code/tests/integration/github-releases.test.ts`,
+`packages/code/tests/integration/release-manifest.test.ts`, and
+`packages/code/tests/integration/update-command.test.ts`.
 
 **DIST-7.** Exactly one installer, updater, or uninstaller may mutate managed release state in an
 install root at a time; all three surfaces use the same exclusive `update.lock`. Production:
 `install.sh`, and `packages/code/src/update/installation.ts` (`withUpdateLock`). Test:
-`packages/code/tests/unit/update-command.test.ts` asserts normal update completion removes the lock
+`packages/code/tests/integration/update-command.test.ts` asserts normal update completion removes the lock
 and an existing owner is neither replaced nor removed;
 `packages/code/tooling/release/installer-smoke.ts` asserts install, ordinary uninstall, and
 stale-launcher removal all refuse an existing owner.
@@ -396,7 +396,7 @@ invalid package name that reaches the closure.
 Production: `packages/code/tooling/release/runtime-package-discovery.ts`
 (`runtimePackageName`, `runtimePackageCandidates`, `assertRuntimePackageRoot`) and
 `packages/code/tooling/release/package.ts` (`packageManifest`, `discoveredRuntimePackages`). Test:
-`packages/code/tests/unit/runtime-package-discovery.test.ts` (package roots, minified
+`packages/code/tests/integration/runtime-package-discovery.test.ts` (package roots, minified
 `createRequire` bindings, rejected specifiers, and invalid closure entries).
 
 **DIST-13.** Installer output identifies the selected target and resolved destination and announces

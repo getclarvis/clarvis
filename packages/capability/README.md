@@ -450,3 +450,10 @@ boundary. See [trace](../../specs/foundations/trace.md).
 
 The authority ledger retains `envelope_context_revision` beside an installed envelope.
 Revocation or settlement clears it. It is host state, not model-authored content.
+
+## Test suites
+
+`bun --filter @clarvis/capability test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/capability test:integration` runs this package's common physical test cases. `bun --filter @clarvis/capability test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

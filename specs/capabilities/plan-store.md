@@ -557,9 +557,9 @@ first turns a stale delete into a `PlanConflictError` — pinned by a rename-int
 ### 4.10 Conformance tables
 
 `planRepositoryConformance()` (18 cases, `packages/plan/src/testing.ts`, `planRepositoryConformance`) is driven against **file** and
-**in-memory** backends by `packages/plan/tests/contract/repository.test.ts`.
+**in-memory** backends by `packages/plan/tests/contract/physical/repository.test.ts`.
 `planStoreConformance()` (10 cases, `packages/plan/src/testing.ts`, `planStoreConformance`) is driven against **executable**, **Markdown**
-(file) and **in-memory** backends by `packages/plan/tests/contract/plan-store.test.ts`. Cases
+(file) and **in-memory** backends by `packages/plan/tests/contract/physical/plan-store.test.ts`. Cases
 needing an out-of-band edit return early when the harness supplies no `poke` (`packages/plan/src/testing.ts`).
 
 | Repository case | File |
@@ -610,7 +610,7 @@ further ones derived directly from the code.
 | **INV-150** | `applyPlanRevisions` folds in order, so a later operation may act on an id an earlier one created or moved; `structural` is `true` iff **any** operation in the batch is structural. | `packages/plan/src/revisions.ts` | `packages/plan/tests/unit/plan-policy.test.ts` |
 | **INV-151** | The `revise_plan` wire schema normalizes either the singular `operation` or the plural `operations`, and refuses a request carrying **both** or **neither**. | `packages/plan/src/tools.ts` | `packages/plan/tests/unit/plan-policy.test.ts` |
 | **INV-152** | `newPlan` refuses more than `MAX_PLAN_TASKS` tasks and `applyPlanRevisions` refuses more than `MAX_PLAN_BATCH_OPERATIONS` operations; both `RangeError`s name the limit. | `packages/plan/src/format.ts`, `packages/plan/src/revisions.ts` | `packages/plan/tests/unit/plan-policy.test.ts` |
-| **INV-153** | `repository.create` rejects an id that already exists with `PlanConflictError` (`code === "plan_conflict"`). | `packages/plan/src/file-repository.ts`, `packages/plan/src/testing.ts` | `packages/plan/src/testing.ts` (both backends via `packages/plan/tests/contract/repository.test.ts`) |
+| **INV-153** | `repository.create` rejects an id that already exists with `PlanConflictError` (`code === "plan_conflict"`). | `packages/plan/src/file-repository.ts`, `packages/plan/src/testing.ts` | `packages/plan/src/testing.ts` (both backends via `packages/plan/tests/contract/physical/repository.test.ts`) |
 | **INV-154** | `repository.write` is compare-and-swap: a correct expected digest moves the digest forward; a stale one rejects with `PlanConflictError` `reason === "cas"`; two writers racing on the same expected digest yield exactly one success. | `packages/plan/src/file-repository.ts`, `packages/plan/src/testing.ts` | `packages/plan/src/testing.ts` |
 | **INV-155** | `repository.write` against an id the backend has never seen rejects with `PlanNotFoundError` (`plan_not_found`). | `packages/plan/src/file-repository.ts`, `packages/plan/src/testing.ts` | `packages/plan/src/testing.ts` |
 | **INV-156** | `repository.delete` is idempotent and CAS-checked: a stale expected digest rejects; the correct digest deletes and returns `true`; a second delete returns `false` and the plan is then unreadable. | `packages/plan/src/file-repository.ts`, `packages/plan/src/testing.ts` | `packages/plan/src/testing.ts` |
@@ -726,7 +726,7 @@ imports `store.ts` type-only plus the two error classes as values (`packages/pla
 No package outside `@clarvis/kernel` imports `@clarvis/plan` values
 (`rg "@clarvis/plan" packages/*/src` returns only the rows above).
 
-**Test-only coupling:** `packages/plan/tests/contract/plan-store.test.ts` drives the store
+**Test-only coupling:** `packages/plan/tests/contract/physical/plan-store.test.ts` drives the store
 conformance table against Markdown and in-memory stores.
 
 ## 8. Open questions

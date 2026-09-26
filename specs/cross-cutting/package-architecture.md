@@ -63,7 +63,7 @@ Every workspace has one primary architectural role:
 | --- | --- | --- | --- |
 | foundation | `capability`, `paths` | Stable vocabulary, ports and filesystem ownership used by higher layers | No internal package dependency |
 | host contract | `protocol` | Transport-neutral DTOs and the `KernelClient` service contract | No internal package dependency |
-| execution service | `llm`, `mcp-client`, `supervision`, `trace`, `sandbox`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; same-role composition edges are `hooks -> tools` and `tools -> sandbox` |
+| execution service | `llm`, `mcp-client`, `supervision`, `trace`, `sandbox`, `execpolicy`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; the same-role composition edge is `hooks -> tools` |
 | engine | `loop` | Embeddable execution and orchestration policy | Foundations and execution services; `hooks`, `skills` and `tools` remain optional |
 | product capability | `memory`, `plan`, `goal`, `workflows` | Independently owned features composed by a host | Foundations; `goal`, `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
 | host implementation | `kernel` | Implements `protocol`, composes the engine and product capabilities, and owns local host policy | Host contract and any lower package it actually composes |

@@ -59,7 +59,7 @@ Sandbox outcomes identify the selected backend and policy. Setup errors report
 `execution_started: false`; worker handler failures and uncertain outcomes
 report that execution started so callers do not replay effects blindly.
 Failed Sandbox calls retain their execution identity in structured dispatch
-metadata, and shell recovery errors also return the one-use token to the model.
+metadata.
 Completed sandboxed shell calls also return a typed diagnostic with the physical
 exit status, bounded streams and `command_failed` for a nonzero exit; command
 text is not denial evidence.
@@ -68,19 +68,12 @@ failure at an explicit policy deny, or a read-only workspace write returns
 `EROFS`.
 The worker protocol test exercises real stdin/stdout frames, rejects shell and
 invalid file operations, and closes on a version mismatch.
-`CoordinatedToolExecutor` serializes mutations and can perform an explicitly
-authorized, visibly marked Host fallback after a pre-launch setup failure or
-an atomic settings write that the native file bind cannot stage.
-It caches a pre-launch backend failure for the run, so later operations use
-Host without repeating the failed probe. A denied read retries once on Host;
-an `EROFS` denial of a single-file write or edit inside a read-only workspace
-also retries once on Host, with its fallback reported in metadata;
-an uncertain mutation is never replayed automatically and does not block
-later operations. A typed shell denial or uncertain result carries a one-use
-`recovery_token`; a subsequent `shell` call can use
-`execution_strategy: "host_recovery"` with that token for the same agent.
-These continuation fields are not advertised on ordinary `shell` calls; the
-typed denial supplies them only when a recovery is available.
+`CoordinatedToolExecutor` serializes mutations and caches backend unavailability
+to avoid repeated probes. It never falls back to Host or replays an uncertain
+mutation. Kernel-bound calls use a structural authorization port after final
+schema validation; `shell.execution_permissions` can request Host, added write
+roots or network for one action. A denied or uncertain result requires a fresh
+action through the gate if the caller chooses to retry.
 Worker shutdown waits for its process tree and reports an unconfirmed stop.
 
 ## Execution and limits
@@ -97,6 +90,15 @@ transaction and commits atomically. Host remains the default. When a trusted
 caller supplies a Sandbox policy and port, the file worker and each shell
 command use the native launch boundary; the dispatcher applies no extra path
 approval gate.
+If steering or a mode edit changes authorization during review, the dispatcher
+requests a fresh decision with current authorization and policy revisions for the same final
+action before launch. The Kernel's
+inspection runner uses this toolset behind a read-only native Sandbox and exposes
+only read, list, image and shell tools to its reviewer. Production: `dispatch` in
+`src/core.ts` and `createJudgeRunner` in
+`packages/kernel/src/execution/judge-runner.ts`. Test:
+`tests/unit/action-authorization.test.ts` and
+`packages/kernel/tests/unit/judge-runner.test.ts`.
 
 Production: `readRawFile` in [files.ts](src/lib/files.ts),
 `ExecutionSessionManager` in [execution-session.ts](src/lib/execution-session.ts),

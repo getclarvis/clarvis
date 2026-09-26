@@ -2,7 +2,12 @@ import { createNativeKernel } from "./native-kernel.ts";
 import { componentFloor, createComponentLoggers } from "./component-loggers.ts";
 import { reconcileSystemDocs, SYSTEM_DOCS_NAME } from "./skills/system-docs.ts";
 import { createSystemDocsProvider } from "./skills/system-docs-provider.ts";
-import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
+import {
+  ACTION_AUTHORIZATION_PORT,
+  extractEnvRefs,
+  loadEnv,
+  type EnvConfig,
+} from "@clarvis/capability";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
 import {
@@ -682,6 +687,22 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       skillBootstraps: pluginSkillBootstraps,
       resolveSecretNames: loadSecretNames,
       resolveAgentExecution: isolationService.resolveExecution,
+      capabilities: [
+        {
+          name: "action-authorization",
+          async forRun(ctx) {
+            ctx.services.provide(
+              ACTION_AUTHORIZATION_PORT,
+              await isolationService.resolveAuthorization(ctx),
+            );
+            return {
+              name: "action-authorization",
+              forAgent: () => null,
+              finalizeRun: () => isolationService.evidence(ctx.owner, ctx.executionId),
+            };
+          },
+        },
+      ],
       resolveHooks: loadHooks,
       hookCredentialNames: managedSecretNames,
       mcpAuthorization: {
@@ -710,6 +731,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         : {}),
     },
     compose(built) {
+      isolationService.setModelExecutionResolver(built.deps.modelExecutionResolver);
       reportCapability(logger, "plans", true, "markdown");
 
       extensionProfileManager.onSkillRootsChanged(() => opts.onSkillsChanged?.());

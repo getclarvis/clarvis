@@ -91,7 +91,7 @@ export interface RunHostDeps {
     Partial<
       Pick<
         KernelRunClient,
-        "submission" | "context" | "currentExtensionProfile" | "hosting" | "attachRun"
+        "submission" | "context" | "currentExtensionProfile" | "hosting" | "attachRun" | "config"
       >
     >;
   elicit: Pick<ElicitSlot, "cancelPending">;
@@ -176,6 +176,17 @@ export interface RunHost {
   workflowActivity: Accessor<WorkflowActivity | null>;
   /** Latest unique live MCP startup failure; replay never repopulates it. */
   mcpStartupNotice: Accessor<McpStartupNotice | null>;
+  /** Last live judge denial eligible for one scoped new attempt. */
+  deniedAction: Accessor<{
+    executionId: string;
+    callId: string;
+    attempt: number;
+    tool: string;
+    arguments: Record<string, unknown>;
+    reason: string;
+  } | null>;
+  deniedActions: Accessor<NonNullable<ReturnType<RunHost["deniedAction"]>>[]>;
+  authorizeDeniedAction(selection?: { callId: string; attempt: number }): Promise<boolean>;
   /** Whether `executionId` currently owns the live transcript/progress surface. */
   ownsExecution(executionId: string): boolean;
   onEvent(event: RunEvent, source: EventSource, executionId?: string): void;
@@ -405,6 +416,12 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   let currentSink: { executionId: string; sink: RunSink; transcript: RunSink } | undefined;
   let currentHandle: RunHandle | undefined;
+  const [deniedAction, setDeniedAction] = createSignal<ReturnType<RunHost["deniedAction"]>>(null);
+  const [deniedActions, setDeniedActions] = createSignal<ReturnType<RunHost["deniedActions"]>>([]);
+  const pendingJudgeDenials = new Map<
+    string,
+    { executionId: string; attempt: number; reason: string }
+  >();
   const physicalHandles = new Set<RunHandle>();
   /** Serializes a new semantic turn behind reconciliation without extending steer mode. */
   let currentSettlement: { promise: Promise<void>; release: () => void } | undefined;
@@ -709,6 +726,64 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       if (ownsSurface) {
         applyEvent(target.sink, event, source);
         if (source === "live") {
+          if (event.type === "run_started") {
+            pendingJudgeDenials.clear();
+            setDeniedAction(null);
+            setDeniedActions([]);
+            if (client.config)
+              void client.config
+                .getExecutionRules()
+                .then((rules) => {
+                  if (rules.warning) store.appendNotice(rules.warning, "warn");
+                })
+                .catch(() => store.appendNotice("Execution rules could not be read", "warn"));
+          }
+          if (event.type === "tool_call" && event.call_id) {
+            const pending = pendingJudgeDenials.get(event.call_id);
+            if (pending) {
+              pendingJudgeDenials.delete(event.call_id);
+              const denial = {
+                executionId: pending.executionId,
+                callId: event.call_id,
+                attempt: pending.attempt,
+                tool: event.tool || event.server,
+                arguments: event.arguments ?? {},
+                reason: pending.reason,
+              };
+              setDeniedAction(denial);
+              setDeniedActions((current) =>
+                [
+                  ...current.filter(
+                    (item) => item.callId !== denial.callId || item.attempt !== denial.attempt,
+                  ),
+                  denial,
+                ].slice(-10),
+              );
+            }
+          }
+          if (event.type === "approval_requested" && event.route === "judge")
+            store.appendNotice(`Judge evaluating ${event.tool}`, "info");
+          if (event.type === "approval_resolved" && event.route === "judge") {
+            if (event.outcome === "approved")
+              store.appendNotice(`Judge approved ${event.tool}`, "info");
+            else if (event.outcome === "unavailable")
+              store.appendNotice(
+                `Judge review failed for ${event.tool}; the action was not approved`,
+                "warn",
+              );
+          }
+          if (event.type === "approval_resolved" && event.reason.startsWith("judge_denied:")) {
+            pendingJudgeDenials.set(event.call_id, {
+              executionId: event.execution_id,
+              attempt: event.attempt,
+              reason: event.reason.slice("judge_denied:".length).trim(),
+            });
+            store.appendNotice(
+              `Judge denied ${event.tool}: ${event.reason.slice("judge_denied:".length).trim()}`,
+              "warn",
+            );
+          }
+          if (event.type === "run_ended") pendingJudgeDenials.clear();
           if (event.type === "mcp_degraded") {
             const servers = event.servers.filter((server) => {
               const key = `${server.name}\0${server.reason}`;
@@ -770,6 +845,31 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   function canControlCurrentRun(): boolean {
     return runActive() && interactiveControl() && currentHandle !== undefined;
+  }
+
+  async function authorizeDeniedAction(selection?: {
+    callId: string;
+    attempt: number;
+  }): Promise<boolean> {
+    const denial = selection
+      ? deniedActions().find(
+          (item) => item.callId === selection.callId && item.attempt === selection.attempt,
+        )
+      : deniedAction();
+    const handle = currentHandle;
+    if (!denial || !handle || handle.executionId !== denial.executionId || !canControlCurrentRun())
+      return false;
+    const receipt = await client.steer({
+      executionId: denial.executionId,
+      message: `I authorize one new attempt of the denied ${denial.tool} action. Reassess it before execution.`,
+      authorizedDenial: { call_id: denial.callId, attempt: denial.attempt },
+    });
+    if (receipt.status !== "steered") return false;
+    setDeniedActions((current) =>
+      current.filter((item) => item.callId !== denial.callId || item.attempt !== denial.attempt),
+    );
+    setDeniedAction(deniedActions().at(-1) ?? null);
+    return true;
   }
 
   async function interruptTool(toolExecutionId: string): Promise<ToolInterruptReceipt> {
@@ -2456,6 +2556,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     sessionUsageBaseline,
     workflowActivity,
     mcpStartupNotice,
+    deniedAction,
+    deniedActions,
+    authorizeDeniedAction,
     ownsExecution: (executionId) => currentSink?.executionId === executionId,
     onEvent,
     onMemoryIngest,

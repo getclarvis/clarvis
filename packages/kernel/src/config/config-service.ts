@@ -1,5 +1,6 @@
 import { kernelSettingsSchema } from "./capability-registry.ts";
 import { agentFrontmatterSchema, renderSharedPromptDocument } from "@clarvis/loop/host";
+import { parseModelRef } from "@clarvis/capability";
 import type {
   AgentDoc,
   AgentSummary,
@@ -11,6 +12,8 @@ import type {
   Scope,
   SettingsData,
   IsolationStatus,
+  ExecutionRulesView,
+  ExecutionRuleCheck,
   SettingsRepairPlan,
   SettingsView,
   SharedPromptLayerView,
@@ -18,6 +21,13 @@ import type {
   SharedPromptWrite,
   Unsubscribe,
 } from "@clarvis/protocol";
+import { globalPaths, workspacePaths } from "@clarvis/paths";
+import { evaluateCommand, parseApprovalPolicy, parseRuleDocument } from "@clarvis/execpolicy";
+import {
+  loadExecutionRules,
+  readExecutionRulesRevision,
+  writeExecutionRules,
+} from "../execution/execpolicy-loader.ts";
 import { kernelError } from "../core/errors.ts";
 import { resolveIsolationSettings } from "./isolation-settings.ts";
 import { compareAgentDisplayOrder } from "./agent-resolution.ts";
@@ -32,6 +42,7 @@ import { resolveStoreSharedPrompt, sharedPromptPaths } from "./shared-prompt.ts"
 /** Host-supplied collaborators for {@link createConfigService}. */
 export interface ConfigServiceOptions {
   isolationAvailability?: () => "available" | "unavailable" | "unverified";
+  executionRulePaths?: { globalDir: string; workspaceRoot: string };
   /**
    * Every grant this kernel's composed capability registry will accept, for
    * {@link SettingsView.known_grants}.
@@ -391,6 +402,27 @@ export function createConfigService(
     const grants = options.knownGrants?.();
     return grants === undefined ? view : { ...view, known_grants: grants };
   };
+  const executionRules = async (): Promise<ExecutionRulesView> => {
+    const paths = options.executionRulePaths;
+    if (!paths) throw kernelError("unavailable", "execution rules require a file-backed kernel");
+    const workspaceTrusted = store.readSettings().workspace_trust?.state === "trusted";
+    const loaded = await loadExecutionRules({ ...paths, workspaceTrusted });
+    return {
+      ...loaded,
+      sources: loaded.sources.map((source) => ({ ...source, rules: [...source.rules] })),
+      revisions: {
+        global: await readExecutionRulesRevision(globalPaths(paths.globalDir).executionRulesFile),
+        ...(workspaceTrusted
+          ? {
+              workspace: await readExecutionRulesRevision(
+                workspacePaths(paths.workspaceRoot).executionRulesFile,
+              ),
+            }
+          : {}),
+      },
+      workspaceTrusted,
+    };
+  };
   return {
     /** Return the current merged + per-scope {@link SettingsView}. */
     async getSettings(): Promise<SettingsView> {
@@ -411,6 +443,74 @@ export function createConfigService(
           backend === null ? "unavailable" : (options.isolationAvailability?.() ?? "unverified"),
         scope: "builtin_tools",
       };
+    },
+    getExecutionRules: executionRules,
+    async checkExecutionRule(command: string, cwd: string): Promise<ExecutionRuleCheck> {
+      if (
+        typeof command !== "string" ||
+        command.length === 0 ||
+        typeof cwd !== "string" ||
+        cwd.length === 0
+      )
+        throw kernelError("invalid_request", "command and cwd are required");
+      const rules = await executionRules();
+      if (rules.status === "io_failure")
+        throw kernelError("unavailable", rules.warning ?? "execution rules unavailable");
+      const settings = store.readSettings().scopes.global;
+      const isolation = resolveIsolationSettings(settings?.isolation);
+      const evaluation = evaluateCommand({
+        command,
+        cwd,
+        sources: rules.sources,
+        approval_policy: parseApprovalPolicy(settings?.approval_policy ?? "on-request"),
+        backend_available: options.isolationAvailability?.() !== "unavailable",
+        restricted: isolation.mode === "sandbox",
+      });
+      const denyRead = (settings?.execution_requirements?.deny_read_paths?.length ?? 0) > 0;
+      return {
+        rules,
+        decision: evaluation.decision,
+        reason: evaluation.reason,
+        matches: evaluation.matches.map(({ id, source, layer, decision }) => ({
+          id,
+          source,
+          layer,
+          decision,
+        })),
+        needsApproval: evaluation.decision === "prompt",
+        bypassEligible:
+          evaluation.all_segments_explicitly_allowed && !denyRead && isolation.mode === "sandbox",
+        fallback: evaluation.segments.some((segment) => segment.origin === "fallback"),
+      };
+    },
+    async updateExecutionRules(scope, document, expectedRevision): Promise<ExecutionRulesView> {
+      if (scope !== "global" && scope !== "workspace")
+        throw kernelError("invalid_request", "invalid execution rule scope");
+      const paths = options.executionRulePaths;
+      if (!paths) throw kernelError("unavailable", "execution rules require a file-backed kernel");
+      if (scope === "workspace" && store.readSettings().workspace_trust?.state !== "trusted")
+        throw kernelError("invalid_request", "workspace rules are not trusted");
+      try {
+        parseRuleDocument(document);
+      } catch (error) {
+        throw kernelError("invalid_request", String(error));
+      }
+      try {
+        await writeExecutionRules({
+          ...paths,
+          scope,
+          document,
+          expectedRevision,
+          workspaceTrusted: store.readSettings().workspace_trust?.state === "trusted",
+          operatorAction: true,
+        });
+      } catch (error) {
+        const message = String(error);
+        if (message.includes("changed before save") || message.includes("are busy"))
+          throw kernelError("conflict", message);
+        throw error;
+      }
+      return executionRules();
     },
 
     /** Preview a repair bound to the SHA-256 revision of exact source bytes. */
@@ -502,12 +602,40 @@ export function createConfigService(
         const next: SettingsData = { ...current, ...patch };
         if (scope === "workspace") {
           delete next.isolation;
+          delete next.approval_mode;
+          delete next.approval_policy;
+          delete next.judge;
+          delete next.execution_requirements;
         } else if (patch.isolation !== undefined) {
           next.isolation = { ...current.isolation, ...patch.isolation };
         }
         const parsed = kernelSettingsSchema.safeParse(next);
         if (!parsed.success) {
           throw kernelError("invalid_request", firstIssue(parsed.error), parsed.error.issues);
+        }
+        if (scope === "global" && patch.approval_mode === "auto") {
+          const reference =
+            next.judge?.model ??
+            next.default_model ??
+            store.listAgents().find((agent) => agent.model)?.model;
+          const providers = next.providers ?? store.readSettings().merged.providers ?? [];
+          const model = reference ? parseModelRef(reference) : undefined;
+          const provider = model
+            ? providers.find((item) => item.name === model.provider)
+            : undefined;
+          const models = provider?.models;
+          if (
+            !model?.modelId ||
+            !provider ||
+            (models &&
+              typeof models === "object" &&
+              Object.keys(models).length > 0 &&
+              !Object.hasOwn(models, model.modelId))
+          )
+            throw kernelError(
+              "invalid_request",
+              "auto approval requires a configured judge model and provider",
+            );
         }
         return next;
       };

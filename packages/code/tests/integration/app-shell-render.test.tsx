@@ -54,6 +54,49 @@ import { goalView } from "../helpers/goals.ts";
 
 const ev = runEvent;
 
+test("approval picker shows review routes and prevents Auto without a judge model", async () => {
+  const [knobs, setKnobs] = createSignal<SettingsKnobs>({});
+  const t = await mountApp(defaultProps({ settingsKnobs: knobs }));
+  try {
+    await captureUntil(t, "New task");
+    setKnobs({ defaultModel: undefined });
+    await t.mockInput.typeText("/approval");
+    await t.renderOnce();
+    t.mockInput.pressEnter();
+    const picker = await captureUntil(t, "Approval mode");
+    expect(picker).toContain("Manual");
+    expect(picker).toContain("Judge evaluates eligible approval requests");
+    press(t, "down");
+    press(t, "return");
+    expect(await captureUntil(t, "Judge evaluates eligible approval requests")).toContain(
+      "Approval mode",
+    );
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
+test("approval picker refreshes its selected mode after a saved change", async () => {
+  const t = await mountApp(defaultProps({}));
+  try {
+    await captureUntil(t, "New task");
+    press(t, "x", { ctrl: true });
+    press(t, "a");
+    await captureUntil(t, "Approval mode");
+    press(t, "down");
+    press(t, "return");
+    await captureUntil(t, "Approval mode: Auto");
+    expect(await captureUntil(t, "Approval: auto")).toContain("Approval: auto");
+    await t.mockInput.typeText("/approval");
+    t.mockInput.pressEnter();
+    expect(await captureUntil(t, "Judge evaluates eligible approval requests")).toMatch(
+      /\(◉\)\s+Auto/,
+    );
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
 function settingsHubIndex(id: (typeof SETTINGS_ITEMS)[number]["id"]): number {
   const index = SETTINGS_ITEMS.findIndex((item) => item.id === id);
   if (index < 0) throw new Error(`missing settings item ${id}`);
@@ -136,6 +179,7 @@ function fakePlatform(over: Partial<Platform> = {}): Platform {
 
 interface SettingsKnobs {
   defaultModel?: string;
+  approvalMode?: "manual" | "auto";
   providersValid?: boolean;
   memoryEnabled?: boolean;
   providers?: unknown[];
@@ -150,7 +194,9 @@ const HEALTHY_PROVIDERS = [{ name: "acme", models: {} }];
 const HEALTHY_DEFAULT_MODEL = "acme/model-x";
 
 function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
+  const [settingsRevision, setSettingsRevision] = createSignal(0);
   let savedMemoryEnabled: boolean | undefined;
+  let savedApprovalMode: "manual" | "auto" | undefined;
   let savedIsolation: NonNullable<ReturnType<SettingsAdapter["read"]>>["isolation"];
   const effective = () => {
     const k = knobs();
@@ -158,6 +204,7 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     return {
       providers: k.providers ?? HEALTHY_PROVIDERS,
       default_model: "defaultModel" in k ? k.defaultModel : HEALTHY_DEFAULT_MODEL,
+      approval_mode: savedApprovalMode ?? k.approvalMode,
       memory: memoryEnabled === undefined ? undefined : { enabled: memoryEnabled },
       isolation: savedIsolation,
       runtime: k.runtime,
@@ -165,7 +212,7 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     };
   };
   return {
-    version: () => 0,
+    version: settingsRevision,
     read: () => effective(),
     corrupt: () => null,
     planRepair: () => null,
@@ -186,6 +233,11 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
       if (patch.memory?.enabled !== undefined) {
         expect(scope).toBe("global");
         savedMemoryEnabled = patch.memory.enabled;
+      }
+      if (patch.approval_mode !== undefined) {
+        expect(scope).toBe("global");
+        savedApprovalMode = patch.approval_mode;
+        setSettingsRevision((value) => value + 1);
       }
       if (patch.isolation !== undefined) {
         expect(scope).toBe("global");
@@ -540,7 +592,7 @@ test("goal state stays visible when idle and does not replace the physical run o
   }
 });
 
-test("Ctrl+X O toggles Goal detail from the partial sidebar and back to the transcript", async () => {
+test("Ctrl+X G toggles Goal detail from the partial sidebar and back to the transcript", async () => {
   const goals = createGoalController({
     binding: () => ({ sessionId: "session-hosted", generation: 1 }),
     prepare: async () => {
@@ -564,18 +616,18 @@ test("Ctrl+X O toggles Goal detail from the partial sidebar and back to the tran
     const t = await mountApp(defaultProps({ goals }));
     press(t, "x", { ctrl: true });
     press(t, "s");
-    let frame = await captureUntil(t, "[Ctrl+X O] full goal");
+    let frame = await captureUntil(t, "[Ctrl+X G] full goal");
     expect(frame).toContain("Keep the Goal visible");
     expect(frame).toContain("[Ctrl+X S] close");
     expect(frame).not.toContain("open Goal");
     press(t, "x", { ctrl: true });
-    press(t, "o");
+    press(t, "g");
     frame = await captureUntil(t, "Budget 0 / 10k tokens");
     expect(frame).toContain("Running · 0 stages · literal");
     expect(frame).not.toContain("One objective for this conversation");
     press(t, "x", { ctrl: true });
-    press(t, "o");
-    frame = await captureUntil(t, "[Ctrl+X O] full goal");
+    press(t, "g");
+    frame = await captureUntil(t, "[Ctrl+X G] full goal");
     expect(frame).toContain("Keep the Goal visible");
     expect(frame).toContain("[Ctrl+X S] close");
     expect(frame).not.toContain("open Goal");
@@ -701,7 +753,9 @@ test("an eligible update appears once outside the transcript and remains marked 
 test("default wide layout: header, derived navigation and input dock are live", async () => {
   const t = await mountApp(defaultProps({}));
   const out = await captureUntil(t, "coder");
-  expect(out.split("\n")[0]?.trimEnd()).toEndWith(`v${productVersion()}`);
+  expect(out).toContain(`v${productVersion()}`);
+  expect(out).toContain("Isolation: sandbox");
+  expect(out).toContain("Approval: manual");
   expect(out).toContain("New task");
   // Advertised at idle because Ctrl+C owns both run cancellation and quitting.
   expect(out).toContain("[Ctrl+C] cancel / quit");
@@ -1843,31 +1897,61 @@ test("Ctrl+X I edits Sandbox preferences before activation and persists the sele
     const main = await captureUntil(t, "Select isolation");
     expect(main).toContain("Host");
     expect(main).toContain("Sandbox");
-    press(t, "down");
-    await t.renderOnce();
     press(t, "w");
     await captureUntil(t, "Sandbox workspace");
     press(t, "up");
     press(t, "return");
     await captureUntil(t, "Select isolation");
     expect(isolation.choice()).toEqual({
-      mode: "host",
+      mode: "sandbox",
       workspace: "read-only",
-      network: "enabled",
+      network: "disabled",
     });
     press(t, "n");
     await captureUntil(t, "Sandbox network");
-    press(t, "down");
+    press(t, "up");
     press(t, "return");
     await captureUntil(t, "Select isolation");
-    expect(isolation.choice().network).toBe("disabled");
+    expect(isolation.choice().network).toBe("enabled");
     press(t, "return");
     await captureUntil(t, "New task");
     expect(isolation.choice()).toEqual({
       mode: "sandbox",
       workspace: "read-only",
-      network: "disabled",
+      network: "enabled",
     });
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
+test("Host access requires a separate confirmation", async () => {
+  let isolation!: AppFleet["isolationMode"];
+  const build = defaultProps({});
+  const t = await mountApp((renderer) => {
+    const props = build(renderer);
+    isolation = props.fleet.isolationMode;
+    return props;
+  });
+  try {
+    await captureUntil(t, "New task");
+    press(t, "x", { ctrl: true });
+    press(t, "i");
+    await captureUntil(t, "Select isolation");
+    press(t, "up");
+    press(t, "return");
+    await captureUntil(t, "Full host access");
+    expect(isolation.choice().mode).toBe("sandbox");
+    press(t, "escape");
+    await captureUntil(t, "Select isolation");
+    expect(isolation.choice().mode).toBe("sandbox");
+    press(t, "return");
+    await captureUntil(t, "Full host access");
+    press(t, "down");
+    press(t, "return");
+    await captureUntil(t, "New task");
+    expect(isolation.choice().mode).toBe("host");
+    expect(await captureUntil(t, "Isolation: host")).toContain("Isolation: host");
   } finally {
     t.renderer.destroy();
   }

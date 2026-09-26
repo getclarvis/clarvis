@@ -27,7 +27,7 @@ function createDeniedHomeDirectories(home: string): void {
 }
 
 test.skipIf(process.platform !== "linux")(
-  "Bubblewrap enforces workspace and private global paths",
+  "Bubblewrap enforces workspace writes and explicit read denies",
   () => {
     const root = mkdtempSync(join(process.cwd(), ".native-sandbox-"));
     const workspace = join(root, "workspace");
@@ -58,6 +58,15 @@ test.skipIf(process.platform !== "linux")(
     writeFileSync(join(agents, "agent.txt"), "agent-before");
     writeFileSync(join(workflows, "workflow.txt"), "workflow-before");
     writeFileSync(join(sibling, "private.txt"), "sibling-private");
+    for (const name of [".clarvis", ".agents", ".aws"]) {
+      mkdirSync(join(workspace, name));
+      writeFileSync(join(workspace, name, "metadata.txt"), "metadata-before");
+    }
+    const linkedGitDir = join(sibling, "worktree-git");
+    mkdirSync(linkedGitDir);
+    writeFileSync(join(linkedGitDir, "HEAD"), "ref: refs/heads/test\n");
+    writeFileSync(join(workspace, ".git"), `gitdir: ${linkedGitDir}\n`);
+    symlinkSync(join(workspace, ".clarvis"), join(workspace, "metadata-alias"));
     const backend = new BubblewrapBackend();
     const temporaryProbe = join("/tmp", `clarvis-sandbox-native-${process.pid}`);
     const sharedProbe = join("/dev/shm", `clarvis-sandbox-native-${process.pid}`);
@@ -101,11 +110,21 @@ test.skipIf(process.platform !== "linux")(
         expect(mounted.stdout).toBe(readFileSync(file, "utf8"));
       }
       for (const path of privatePaths) {
-        expect(run(`cat '${path}'`).status).not.toBe(0);
+        expect(run(`cat '${path}'`).status).toBe(0);
         const write = run(`printf breach > '${path}'`);
         if (write.status === 0) throw new Error(`private path was writable: ${path}`);
       }
       expect(run(`cat '${join(sibling, "private.txt")}'`).stdout).toBe("sibling-private");
+      for (const name of [".clarvis", ".agents", ".aws"]) {
+        const metadataFile = join(workspace, name, "metadata.txt");
+        expect(run(`cat '${metadataFile}'`).stdout).toBe("metadata-before");
+        expect(run(`printf breach > '${metadataFile}'`).status).not.toBe(0);
+        expect(readFileSync(metadataFile, "utf8")).toBe("metadata-before");
+      }
+      expect(run("printf breach > metadata-alias/metadata.txt").status).not.toBe(0);
+      expect(run(`printf breach > '${join(linkedGitDir, "HEAD")}'`).status).not.toBe(0);
+      expect(run("printf breach > .git").status).not.toBe(0);
+      expect(readFileSync(join(linkedGitDir, "HEAD"), "utf8")).toBe("ref: refs/heads/test\n");
       expect(run(`printf breach > '${join(sibling, "new.txt")}'`).status).not.toBe(0);
       expect(existsSync(join(sibling, "new.txt"))).toBe(false);
       const deniedFile = join(workspace, "denied.txt");
@@ -114,21 +133,21 @@ test.skipIf(process.platform !== "linux")(
       expect(run("printf breach > denied.txt", "read-write", [deniedFile]).status).not.toBe(0);
       expect(readFileSync(deniedFile, "utf8")).toBe("secret");
       symlinkSync(privateFile, join(workspace, "secret-link"));
-      expect(run("cat secret-link").status).not.toBe(0);
+      expect(run("cat secret-link").status).toBe(0);
       symlinkSync(privateFile, join(agents, "secret-link"));
-      expect(run(`cat '${join(agents, "secret-link")}'`).status).not.toBe(0);
-      expect(run(`printf agent-after > '${join(agents, "agent.txt")}'`, "read-only").status).toBe(
-        0,
-      );
-      expect(readFileSync(join(agents, "agent.txt"), "utf8")).toBe("agent-after");
+      expect(run(`cat '${join(agents, "secret-link")}'`).status).toBe(0);
+      expect(
+        run(`printf agent-after > '${join(agents, "agent.txt")}'`, "read-only").status,
+      ).not.toBe(0);
+      expect(readFileSync(join(agents, "agent.txt"), "utf8")).toBe("agent-before");
       expect(
         run(`printf workflow-after > '${join(workflows, "workflow.txt")}'`, "read-only").status,
-      ).toBe(0);
-      expect(readFileSync(join(workflows, "workflow.txt"), "utf8")).toBe("workflow-after");
-      expect(run(`printf changed > '${settings}'`).status).toBe(0);
-      expect(readFileSync(settings, "utf8")).toBe("changed");
-      expect(run(`printf readonly > '${settings}'`, "read-only").status).toBe(0);
-      expect(readFileSync(settings, "utf8")).toBe("readonly");
+      ).not.toBe(0);
+      expect(readFileSync(join(workflows, "workflow.txt"), "utf8")).toBe("workflow-before");
+      expect(run(`printf changed > '${settings}'`).status).not.toBe(0);
+      expect(readFileSync(settings, "utf8")).toBe("settings-before");
+      expect(run(`printf readonly > '${settings}'`, "read-only").status).not.toBe(0);
+      expect(readFileSync(settings, "utf8")).toBe("settings-before");
       rmSync(settings);
       expect(run(`printf created > '${settings}'`).status).not.toBe(0);
       expect(run(`printf changed > '${join(workspace, "output")}'`, "read-only").status).not.toBe(
@@ -266,9 +285,11 @@ test.skipIf(process.platform !== "linux")(
     );
     expect(compiled.status).toBe(0);
     let received = "";
+    const delivered = Promise.withResolvers<void>();
     const server = createServer((socket) => {
       socket.on("data", (chunk: Buffer) => {
         received += chunk.toString("utf8");
+        if (received.length >= 2) delivered.resolve();
       });
     });
     try {
@@ -312,7 +333,63 @@ test.skipIf(process.platform !== "linux")(
         child.once("error", reject);
         child.once("close", resolve);
       });
+      await delivered.promise;
       expect({ status, stderr, received }).toEqual({ status: 0, stderr: "", received: "ok" });
+    } finally {
+      server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(process.platform !== "linux")(
+  "network-disabled sandbox can use an admitted local Unix socket",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-unix-socket-test-"));
+    const workspace = join(root, "workspace");
+    const socketPath = join(root, "service.sock");
+    mkdirSync(workspace);
+    const server = createServer((socket) => {
+      socket.once("data", (chunk) => socket.end(chunk));
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(socketPath, resolve);
+      });
+      const policy = createExecutionPolicy({
+        id: "local-unix-socket",
+        mode: "sandbox",
+        workspaceRoot: workspace,
+        homeRoot: root,
+        globalRoot: join(root, "global"),
+        network: "disabled",
+      });
+      const script = `import { connect } from "node:net"; const socket = connect(${JSON.stringify(socketPath)}); socket.on("connect", () => socket.write("ok")); socket.on("data", (chunk) => process.stdout.write(chunk)); socket.on("error", () => process.exit(2));`;
+      const spec = prepareLaunch(
+        policy,
+        { file: process.execPath, args: ["-e", script], cwd: workspace, env: {} },
+        new BubblewrapBackend(),
+      );
+      const child = spawn(spec.file, [...spec.args], {
+        cwd: spec.cwd,
+        env: spec.env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 5000,
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+        stdout += chunk;
+      });
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+        stderr += chunk;
+      });
+      const status = await new Promise<number | null>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", resolve);
+      });
+      expect({ status, stdout, stderr }).toEqual({ status: 0, stdout: "ok", stderr: "" });
     } finally {
       server.close();
       rmSync(root, { recursive: true, force: true });
@@ -427,7 +504,7 @@ test.skipIf(process.platform !== "linux")(
 );
 
 test.skipIf(process.platform !== "linux")(
-  "a redirected global root inside /tmp remains private",
+  "a redirected global root inside /tmp follows the temporary profile",
   () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-native-redirect-"));
     const workspace = join(root, "workspace");
@@ -464,7 +541,7 @@ test.skipIf(process.platform !== "linux")(
         timeout: 5000,
       });
       expect(result.status).toBe(0);
-      expect(result.stdout).toBe("settings");
+      expect(result.stdout).toBe("privatesettings");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

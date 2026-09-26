@@ -125,6 +125,8 @@ st.diagnosticsDir; //             ~/.clarvis/state/workspaces/ws_<sha256>/local/
 
 const g = globalPaths(); //     $CLARVIS_HOME ?? ~/.clarvis
 g.settingsFile; //              …/settings.json
+g.executionRulesDir; //         …/rules (operator-authored execution rules)
+g.executionRulesFile; //        …/rules/default.json
 g.pluginDataRoot; //            …/state/plugin-data (persistent runtime data)
 g.subscriptionsFile; //         …/subscriptions.json (renewable subscription credentials)
 g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
@@ -168,6 +170,7 @@ The workspace's active Extension Profile selection is also local machinery under
 tree, so switching Extension Profiles never dirties the repository.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
+`rules/` (versioned execution rule JSON),
 `keys.json`, `subscriptions.json`, reusable Extension Profile definitions and their trust
 records, `shared-agent.md`, `auth.json` — and nests only what a user never
 edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above), `cache/` (including the models.dev

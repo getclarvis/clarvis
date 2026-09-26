@@ -1,7 +1,14 @@
-import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { configurationRoots, globalPaths, globalRoot as resolveGlobalRoot } from "@clarvis/paths";
+import {
+  agentsWorkspaceDir,
+  configurationRoots,
+  GIT_DIR,
+  globalPaths,
+  globalRoot as resolveGlobalRoot,
+  workspacePaths,
+} from "@clarvis/paths";
 
 /** The execution mode requested by a trusted host. */
 export type ExecutionMode = "host" | "sandbox";
@@ -24,6 +31,8 @@ export interface ExecutionPolicy {
   readonly settingsFile: string;
   readonly installationRoots: readonly string[];
   readonly temporaryWriteRoots: readonly string[];
+  readonly additionalWriteRoots: readonly string[];
+  readonly readOnlyPaths: readonly string[];
   readonly denies: readonly string[];
 }
 
@@ -38,6 +47,10 @@ export interface ExecutionPolicyOptions {
   readonly globalRoot?: string;
   readonly installationRoots?: readonly string[];
   readonly temporaryWriteRoots?: readonly string[];
+  readonly additionalWriteRoots?: readonly string[];
+  readonly readOnlyPaths?: readonly string[];
+  /** Exact default metadata roots intentionally writable for one approved action. */
+  readonly writableMetadataRoots?: readonly string[];
   readonly denies?: readonly string[];
 }
 
@@ -50,18 +63,6 @@ export class InvalidExecutionPolicy extends Error {
 }
 
 const issuedPolicies = new WeakSet<object>();
-
-const PRIVATE_HOME_PATHS = [
-  ".ssh",
-  ".aws",
-  ".config",
-  ".gnupg",
-  ".kube",
-  ".docker",
-  ".npmrc",
-  ".netrc",
-  ".git-credentials",
-] as const;
 
 /** Reject objects that did not pass the host-side policy constructor. */
 export function assertExecutionPolicy(policy: ExecutionPolicy): void {
@@ -115,10 +116,6 @@ function within(path: string, root: string): boolean {
   return path === root || path.startsWith(root === sep ? root : `${root}${sep}`);
 }
 
-function overlaps(left: string, right: string): boolean {
-  return within(left, right) || within(right, left);
-}
-
 /**
  * Resolve host-owned path vocabulary and reject malformed authority before launch.
  * The host filesystem is readable by default. Installation roots identify
@@ -146,23 +143,12 @@ export function createExecutionPolicy(options: ExecutionPolicyOptions): Executio
     globalDir: options.globalRoot ?? resolveGlobalRoot({ home: homeRoot }),
   });
   const globalRoot = canonicalTarget(roots.global_clarvis, "globalRoot");
-  if (
-    globalRoot === "/tmp" ||
-    globalRoot === "/dev/shm" ||
-    within(workspaceRoot, globalRoot) ||
-    within(globalRoot, roots.global_agents) ||
-    PRIVATE_HOME_PATHS.some((name) => within(globalRoot, resolve(homeRoot, name)))
-  ) {
+  if (globalRoot === "/tmp" || globalRoot === "/dev/shm") {
     throw new InvalidExecutionPolicy("globalRoot conflicts with a protected or writable root");
   }
   const global = globalPaths(globalRoot);
-  const fixedDenies = PRIVATE_HOME_PATHS.map((name) => resolve(homeRoot, name));
   const temporaryWriteRoots = paths(options.temporaryWriteRoots ?? [], "temporaryWriteRoots");
-  if (
-    temporaryWriteRoots.some((root) => canonicalTarget(root, "temporaryWriteRoot") === globalRoot)
-  ) {
-    throw new InvalidExecutionPolicy("temporary root cannot expose private global state");
-  }
+  const additionalWriteRoots = paths(options.additionalWriteRoots ?? [], "additionalWriteRoots");
   const installationRoots = Object.freeze(
     (options.installationRoots ?? []).map((root) => existingDirectory(root, "installationRoot")),
   );
@@ -173,15 +159,39 @@ export function createExecutionPolicy(options: ExecutionPolicyOptions): Executio
     workspaceRoot,
     "/tmp",
     "/dev/shm",
-    roots.global_agents,
-    global.workflowsDir,
     ...temporaryWriteRoots,
+    ...additionalWriteRoots,
   ].map((root) => canonicalTarget(root, "writableRoot"));
-  if (
-    installationRoots.some((root) => writableRoots.some((writable) => overlaps(root, writable)))
-  ) {
+  if (installationRoots.some((root) => writableRoots.some((writable) => within(writable, root)))) {
     throw new InvalidExecutionPolicy("installationRoot overlaps a sandbox-writable path");
   }
+  const gitMetadata = join(workspaceRoot, GIT_DIR);
+  let externalGitDir: string | undefined;
+  if (existsSync(gitMetadata) && statSync(gitMetadata).isFile()) {
+    const match = /^gitdir:\s*(.+)\s*$/m.exec(readFileSync(gitMetadata, "utf8"));
+    if (match) externalGitDir = resolve(workspaceRoot, match[1]!);
+  }
+  const defaultReadOnlyPaths = paths(
+    [
+      gitMetadata,
+      workspacePaths(workspaceRoot).clarvisDir,
+      agentsWorkspaceDir(workspaceRoot),
+      join(workspaceRoot, ".aws"),
+      ...(externalGitDir ? [externalGitDir] : []),
+    ],
+    "readOnlyPaths",
+  );
+  const writableMetadataRoots = paths(options.writableMetadataRoots ?? [], "writableMetadataRoots");
+  if (writableMetadataRoots.some((root) => !defaultReadOnlyPaths.includes(root))) {
+    throw new InvalidExecutionPolicy("writableMetadataRoots must name default metadata roots");
+  }
+  const readOnlyPaths = paths(
+    [
+      ...defaultReadOnlyPaths.filter((root) => !writableMetadataRoots.includes(root)),
+      ...(options.readOnlyPaths ?? []),
+    ],
+    "readOnlyPaths",
+  );
   const policy = Object.freeze({
     id: options.id,
     mode,
@@ -195,7 +205,9 @@ export function createExecutionPolicy(options: ExecutionPolicyOptions): Executio
     settingsFile: global.settingsFile,
     installationRoots,
     temporaryWriteRoots,
-    denies: paths([...fixedDenies, ...(options.denies ?? [])], "denies"),
+    additionalWriteRoots,
+    readOnlyPaths,
+    denies: paths(options.denies ?? [], "denies"),
   });
   issuedPolicies.add(policy);
   return policy;

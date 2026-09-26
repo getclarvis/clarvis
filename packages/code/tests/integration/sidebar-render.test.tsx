@@ -150,9 +150,9 @@ test("Goal uses the same compact sidebar pattern and opens its complete screen f
     const out = t.captureCharFrame();
     const spans = t.captureSpans();
     expect(out).toContain("Goal");
-    expect(out).toContain("[Ctrl+X O] full goal");
+    expect(out).toContain("[Ctrl+X G] full goal");
     expect(out.replace(/\s+/gu, " ")).toContain("Ship the observable result");
-    expect(out).toContain("[Ctrl+X O] full goal");
+    expect(out).toContain("[Ctrl+X G] full goal");
     expect(fgOf(spans, "Ship the observable result")).toBe(tokens.accent2.toLowerCase());
     expect(fgOf(spans, "Running")).toBe(tokens.add.toLowerCase());
     const goalRow = out.split("\n").findIndex((row) => row.includes("Goal"));

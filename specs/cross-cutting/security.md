@@ -2,9 +2,8 @@
 
 The global `isolation` preference applies to built-in tools and their child
 processes only. It does not confine providers, hooks, MCP servers, kernel
-persistence or the operator shell. A Host fallback is authorized by the global
-selection and loses Sandbox filesystem, workspace read-only and network
-restrictions for that operation; the result must identify Host as effective.
+persistence or the operator shell. Backend failure does not authorize Host; an
+explicit Host selection is recorded as the effective profile.
 Workspace settings cannot select this preference, even after trust approval,
 and are ignored without a new approval prompt. A valid global settings edit by
 an agent affects future runs, not the admitted tree. Production:
@@ -17,11 +16,32 @@ an agent affects future runs, not the admitted tree. Production:
 `packages/kernel/tests/unit/isolation-service.test.ts`, and
 `packages/tools/tests/unit/execution-coordinator.test.ts`.
 
+The global judge configuration and approval mode are operator-owned. Workspace
+settings cannot add them. The reviewer's shell runs through a private Sandbox
+with read-only workspace, disabled network and temporary scratch; its tool
+allowlist contains no mutation, approval, MCP or delegation entry point. A failed
+inspection backend does not fall back to Host. Production: `operatorLayers` in
+`packages/kernel/src/config/file-config-store.ts`, `createJudgeRunner` in
+`packages/kernel/src/execution/judge-runner.ts`. Test: `global isolation settings`
+in `packages/kernel/tests/integration/isolation-settings.test.ts` and
+`inspection reads but cannot change workspace data` in
+`packages/kernel/tests/unit/judge-runner.test.ts`.
+
+Rule editing uses authenticated `ConfigService` operations. The client supplies a command for a
+read-only check or a rule document with an expected digest for replacement; it cannot assert
+workspace trust. The Kernel derives trust from its store, checks the exact source under a local
+lease and writes atomically. A model-suggested prefix is data until the operator chooses “remember”
+in the bound manual request. Production: `createConfigService` in
+`packages/kernel/src/config/config-service.ts`, `writeExecutionRules` in
+`packages/kernel/src/execution/execpolicy-loader.ts`, `createApprovalService` in
+`packages/kernel/src/execution/approval-service.ts`. Test:
+`packages/kernel/tests/integration/execution-rules-config.test.ts` and
+`packages/kernel/tests/integration/approval-policy.test.ts`.
+
 Native Sandbox permits ordinary host filesystem reads, including sibling
 repositories and installed tools, without a per-tool catalog. It restricts writes
-to explicit grants, masks private global state, and denies the configured private
-home paths and their canonical aliases. This does not discover every sensitive
-file on the host. The exact read exclusions and writable exceptions are owned by
+to explicit roots and protects workspace metadata. Read denies are explicit
+host requirements rather than a built-in home deny list. The exact restrictions are owned by
 [the native execution contract](../execution/sandbox.md). Production:
 `createExecutionPolicy`, `BubblewrapBackend.prepare`, and `seatbeltProfile` in
 `packages/sandbox/src/`. Test:
@@ -54,7 +74,7 @@ run's machinery is allowed to *emit*. It has five related parts:
 
 1. **Filesystem authority** — `workspaceRoot` anchors relative tool paths
    (`packages/tools/src/lib/paths.ts`), while absolute paths retain their meaning. Host process
-   permissions determine access in the default Host mode. A trusted Sandbox policy can instead
+   permissions determine access in explicit or standalone Host mode. A trusted Sandbox policy can
    launch file handlers and commands through the native boundary
    (`packages/sandbox/src/policy.ts`, `packages/tools/src/execution/sandbox.ts`).
 2. **Redaction** — one module, `packages/capability/src/sanitize.ts`, owns every secret pattern in the

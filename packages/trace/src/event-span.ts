@@ -149,6 +149,10 @@ export function deriveEventSpan(event: TraceEvent): EventSpan {
         ? { span_id: `subagent:${event.subagent_instance_id}`, phase: "point", kind: "subagent" }
         : { span_id: "run", phase: "point", kind: "event" };
     case "elicitation_requested":
+    case "approval_requested":
+    case "approval_resolved":
+    case "execution_policy_result":
+    case "execution_attempt":
     case "budget_check":
     case "soft_limit_check":
     case "mcp_degraded":

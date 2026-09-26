@@ -121,6 +121,10 @@ export function deriveRunEventSpan(ev: RunEvent): RunEventSpan {
         : { span_id: "run", phase: "point", kind: "event" };
 
     case "elicitation_requested":
+    case "approval_requested":
+    case "approval_resolved":
+    case "execution_policy_result":
+    case "execution_attempt":
     case "elicitation_resolved":
     case "soft_limit_check":
     case "plan_created":

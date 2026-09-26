@@ -1,14 +1,13 @@
 # Shell execution and run-owned sessions
 
 When a run requests Sandbox, the host-owned policy wraps new shell children.
-The command string is never parsed for safety or replay. A setup failure before
-launch falls back to Host automatically; a typed denial after start or unknown
-outcome returns a one-use, agent-bound recovery token. A later `shell` call can
-name `execution_strategy: host_recovery` and that token. It runs in Host and
-consumes the token; ordinary program errors and cancellation do not trigger
-automatic replay. The run's session manager still owns yielded commands and
-stops them before the sandbox worker closes. The ordinary advertised schema
-excludes recovery arguments; a typed denial provides the continuation fields.
+The Kernel analyzes the validated command for rules and approval, then binds the
+decision to the actor, call and attempt. `shell.execution_permissions` can request
+`use_default`, `require_escalated` or `with_additional_permissions`; the latter
+names write roots and/or enabled network. A restricted-profile delta requires
+approval. A setup failure, typed denial or uncertain outcome never replays the
+command on Host automatically. The run's session manager owns yielded commands
+and stops them before the sandbox worker closes.
 Production:
 `CoordinatedToolExecutor` in `packages/tools/src/execution/coordinator.ts`,
 `createShell` in `packages/tools/src/tools/shell.ts`, and
@@ -36,11 +35,11 @@ in `packages/tools/tests/integration/shell-session.test.ts`.
 `createShell` validates the command and working directory before launch. The manager resolves the platform shell once, starts a child with closed stdin and separate stdout/stderr pipes, and registers the owned process before returning its opaque `ses_` ID. Children have their own POSIX process group. Pre-abort does not spawn, and an error after spawn stops the child. Production: `createShell` in `packages/tools/src/tools/shell.ts`, `ExecutionSessionManager.launch` in `packages/tools/src/lib/execution-session.ts`, `ownProcessGroup` in `packages/tools/src/lib/process.ts`. Test: `packages/tools/tests/integration/execution-session.test.ts`.
 
 An explicit `cwd` is resolved relative to the workspace when necessary and checked to be a
-directory. By default the command starts on Host with that working directory; a trusted Sandbox
+directory. By default a standalone command starts on Host with that working directory; a trusted Sandbox
 policy wraps each new child through `prepareLaunch` without changing the command text. Blocking and yielded
 commands share the same `ExecutionSessionManager`; `shell_session` can inspect or stop only the
 resulting owned session. A sandboxed child receives `HOME` and `CLARVIS_HOME`
-from its execution policy; Host fallback uses the ordinary Host environment.
+from its execution policy; an explicitly selected Host profile uses the ordinary Host environment.
 Polling or stopping that session is Host-owned control and carries no new
 Sandbox execution claim.
 Production: `createShell` in

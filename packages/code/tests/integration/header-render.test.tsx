@@ -12,6 +12,8 @@ function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
     memory: "on",
+    isolation: "sandbox",
+    approval: "manual",
     plans: { mode: "on", retention: "discard", configured: true },
     connection: { phase: "ready" },
     doctorDirty: false,
@@ -43,6 +45,8 @@ test("header is one line carrying identity and the run's governing configuration
   expect(rows[0]).toContain("coder");
   expect(rows[0]).toContain("grok-4.5");
   expect(rows[0]).toContain("Memory: on");
+  expect(rows.join("\n")).toContain("Isolation: sandbox");
+  expect(rows.join("\n")).toContain("Approval: manual");
   expect(rows.join("\n")).toContain("v0.0.4-beta");
   expect(rows[0]).not.toContain("plans:");
   expect(rows[1]).toContain("----------");

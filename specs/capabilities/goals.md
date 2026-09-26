@@ -201,7 +201,7 @@ Host-created start and resume transcript previews show `Work toward the persiste
 by the complete current objective, without changing the synthetic model message. Production:
 `createGoalService` in [service.ts](../../packages/kernel/src/goals/service.ts). Test:
 [goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts) checks
-the persisted preview through the real file host. The sidebar owns the bounded summary, and `Ctrl+X O` opens the
+the persisted preview through the real file host. The sidebar owns the bounded summary, and `Ctrl+X G` opens the
 existing complete Goal view while that section is revealed. Literal creation and successful control also
 remain in the transcript rather than forcing the view open.
 Unsupported hosts refuse controls explicitly. The deterministic form stages objective, bounded
@@ -265,7 +265,7 @@ Test: [goal-commands.test.tsx](../../packages/code/tests/integration/goal-comman
 literal dispatch, physical-state display, pinned review and replacement confirmation;
 [sidebar-render.test.tsx](../../packages/code/tests/integration/sidebar-render.test.tsx) and
 [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx) cover
-the compact Goal projection and `Ctrl+X O` navigation;
+the compact Goal projection and `Ctrl+X G` navigation;
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts) covers live and already
 closed automatic stages, painted-prefix preservation and a delayed read after conversation change.
 

@@ -27,7 +27,7 @@
   BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, (number), 0, 1), \
   BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM)
 
-static int make_filter(int network_disabled) {
+static int make_filter(void) {
   struct sock_filter filter[] = {
       BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
       BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, CLARVIS_AUDIT_ARCH, 1, 0),
@@ -60,53 +60,13 @@ static int make_filter(int network_disabled) {
 #ifdef __NR_io_uring_setup
       DENY_SYSCALL(__NR_io_uring_setup),
 #endif
-      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 0, 6),
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 0, 4),
       BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])),
-      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 0, 1),
-      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
       BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_VSOCK, 0, 1),
       BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
       BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
       BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
   };
-  size_t count = sizeof(filter) / sizeof(filter[0]);
-  if (network_disabled) {
-    struct sock_filter extra[] = {
-#ifdef __NR_connect
-        DENY_SYSCALL(__NR_connect),
-#endif
-#ifdef __NR_bind
-        DENY_SYSCALL(__NR_bind),
-#endif
-#ifdef __NR_listen
-        DENY_SYSCALL(__NR_listen),
-#endif
-#ifdef __NR_accept
-        DENY_SYSCALL(__NR_accept),
-#endif
-#ifdef __NR_accept4
-        DENY_SYSCALL(__NR_accept4),
-#endif
-    };
-    size_t base_end = count - 8;
-    size_t extra_count = sizeof(extra) / sizeof(extra[0]);
-    struct sock_filter *combined = calloc(count + extra_count, sizeof(*combined));
-    if (!combined) return -1;
-    memcpy(combined, filter, base_end * sizeof(*filter));
-    memcpy(combined + base_end, extra, extra_count * sizeof(*extra));
-    memcpy(combined + base_end + extra_count, filter + base_end,
-           8 * sizeof(*filter));
-    int fd = syscall(SYS_memfd_create, "clarvis-seccomp", 0);
-    if (fd < 0 || write(fd, combined, (count + extra_count) * sizeof(*combined)) !=
-                      (ssize_t)((count + extra_count) * sizeof(*combined)) ||
-        lseek(fd, 0, SEEK_SET) < 0) {
-      free(combined);
-      if (fd >= 0) close(fd);
-      return -1;
-    }
-    free(combined);
-    return fd;
-  }
   int fd = syscall(SYS_memfd_create, "clarvis-seccomp", 0);
   if (fd < 0 || write(fd, filter, sizeof(filter)) != (ssize_t)sizeof(filter) ||
       lseek(fd, 0, SEEK_SET) < 0) {
@@ -122,12 +82,11 @@ int main(int argc, char **argv) {
     fputs("invalid launcher arguments\n", stderr);
     return 64;
   }
-  int network_disabled = strcmp(argv[1], "--network-disabled") == 0;
   if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
     perror("no_new_privs");
     return 70;
   }
-  int fd = make_filter(network_disabled);
+  int fd = make_filter();
   if (fd < 0 || dup2(fd, 3) < 0) {
     perror("seccomp filter");
     return 70;

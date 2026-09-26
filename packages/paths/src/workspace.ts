@@ -40,6 +40,10 @@ export interface WorkspacePaths {
   clarvisDir: string;
   /** Workspace settings document. */
   settingsFile: string;
+  /** Trusted workspace-authored execution rule directory. */
+  executionRulesDir: string;
+  /** Default workspace execution rule document. */
+  executionRulesFile: string;
   /** Directory of file-based agent profiles. */
   agentsDir: string;
   /** Directory of authored workflow definitions. */
@@ -109,6 +113,8 @@ export function workspacePaths(root?: string, opts?: RootOptions): WorkspacePath
     root: base,
     clarvisDir,
     settingsFile: join(clarvisDir, "settings.json"),
+    executionRulesDir: join(clarvisDir, "rules"),
+    executionRulesFile: join(clarvisDir, "rules", "default.json"),
     agentsDir,
     workflowsDir: join(clarvisDir, "workflows"),
     extensionProfilesDir: join(clarvisDir, "extension-profiles"),

@@ -106,7 +106,11 @@ async function qualifyNativeArchive(
     );
     await chmod(runtime, 0o755);
     const result = await commandOutput([runtime, canary, productRoot], environment);
-    if (result.code !== 0 || !result.stdout.includes("native release sandbox ok -")) {
+    if (
+      result.code !== 0 ||
+      !result.stdout.includes("native release sandbox ok -") ||
+      !result.stdout.includes("approval auto/manual ok")
+    ) {
       throw new Error(
         `portable native sandbox failed: ${result.stderr.slice(-2000)} ${result.stdout.slice(-1000)}`,
       );

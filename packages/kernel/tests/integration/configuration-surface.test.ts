@@ -100,6 +100,11 @@ test("an empty profile exposes product documentation only to model tools", async
       agent: "editor",
       messages: [{ role: "user", content: "$clarvis-docs inspect settings" }],
     });
+    run.onElicit((request) => {
+      if (request.kind === "execution_approval") {
+        void run.respond({ id: request.id, action: "accept", content: { approved: "yes" } });
+      }
+    });
     const events = Array.fromAsync(run.events);
     expect(await run.done).toMatchObject({ status: "completed" });
     await events;

@@ -121,6 +121,8 @@ chose it — is the first thing every other path in this package is derived from
 | `cache` | `<global>/cache` | `packages/paths/src/global.ts` |
 | `pluginDataRoot` | `<global>/state/plugin-data` | `GlobalPaths.pluginDataRoot`, `globalPaths` |
 | `settingsFile` | `<global>/settings.json` | `packages/paths/src/global.ts` |
+| `executionRulesDir` | `<global>/rules` | `GlobalPaths.executionRulesDir`, `globalPaths` |
+| `executionRulesFile` | `<global>/rules/default.json` | `GlobalPaths.executionRulesFile`, `globalPaths` |
 | `agentsDir` | `<global>/agents` | `packages/paths/src/global.ts` |
 | `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts` |
 | `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts` |
@@ -180,6 +182,8 @@ builder tests do not qualify native IPC behavior.
 | `root` | working tree root | `packages/paths/src/workspace.ts` |
 | `clarvisDir` | `<ws>/.clarvis` | `packages/paths/src/workspace.ts` |
 | `settingsFile` | `<ws>/.clarvis/settings.json` | `packages/paths/src/workspace.ts` |
+| `executionRulesDir` | `<ws>/.clarvis/rules` | `WorkspacePaths.executionRulesDir`, `workspacePaths` |
+| `executionRulesFile` | `<ws>/.clarvis/rules/default.json` | `WorkspacePaths.executionRulesFile`, `workspacePaths` |
 | `agentsDir` | `<ws>/.clarvis/agents` | `packages/paths/src/workspace.ts` |
 | `workflowsDir` | `<ws>/.clarvis/workflows` | `packages/paths/src/workspace.ts` |
 | `extensionProfilesDir` | `<ws>/.clarvis/extension-profiles` | `packages/paths/src/workspace.ts` |

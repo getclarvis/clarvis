@@ -4,9 +4,15 @@
 
 `@clarvis/tools` exposes a fixed catalog of coding tools. `dispatch` validates a cloned argument
 object against the selected tool's schema, invokes its configured execution port and bounds the result.
-The default port invokes the handler on Host. There is no command approval or file mutation review gate in this dispatcher. Relative file paths
+The standalone default port invokes the handler on Host. A Kernel-bound toolset uses a structural authorization port after schema validation and before execution. Relative file paths
 use the workspace as their base; absolute paths remain absolute. Host filesystem permissions
 determine actual access.
+If steering or a host policy edit changes the authorization revision during review, `dispatch`
+reissues the same final action with current authorization and policy revisions before launch; a result
+whose identity remains stale cannot execute. Production: `dispatch` in
+[core.ts](../../packages/tools/src/core.ts). Test: `steering during review
+requires a fresh authorization before execution` in
+[action-authorization.test.ts](../../packages/tools/tests/unit/action-authorization.test.ts).
 
 Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `resolveConfig` in
 [config.ts](../../packages/tools/src/config.ts), and `resolveToolPath` in
@@ -79,10 +85,10 @@ Production: `dispatch`, `boundParts` and `boundMeta` in
 - The advertised and dispatchable tool names come from one registry. Production:
   `selectSurface` in [registry.ts](../../packages/tools/src/tools/registry.ts). Test:
   [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts).
-- A validated tool call does not pass through a Shell Guard or Judge. Production: `dispatch` in
+- A Kernel-bound call is authorized against its final validated arguments, paths and trusted actor/call identity; standalone callers retain the Host default. Production: `prepareToolAction` in [action.ts](../../packages/tools/src/execution/action.ts) and `dispatch` in
   [core.ts](../../packages/tools/src/core.ts). Test:
-  [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
-- Host is the default; an injected Sandbox port and backend wrap file handlers and new shell
+  [action-authorization.test.ts](../../packages/tools/tests/unit/action-authorization.test.ts) and [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
+- An injected Sandbox port and backend wrap file handlers and new shell
   sessions. Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts),
   `SandboxToolExecutor` in [sandbox.ts](../../packages/tools/src/execution/sandbox.ts), and
   `ExecutionSessionManager.launch` in

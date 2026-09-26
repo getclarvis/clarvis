@@ -14,6 +14,8 @@ export interface HeaderInput {
   agentName: string;
   model: string;
   memory: MemoryState;
+  isolation: "sandbox" | "host";
+  approval: "manual" | "auto";
   plans: PlansState;
   connection: ConnectionState;
   doctorDirty: boolean;
@@ -23,7 +25,15 @@ export interface HeaderInput {
 }
 
 export type HeaderFieldKey =
-  "workspace" | "identity" | "model" | "memory" | "urgent" | "exception" | "version";
+  | "workspace"
+  | "identity"
+  | "model"
+  | "memory"
+  | "isolation"
+  | "approval"
+  | "urgent"
+  | "exception"
+  | "version";
 
 export interface HeaderField {
   key: HeaderFieldKey;
@@ -85,7 +95,7 @@ function memoryLabel(memory: MemoryState): string {
 }
 
 /**
- * The configuration a run depends on — model and memory —
+ * The configuration a run depends on — model, memory, isolation and approval —
  * with complete labels at every supported width.
  */
 function statusChips(input: HeaderInput): HeaderField[] {
@@ -94,6 +104,8 @@ function statusChips(input: HeaderInput): HeaderField[] {
   const fit: Array<[HeaderFieldKey, string]> = [
     ["model", model.full],
     ["memory", `Memory: ${memory}`],
+    ["isolation", `Isolation: ${input.isolation}`],
+    ["approval", `Approval: ${input.approval}`],
   ];
   return fit.map(([key, text]) => ({
     key,

@@ -534,6 +534,13 @@ function mapEntryRaw(
       if (d.options !== undefined) event.options = d.options;
       return event;
     }
+    case "approval_requested":
+    case "approval_resolved":
+    case "execution_policy_result":
+    case "execution_attempt": {
+      const detail = capDetail(entry.kind, entry.detail);
+      return { type: entry.kind, occurred_at: abs(entry.at), ...detail };
+    }
     case "mcp_degraded": {
       const d = capDetail(entry.kind, entry.detail);
       const event: Extract<TraceEvent, { type: "mcp_degraded" }> = {

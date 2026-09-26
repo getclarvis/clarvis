@@ -5,6 +5,60 @@ import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
 import { workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
 import type { ToolIsolationBackend, ToolIsolationPolicy } from "./execution/isolation-port.ts";
 import type { ToolExecutionPort } from "./execution/port.ts";
+import type { ToolAction } from "./execution/action.ts";
+
+/** Structural host port; tools never imports a reviewer or policy package. */
+export interface ToolActionAuthorization {
+  authorize(
+    request: {
+      identity: {
+        owner: string;
+        executionId: string;
+        actor: string;
+        callId: string;
+        attempt: number;
+      };
+      tool: string;
+      arguments: Readonly<Record<string, unknown>>;
+      command?: string;
+      shell?: string;
+      cwd?: string;
+      environment?: Readonly<Record<string, string>>;
+      paths?: readonly string[];
+      requestedProfile: "host" | "sandbox";
+      effectiveProfile: "host" | "sandbox";
+      permissions?: ToolAction["permissions"];
+      reason: string;
+      policyRevision: string;
+      authorizationRevision: number;
+    },
+    signal?: AbortSignal,
+  ): Promise<{
+    granted: boolean;
+    fingerprint: string;
+    evidence: {
+      reason: string;
+      decision: string;
+      source: string;
+      requestedProfile: "host" | "sandbox";
+      effectiveProfile: "host" | "sandbox";
+      executionStarted: boolean;
+    };
+    permissions?: ToolAction["permissions"];
+  }>;
+  valid(
+    request: Parameters<ToolActionAuthorization["authorize"]>[0],
+    decision: Awaited<ReturnType<ToolActionAuthorization["authorize"]>>,
+  ): boolean;
+  recordAttempt?(
+    request: Parameters<ToolActionAuthorization["authorize"]>[0],
+    phase: "admitted" | "started" | "settled" | "uncertain",
+    backend?: "host" | "bubblewrap" | "seatbelt",
+    effectiveProfile?: "host" | "sandbox",
+  ): void;
+  revision(): number;
+  policyRevision: string;
+}
 
 /**
  * The fully resolved, validated runtime configuration threaded through every
@@ -13,6 +67,15 @@ import type { ToolExecutionPort } from "./execution/port.ts";
  * capability probes have been run, so handlers may consume it as-is.
  */
 export interface RuntimeConfig {
+  readonly actionValid?: () => boolean;
+  readonly actionStarted?: (backend: "host" | "bubblewrap" | "seatbelt") => void;
+  readonly actionAuthorization?: ToolActionAuthorization;
+  readonly actionIdentity?: { readonly owner: string; readonly executionId: string };
+  readonly selectAuthorizedExecution?: (permissions: ToolAction["permissions"] | undefined) => {
+    executionPort: ToolExecutionPort;
+    executionPolicy?: ToolIsolationPolicy;
+    sandboxBackend?: ToolIsolationBackend;
+  };
   /** Optional trusted execution port; absent preserves the in-process Host handler. */
   readonly executionPort?: ToolExecutionPort;
   /** Host-built process boundary applied to new shell sessions. */
@@ -200,6 +263,9 @@ function assertTimeoutOrder(min: number, max: number, minLabel: string, maxLabel
  * constant (limits) or a safe default (`readOnly` false) inside {@link resolveConfig}.
  */
 export interface AgentToolsOptions {
+  actionAuthorization?: ToolActionAuthorization;
+  actionIdentity?: RuntimeConfig["actionIdentity"];
+  selectAuthorizedExecution?: RuntimeConfig["selectAuthorizedExecution"];
   /** Trusted port for validated native tool operations. */
   executionPort?: ToolExecutionPort;
   /** Trusted process policy for commands. Defaults to existing Host behavior. */
@@ -335,6 +401,9 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
 
   return {
     workspaceRoot,
+    actionAuthorization: options.actionAuthorization,
+    actionIdentity: options.actionIdentity,
+    selectAuthorizedExecution: options.selectAuthorizedExecution,
     executionPort: options.executionPort,
     executionPolicy: options.executionPolicy,
     sandboxBackend: options.sandboxBackend,

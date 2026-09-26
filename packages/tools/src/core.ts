@@ -7,6 +7,7 @@ import { textPart, type ContentPart, type ToolResult } from "./tools/content.ts"
 import type { ToolCallHooks } from "./tools/types.ts";
 import type { RuntimeConfig } from "./config.ts";
 import { hostToolExecutor } from "./execution/host.ts";
+import { prepareToolAction } from "./execution/action.ts";
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true, coerceTypes: true });
 const validators = new Map<string, ValidateFunction>();
@@ -194,10 +195,108 @@ export async function dispatch(
     return errorResult(new ToolError("invalid_input", detail || "invalid arguments"));
   }
 
+  let recordAttempt:
+    | ((
+        phase: "admitted" | "started" | "settled" | "uncertain",
+        backend?: "host" | "bubblewrap" | "seatbelt",
+      ) => void)
+    | undefined;
   try {
-    const executor = config.executionPort ?? hostToolExecutor;
+    let executionConfig = config;
+    if (config.actionAuthorization && name !== "shell_session") {
+      const identity = config.actionIdentity;
+      if (!identity || !hooks?.actionCallId || !hooks.actionActor) {
+        throw new ToolError("invalid_input", "Trusted action identity is missing");
+      }
+      const action = await prepareToolAction(name, filled, config);
+      const requestedProfile: "sandbox" | "host" =
+        config.executionPolicy?.mode === "sandbox" ? "sandbox" : "host";
+      let request = {
+        identity: { ...identity, actor: hooks.actionActor, callId: hooks.actionCallId, attempt: 1 },
+        tool: name,
+        arguments: structuredClone(filled),
+        ...(action.command === undefined ? {} : { command: action.command }),
+        ...(action.shell === undefined ? {} : { shell: action.shell }),
+        ...(action.cwd === undefined ? {} : { cwd: action.cwd }),
+        ...(action.environment === undefined ? {} : { environment: action.environment }),
+        paths: action.paths,
+        requestedProfile,
+        effectiveProfile: requestedProfile,
+        ...(action.permissions === undefined ? {} : { permissions: action.permissions }),
+        reason: action.reason,
+        policyRevision: config.actionAuthorization.policyRevision,
+        authorizationRevision: config.actionAuthorization.revision(),
+      };
+      let decision:
+        | Awaited<ReturnType<NonNullable<typeof config.actionAuthorization>["authorize"]>>
+        | undefined;
+      for (let review = 0; review < 3; review++) {
+        try {
+          decision = await config.actionAuthorization.authorize(request, signal);
+        } catch (error) {
+          if (
+            signal?.aborted ||
+            config.actionAuthorization.revision() === request.authorizationRevision ||
+            review === 2
+          )
+            throw error;
+          request = {
+            ...request,
+            policyRevision: config.actionAuthorization.policyRevision,
+            authorizationRevision: config.actionAuthorization.revision(),
+          };
+          continue;
+        }
+        if (
+          config.actionAuthorization.revision() !== request.authorizationRevision &&
+          !signal?.aborted &&
+          review < 2
+        ) {
+          request = {
+            ...request,
+            policyRevision: config.actionAuthorization.policyRevision,
+            authorizationRevision: config.actionAuthorization.revision(),
+          };
+          continue;
+        }
+        break;
+      }
+      if (
+        !decision ||
+        !decision.granted ||
+        !config.actionAuthorization.valid(request, decision) ||
+        signal?.aborted
+      ) {
+        throw new ToolError(
+          "sandbox_denied",
+          `Action denied: ${decision?.evidence.reason ?? "review_unavailable"}`,
+        );
+      }
+      const selected = config.selectAuthorizedExecution?.(decision.permissions);
+      recordAttempt = (phase, backend) =>
+        config.actionAuthorization?.recordAttempt?.(
+          request,
+          phase,
+          backend,
+          decision.evidence.effectiveProfile,
+        );
+      recordAttempt("admitted");
+      executionConfig = {
+        ...config,
+        ...(selected ?? {}),
+        actionValid: () => config.actionAuthorization!.valid(request, decision) && !signal?.aborted,
+        actionStarted: (backend) => recordAttempt?.("started", backend),
+      };
+    }
+    const executor = executionConfig.executionPort ?? hostToolExecutor;
     const { content, meta } = normalizeOutput(
-      await executor.execute(tool, filled, config, signal, hooks),
+      await executor.execute(tool, filled, executionConfig, signal, hooks),
+    );
+    recordAttempt?.(
+      "settled",
+      executionConfig.executionPolicy?.mode === "sandbox"
+        ? executionConfig.sandboxBackend?.name
+        : "host",
     );
     const parts = typeof content === "string" ? [textPart(content)] : content;
     return {
@@ -206,6 +305,9 @@ export async function dispatch(
       ...(meta ? { meta: boundMeta(meta, config.maxToolMetaBytes) } : {}),
     };
   } catch (err) {
+    recordAttempt?.(
+      err instanceof ToolError && err.code === "outcome_unknown" ? "uncertain" : "settled",
+    );
     const failed = errorResult(err, config.maxToolMetaBytes);
     return failed;
   }

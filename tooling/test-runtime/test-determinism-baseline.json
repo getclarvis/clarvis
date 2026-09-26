@@ -346,6 +346,30 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
+      "mechanism": "process-env-mutation",
+      "file": "packages/kernel/tests/unit/judge-runner.test.ts",
+      "identity": "process-env-mutation|test:inspection reads but cannot change workspace data|delete process.env.CLARVIS_JUDGE_TEST_SECRET|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "Synthetic environment key proves the physical inspection child does not inherit Clarvis secrets; the test restores the prior value in finally."
+    },
+    {
+      "mechanism": "process-env-mutation",
+      "file": "packages/kernel/tests/unit/judge-runner.test.ts",
+      "identity": "process-env-mutation|test:inspection reads but cannot change workspace data|process.env.CLARVIS_JUDGE_TEST_SECRET = \"synthetic-secret\"|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "Synthetic environment key proves the physical inspection child does not inherit Clarvis secrets; the test restores the prior value in finally."
+    },
+    {
+      "mechanism": "process-env-mutation",
+      "file": "packages/kernel/tests/unit/judge-runner.test.ts",
+      "identity": "process-env-mutation|test:inspection reads but cannot change workspace data|process.env.CLARVIS_JUDGE_TEST_SECRET = priorSecret|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "Synthetic environment key proves the physical inspection child does not inherit Clarvis secrets; the test restores the prior value in finally."
+    },
+    {
       "mechanism": "positive-wait",
       "file": "packages/kernel/tests/unit/tool-interrupt-channel.test.ts",
       "identity": "positive-wait|describe:tool interrupt channel/it:closes delivered repeats idempotently and ignores late replies and subscriptions|Bun.sleep(10)|0",
@@ -826,6 +850,14 @@
       "reason": "Disposable local TLS listener proves hostname resolution and certificate validation inside the native boundary."
     },
     {
+      "mechanism": "listener",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "listener|module|server.listen(socketPath, resolve)|0",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Disposable Unix socket is the physical peer for the native sandbox local-socket boundary canary."
+    },
+    {
       "mechanism": "subprocess",
       "file": "packages/sandbox/tests/integration/linux-native.test.ts",
       "identity": "subprocess|module|spawn(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: [\"ignore\", \"pipe\", \"pipe\"], timeout: 5000, })|0",
@@ -840,6 +872,14 @@
       "package_owner": "@clarvis/sandbox",
       "classification": "boundary-canary",
       "reason": "Real sandboxed curl process proves local TLS and hostname resolution with network enabled."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/sandbox/tests/integration/linux-native.test.ts",
+      "identity": "subprocess|module|spawn(spec.file, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: [\"ignore\", \"pipe\", \"pipe\"], timeout: 5000, })|2",
+      "package_owner": "@clarvis/sandbox",
+      "classification": "boundary-canary",
+      "reason": "Real sandbox child proves that an admitted local Unix socket remains reachable under disabled network policy."
     },
     {
       "mechanism": "subprocess",

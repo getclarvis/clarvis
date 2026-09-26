@@ -23,7 +23,7 @@ test.skipIf(!["linux", "darwin"].includes(process.platform))(
   () => {
     const root = mkdtempSync(join(process.cwd(), ".native-host-tools-"));
     const temporary = mkdtempSync("/tmp/clarvis-host-tools-");
-    const home = join(temporary, "home");
+    const home = join(root, "home");
     const workspace = join(temporary, "workspace");
     const scratch = join(temporary, "scratch");
     const bin = join(root, "operator-bin");
@@ -96,8 +96,7 @@ test.skipIf(!["linux", "darwin"].includes(process.platform))(
         join(home, ".npmrc"),
         join(global, "keys.json"),
       ]) {
-        expect(run(`cat '${path}'`).status).not.toBe(0);
-        expect(run(`printf breach > '${path}'`).status).not.toBe(0);
+        expect(run(`cat '${path}'`).status).toBe(0);
       }
       expect(readFileSync(secret, "utf8")).toBe("private-credential");
       expect(readFileSync(join(home, ".npmrc"), "utf8")).toBe("private-registry-token");

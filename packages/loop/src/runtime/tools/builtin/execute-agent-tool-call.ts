@@ -242,6 +242,8 @@ export async function executeAgentToolCall(
       onOutput,
       control === undefined ? undefined : recordStarted,
       runSignal,
+      callId,
+      subagentInstanceId === undefined ? agent : `${agent}:${subagentInstanceId}`,
     );
   terminal = true;
   const interrupted =
@@ -253,7 +255,8 @@ export async function executeAgentToolCall(
       ? ""
       : `\n[Execution: ${execution.effective_mode}${execution.fallback ? ` fallback (${execution.reason ?? "sandbox unavailable"})` : ""}; requested ${execution.requested_mode}.]`;
   const resultText =
-    (interrupted ? `Shell interrupted by the operator.\n${text}` : text) + executionNote;
+    (interrupted ? `Shell interrupted by the operator.\n${text}` : text) +
+    (isError || interrupted ? executionNote : "");
   const errText = interrupted || isError ? resultText : null;
   const productive = !isError && !interrupted;
   const sessionId = yieldedSessionId(call.name, text, isError);

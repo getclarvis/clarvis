@@ -162,7 +162,6 @@ export class BubblewrapBackend implements SandboxBackend {
     const assets = nativeAssets();
     const bwrap = findBubblewrap(assets.packagedBubblewrap, this.preferPackagedBubblewrap);
     const directoryMounts: { source: string; target: string; writable: boolean }[] = [];
-    const fileMounts: { source: string; target: string; writable: boolean }[] = [];
     for (const directory of [policy.homeRoot, ...policy.installationRoots]) {
       const canonical = enforceSource(directory, "runtime root");
       if (!lstatSync(canonical).isDirectory()) {
@@ -175,38 +174,22 @@ export class BubblewrapBackend implements SandboxBackend {
       target: policy.workspaceRoot,
       writable: policy.workspaceAccess === "read-write",
     });
-    for (const temporary of ["/tmp", "/dev/shm", ...policy.temporaryWriteRoots]) {
+    for (const temporary of [
+      "/tmp",
+      "/dev/shm",
+      ...policy.temporaryWriteRoots,
+      ...policy.additionalWriteRoots,
+    ]) {
       if (!existsSync(temporary)) continue;
       const canonical = enforceSource(temporary, "temporary root");
       if (!lstatSync(canonical).isDirectory()) continue;
       directoryMounts.push({ source: canonical, target: canonical, writable: true });
-    }
-    for (const directory of [policy.globalAgentsRoot, policy.workflowsRoot]) {
-      if (!existsSync(directory)) continue;
-      const canonical = enforceSource(directory, "configuration exception");
-      if (canonical !== directory || !lstatSync(canonical).isDirectory()) {
-        throw new SandboxSetupError("sandbox_setup_failed", "configuration exception is unsafe");
-      }
-      directoryMounts.push({ source: canonical, target: directory, writable: true });
-    }
-    if (existsSync(policy.settingsFile)) {
-      const canonical = enforceSource(policy.settingsFile, "settings exception");
-      if (canonical !== policy.settingsFile || !lstatSync(canonical).isFile()) {
-        throw new SandboxSetupError("sandbox_setup_failed", "settings exception is not a file");
-      }
-      fileMounts.push({ source: canonical, target: policy.settingsFile, writable: true });
     }
     const writableAt = (path: string): boolean =>
       [...directoryMounts]
         .reverse()
         .filter((mount) => nestedWithin(path, mount.target))
         .sort((left, right) => right.target.length - left.target.length)[0]?.writable ?? false;
-    if (!existsSync(policy.globalRoot) && writableAt(policy.globalRoot)) {
-      throw new SandboxSetupError(
-        "sandbox_setup_failed",
-        "A missing global root lies inside a writable sandbox root",
-      );
-    }
     const args: string[] = [
       "--die-with-parent",
       "--new-session",
@@ -222,28 +205,27 @@ export class BubblewrapBackend implements SandboxBackend {
     if (policy.network === "disabled") args.push("--unshare-net");
     args.push("--dev", "/dev", "--proc", "/proc");
     if (existsSync("/sys")) args.push("--tmpfs", "/sys", "--remount-ro", "/sys");
-    for (const mount of directoryMounts
-      .filter((mount) => !nestedWithin(mount.target, policy.globalRoot))
-      .sort((left, right) => left.target.length - right.target.length)) {
-      args.push(mount.writable ? "--bind" : "--ro-bind", mount.source, mount.target);
-    }
-    if (existsSync(policy.globalRoot)) args.push("--tmpfs", policy.globalRoot);
-    for (const mount of directoryMounts.filter((mount) =>
-      nestedWithin(mount.target, policy.globalRoot),
+    for (const mount of directoryMounts.sort(
+      (left, right) => left.target.length - right.target.length,
     )) {
       args.push(mount.writable ? "--bind" : "--ro-bind", mount.source, mount.target);
     }
-    for (const mount of fileMounts) {
-      args.push(mount.writable ? "--bind" : "--ro-bind", mount.source, mount.target);
+    for (const requested of policy.readOnlyPaths) {
+      if (!existsSync(requested)) {
+        if (!writableAt(requested)) continue;
+        args.push("--tmpfs", requested, "--remount-ro", requested);
+        continue;
+      }
+      const canonical = realpathSync(requested);
+      for (const path of new Set([requested, canonical])) {
+        args.push("--ro-bind", canonical, path);
+      }
     }
-    if (existsSync(policy.globalRoot)) args.push("--remount-ro", policy.globalRoot);
     for (const requested of policy.denies) {
       if (!existsSync(requested)) {
         if (
           writableAt(requested) &&
-          (!nestedWithin(requested, policy.globalRoot) ||
-            nestedWithin(requested, policy.workflowsRoot) ||
-            policy.temporaryWriteRoots.some((root) => nestedWithin(requested, root)))
+          !policy.readOnlyPaths.some((root) => nestedWithin(requested, root))
         ) {
           throw new SandboxSetupError(
             "sandbox_setup_failed",

@@ -48,6 +48,7 @@ export interface ManagedRunContext {
 export interface ManagedRunSpec {
   /** Stable execution id exposed by the returned handle. */
   executionId: string;
+  onSteer?(message: Parameters<RunHandle["steer"]>[0]): void;
   /** Runs the engine-specific work and returns its protocol terminal result. */
   execute(context: ManagedRunContext): Promise<RunResult>;
   /** Observes emitted events for execution-specific projections such as workflow records. */
@@ -344,6 +345,7 @@ export function createManagedRunWithRuntime(
     execution_id: spec.executionId,
     events: stream.iterable,
     async steer(message) {
+      spec.onSteer?.(message);
       if (
         await steer.push({
           content: protoSteerToEngineContent(message),

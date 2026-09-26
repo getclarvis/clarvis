@@ -23,7 +23,7 @@ test.skipIf(!["linux", "darwin"].includes(process.platform))(
   () => {
     const root = mkdtempSync(join(process.cwd(), ".native-host-tools-"));
     const temporary = mkdtempSync("/tmp/clarvis-host-tools-");
-    const home = join(temporary, "home");
+    const home = join(root, "home");
     const workspace = join(temporary, "workspace");
     const scratch = join(temporary, "scratch");
     const bin = join(root, "operator-bin");

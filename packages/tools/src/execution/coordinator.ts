@@ -16,10 +16,24 @@ function readonlyWorkspaceMutation(error: unknown, tool: ToolDef, config: Runtim
   if (tool.name !== "write_file" && tool.name !== "edit_file") return false;
   if (!(error instanceof ToolError) || error.code !== "sandbox_denied") return false;
   if (config.executionPolicy?.workspaceAccess !== "read-only") return false;
-  if (error.fields.errno_code !== "EROFS" || typeof error.fields.path !== "string") return false;
+  if (typeof error.fields.path !== "string") return false;
+  if (
+    error.fields.errno_code !== "EROFS" &&
+    !(config.sandboxBackend?.name === "seatbelt" && error.fields.errno_code === "EPERM")
+  )
+    return false;
   const target = isAbsolute(error.fields.path)
     ? resolve(error.fields.path)
-    : resolve(config.workspaceRoot, error.fields.path);
+    : resolve(config.executionPolicy.workspaceRoot, error.fields.path);
+  if (
+    config.executionPolicy.denies.some((deny) => {
+      const suffix = relative(deny, target);
+      return (
+        suffix === "" || (suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))
+      );
+    })
+  )
+    return false;
   const suffix = relative(config.executionPolicy.workspaceRoot, target);
   return (
     suffix === "" || (suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))

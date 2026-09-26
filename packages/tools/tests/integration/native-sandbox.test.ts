@@ -342,7 +342,11 @@ test.skipIf(
         path: "recovered.txt",
         content: "host-authorized",
       });
-      expect(recovered.isError).toBe(false);
+      if (recovered.isError) {
+        throw new Error(
+          `Read-only workspace recovery failed: ${JSON.stringify(recovered.content)}`,
+        );
+      }
       expect(recovered.meta).toMatchObject({
         requested_mode: "sandbox",
         effective_mode: "host",

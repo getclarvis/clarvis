@@ -275,8 +275,9 @@ process tree before releasing its queue; an unconfirmed stop is reported during
 close. Shell and external processes are outside the native file mutation queue.
 Native tests distinguish direct sandboxed writes to the exact settings file
 from atomic replacement and creation, which use the marked Host recovery when
-the projection denies staging. Seatbelt permission errors qualify only for the
-exact settings path; other denied paths retain their Sandbox error.
+the projection denies staging. Seatbelt `EPERM` also qualifies for a
+single-file mutation in a read-only workspace outside explicit denies.
+Other denied paths retain their Sandbox error.
 
 Production: `CoordinatedToolExecutor` in
 `packages/tools/src/execution/coordinator.ts` and `SandboxToolExecutor.onWorkerExit`

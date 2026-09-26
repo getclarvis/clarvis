@@ -69,7 +69,8 @@ function policyDenied(
   const readonlyWorkspace =
     policy.workspaceAccess === "read-only" &&
     within(target, policy.workspaceRoot) &&
-    error.fields.errno_code === "EROFS";
+    (error.fields.errno_code === "EROFS" ||
+      (backend === "seatbelt" && error.fields.errno_code === "EPERM"));
   if (!explicitDeny && !readonlyWorkspace) return undefined;
   return new ToolError("sandbox_denied", "Native policy denied filesystem access", {
     ...error.fields,

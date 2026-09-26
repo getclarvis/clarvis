@@ -22,6 +22,8 @@ Sandbox shell children receive `HOME` and `CLARVIS_HOME` from that policy.
 They retain the host `PATH`; native backends admit host reads with private-path
 denies and restrict writes to policy grants. Installed tools need no registration.
 Mutable caches must use an admitted writable directory such as `TMPDIR`.
+When the host explicitly authorizes recovery, a file mutation denied by a
+read-only workspace can retry on Host; explicit deny paths cannot use that retry.
 `shell_session` observes or stops an owned command through the Host session
 manager and does not claim a new sandboxed launch.
 `readOnly` controls the advertised tool surface independently of the Sandbox

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createExecutionPolicy, SandboxSetupError } from "@clarvis/sandbox";
+import { createExecutionPolicy, SandboxSetupError, SeatbeltBackend } from "@clarvis/sandbox";
 import { resolveConfig } from "../../src/config.ts";
 import { ToolError } from "../../src/errors.ts";
 import { CoordinatedToolExecutor } from "../../src/execution/coordinator.ts";
@@ -287,6 +287,49 @@ test("a single-file read-only workspace denial retries once on Host", async () =
     await expect(
       coordinator.execute({ ...tool, name: "apply_patch" }, {}, config),
     ).rejects.toMatchObject({ code: "sandbox_denied" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Seatbelt read-only denial recovers only for a workspace file outside explicit denies", async () => {
+  const root = mkdtempSync(join(tmpdir(), "clarvis-coordinator-"));
+  try {
+    const workspace = join(root, "workspace");
+    const home = join(root, "home");
+    mkdirSync(workspace);
+    mkdirSync(home);
+    const workspaceAlias = join(root, "workspace-alias");
+    symlinkSync(workspace, workspaceAlias);
+    const denied = join(workspace, "private.txt");
+    const policy = createExecutionPolicy({
+      id: "seatbelt-readonly-recovery",
+      mode: "sandbox",
+      workspaceRoot: workspace,
+      workspaceAccess: "read-only",
+      homeRoot: home,
+      denies: [denied],
+    });
+    const sandbox: ToolExecutionPort = {
+      async execute(_tool, args) {
+        throw new ToolError("sandbox_denied", "Seatbelt denied write", {
+          path: args.path,
+          errno_code: "EPERM",
+        });
+      },
+    };
+    const config = {
+      ...resolveConfig({ workspaceRoot: workspaceAlias }),
+      executionPolicy: policy,
+      sandboxBackend: new SeatbeltBackend(),
+    };
+    const coordinator = new CoordinatedToolExecutor(sandbox, true);
+    expect(await coordinator.execute(tool, { path: "allowed.txt" }, config)).toMatchObject({
+      meta: { effective_mode: "host", fallback_reason: "readonly_workspace" },
+    });
+    await expect(coordinator.execute(tool, { path: "private.txt" }, config)).rejects.toMatchObject({
+      code: "sandbox_denied",
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

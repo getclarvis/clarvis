@@ -1,6 +1,14 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { BubblewrapBackend, createExecutionPolicy, SeatbeltBackend } from "@clarvis/sandbox";
@@ -143,7 +151,7 @@ test.skipIf(
     const environmentResult = JSON.parse(
       environment.content.find((part) => part.type === "text")?.text ?? "{}",
     ) as { stdout?: string };
-    expect(environmentResult.stdout).toBe(`${home}\n${global}\n`);
+    expect(environmentResult.stdout).toBe(`${realpathSync(home)}\n${realpathSync(global)}\n`);
     const directSettings = await tools.callTool("shell", {
       command: 'printf direct-sandbox-write > "$CLARVIS_HOME/settings.json"',
     });

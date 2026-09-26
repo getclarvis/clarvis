@@ -9,7 +9,14 @@ import type {
 } from "./run.ts";
 import type { ExecutionStatus } from "./execution-status.ts";
 import type { FinalizationDisposition } from "./finalization.ts";
-import type { ToolEvidenceDetail, ToolExecutionDetail } from "./trace-kinds.ts";
+import type {
+  ApprovalRequestedDetail,
+  ApprovalResolvedDetail,
+  ExecutionAttemptDetail,
+  ExecutionPolicyResultDetail,
+  ToolEvidenceDetail,
+  ToolExecutionDetail,
+} from "./trace-kinds.ts";
 import type { ElicitNoResponseReason } from "./elicit.ts";
 
 /**
@@ -354,6 +361,22 @@ export type BuiltinTraceEvent =
       question: string;
       options?: string[];
     }
+  | ({
+      type: "approval_requested";
+      occurred_at: number;
+    } & ApprovalRequestedDetail)
+  | ({
+      type: "approval_resolved";
+      occurred_at: number;
+    } & ApprovalResolvedDetail)
+  | ({
+      type: "execution_policy_result";
+      occurred_at: number;
+    } & ExecutionPolicyResultDetail)
+  | ({
+      type: "execution_attempt";
+      occurred_at: number;
+    } & ExecutionAttemptDetail)
   | {
       type: "model_reasoning";
       agent: AgentRole;
@@ -442,6 +465,10 @@ export const BUILTIN_TRACE_EVENT_TYPES = [
   "convergence_warning",
   "model_call_retry",
   "elicitation_requested",
+  "approval_requested",
+  "approval_resolved",
+  "execution_policy_result",
+  "execution_attempt",
   "model_reasoning",
   "model_stream_delta",
   "mcp_degraded",

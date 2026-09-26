@@ -42,6 +42,10 @@ export const BUILTIN_TRACE_KINDS = [
   "convergence_warning",
   "guard_escalation",
   "elicitation_requested",
+  "approval_requested",
+  "approval_resolved",
+  "execution_policy_result",
+  "execution_attempt",
   "model_reasoning",
   "model_stream_delta",
   "mcp_degraded",
@@ -662,6 +666,32 @@ export interface ElicitationRequestedDetail {
   options?: string[];
 }
 
+/** Identity and decision facts retained without command text or credentials. */
+export interface ExecutionPolicyResultDetail {
+  owner: string;
+  execution_id: string;
+  actor: string;
+  call_id: string;
+  attempt: number;
+  tool: string;
+  decision: "allow" | "prompt" | "forbidden";
+  source: "rule" | "fallback" | "heuristic" | "host" | "reviewer";
+  reason: string;
+  requested_mode: "host" | "sandbox";
+  effective_mode: "host" | "sandbox";
+}
+
+export type ApprovalRequestedDetail = Omit<ExecutionPolicyResultDetail, "decision" | "source"> & {
+  route?: "judge" | "manual";
+};
+export interface ApprovalResolvedDetail extends ApprovalRequestedDetail {
+  outcome: "approved" | "declined" | "cancelled" | "invalidated" | "unavailable";
+}
+export interface ExecutionAttemptDetail extends ApprovalRequestedDetail {
+  phase: "admitted" | "started" | "settled" | "uncertain";
+  backend?: "host" | "bubblewrap" | "seatbelt";
+}
+
 /**
  * A child agent registered with the run's supervision registry: the `agent_id`
  * handle a parent addresses it by, the `kind` of child, and the `native_id` it
@@ -747,6 +777,10 @@ export interface TraceDetailMap {
   convergence_warning: ConvergenceWarningDetail;
   guard_escalation: GuardEscalationDetail;
   elicitation_requested: ElicitationRequestedDetail;
+  approval_requested: ApprovalRequestedDetail;
+  approval_resolved: ApprovalResolvedDetail;
+  execution_policy_result: ExecutionPolicyResultDetail;
+  execution_attempt: ExecutionAttemptDetail;
   model_reasoning: ModelReasoningDetail;
   model_stream_delta: ModelStreamDeltaDetail;
   mcp_degraded: McpDegradedDetail;

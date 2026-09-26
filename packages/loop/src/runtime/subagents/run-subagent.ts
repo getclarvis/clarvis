@@ -1,3 +1,4 @@
+import type { ActionAuthorizationPort } from "@clarvis/capability";
 import type {
   ImagePart,
   ModelExecutionInfo,
@@ -61,6 +62,7 @@ export type SubagentUsageSnapshot = TokenCounts & { iterations: number };
  * `usageSink` that always receives the final counts.
  */
 export interface RunSubagentInput {
+  actionAuthorization?: ActionAuthorizationPort;
   /** Inherited host machinery namespace, independent of process defaults. */
   statePaths?: WorkspaceStatePaths;
   task?: string;
@@ -183,6 +185,7 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
   try {
     const result = await runAgent({
       agent: "subagent",
+      ...(input.actionAuthorization ? { actionAuthorization: input.actionAuthorization } : {}),
       subagentInstanceId: input.subagentInstanceId,
       messages,
       target: toLlmTarget(

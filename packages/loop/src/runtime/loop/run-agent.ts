@@ -334,6 +334,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
       : visible([...input.registry.tools, ...folded.advertisedTools]).map((t) => t.wireName);
 
   const mcpHandler = buildMcpHandler({
+    ...(input.actionAuthorization ? { actionAuthorization: input.actionAuthorization } : {}),
     base,
     registry: input.registry,
     argValidator,

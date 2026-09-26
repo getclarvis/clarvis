@@ -150,9 +150,11 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
         if (!seed) return undefined;
         const indexerDeps = {
           ...seed.deps,
-          capabilities: (seed.deps.capabilities ?? []).map((capability) =>
-            capability.name === "tools" ? createAgentToolsCapability() : capability,
-          ),
+          capabilities: (seed.deps.capabilities ?? [])
+            .filter((capability) => capability.name !== "action-authorization")
+            .map((capability) =>
+              capability.name === "tools" ? createAgentToolsCapability() : capability,
+            ),
         };
         return {
           owner: seed.owner,

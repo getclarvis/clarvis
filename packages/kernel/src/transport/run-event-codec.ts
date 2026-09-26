@@ -12,6 +12,18 @@ const attributed = {
   agent,
   subagent_id: text.optional(),
 };
+const actionFacts = {
+  at: finite,
+  owner: text,
+  execution_id: text,
+  actor: text,
+  call_id: text,
+  attempt: positiveInteger,
+  tool: text,
+  reason: text,
+  requested_mode: z.enum(["host", "sandbox"]),
+  effective_mode: z.enum(["host", "sandbox"]),
+};
 const argumentsRecord = z.record(z.string(), z.unknown());
 const planTask = z
   .object({
@@ -453,6 +465,37 @@ const RUN_EVENT_SCHEMAS = {
       subagent_id: text.optional(),
       question: text,
       options: z.array(text).optional(),
+    })
+    .strict(),
+  approval_requested: z
+    .object({
+      type: z.literal("approval_requested"),
+      ...actionFacts,
+      route: z.enum(["judge", "manual"]).optional(),
+    })
+    .strict(),
+  approval_resolved: z
+    .object({
+      type: z.literal("approval_resolved"),
+      ...actionFacts,
+      route: z.enum(["judge", "manual"]).optional(),
+      outcome: z.enum(["approved", "declined", "cancelled", "invalidated", "unavailable"]),
+    })
+    .strict(),
+  execution_policy_result: z
+    .object({
+      type: z.literal("execution_policy_result"),
+      ...actionFacts,
+      decision: z.enum(["allow", "prompt", "forbidden"]),
+      source: z.enum(["rule", "fallback", "heuristic", "host", "reviewer"]),
+    })
+    .strict(),
+  execution_attempt: z
+    .object({
+      type: z.literal("execution_attempt"),
+      ...actionFacts,
+      phase: z.enum(["admitted", "started", "settled", "uncertain"]),
+      backend: z.enum(["host", "bubblewrap", "seatbelt"]).optional(),
     })
     .strict(),
   elicitation_resolved: z

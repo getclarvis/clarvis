@@ -82,11 +82,13 @@ function fakeClient(): {
   client: RunHostDeps["client"];
   runs: FakeRun[];
   steerImpl: { fn: () => Promise<{ status: string }> };
+  steerCalls: Array<Parameters<RunHostDeps["client"]["steer"]>[0]>;
   compactCalls: { executionId: string; request?: string }[];
   compactImpl: { fn: RunHostDeps["client"]["compact"] };
   getRunImpl: { fn: (executionId: string) => Promise<RunDetail | null> };
 } {
   const runs: FakeRun[] = [];
+  const steerCalls: Array<Parameters<RunHostDeps["client"]["steer"]>[0]> = [];
   const compactCalls: { executionId: string; request?: string }[] = [];
   const compactImpl: { fn: RunHostDeps["client"]["compact"] } = {
     fn: (input) => Promise.resolve({ status: "queued", execution_id: input.executionId }),
@@ -128,7 +130,10 @@ function fakeClient(): {
   };
   const client: RunHostDeps["client"] = {
     startRun: (input) => start(input),
-    steer: () => steerImpl.fn(),
+    steer: (input) => {
+      steerCalls.push(input);
+      return steerImpl.fn();
+    },
     compact: (input) => {
       compactCalls.push(input);
       return compactImpl.fn(input);
@@ -136,7 +141,7 @@ function fakeClient(): {
     getRun: (executionId) => getRunImpl.fn(executionId),
     files: fakeWorkspaceFiles(),
   };
-  return { client, runs, steerImpl, compactCalls, compactImpl, getRunImpl };
+  return { client, runs, steerImpl, steerCalls, compactCalls, compactImpl, getRunImpl };
 }
 
 function completed(executionId: string): RunResult {
@@ -1337,6 +1342,109 @@ test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles
   runs[1]!.resolve(completed(runs[1]!.handle.executionId));
   await second;
   dispose();
+});
+
+test("a live judge denial exposes its action and queues only a scoped new attempt", async () => {
+  const fake = fakeClient();
+  fake.steerImpl.fn = async () => ({ status: "steered" });
+  const { host, store } = mount({ client: fake.client });
+  const turn = host.submitTurn("work on the task");
+  await flush();
+  const executionId = fake.runs[0]!.handle.executionId;
+  host.onEvent(ev({ type: "run_started", at: 0 }), "live", executionId);
+  host.onEvent(
+    ev({
+      type: "approval_resolved",
+      at: 2,
+      owner: "test-owner",
+      execution_id: executionId,
+      actor: "lead",
+      call_id: "call-1",
+      attempt: 1,
+      tool: "shell",
+      reason: "judge_denied: target unclear",
+      requested_mode: "sandbox",
+      effective_mode: "sandbox",
+      outcome: "declined",
+    }),
+    "live",
+    executionId,
+  );
+  expect(host.deniedAction()).toBeNull();
+  host.onEvent(
+    ev({
+      type: "tool_call",
+      agent: "lead",
+      call_id: "call-1",
+      at: 3,
+      server: "shell",
+      tool: "",
+      arguments: { command: "rm cache.tmp" },
+      ok: false,
+      error: "Action denied: judge_denied: target unclear",
+    }),
+    "live",
+    executionId,
+  );
+  expect(host.deniedAction()).toMatchObject({
+    tool: "shell",
+    arguments: { command: "rm cache.tmp" },
+    reason: "target unclear",
+  });
+  expect(
+    store.nodes.some(
+      (node) =>
+        node.kind === "annotation" && node.text.includes("Judge denied shell: target unclear"),
+    ),
+  ).toBe(true);
+  host.onEvent(
+    ev({
+      type: "approval_resolved",
+      at: 4,
+      owner: "test-owner",
+      execution_id: executionId,
+      actor: "lead",
+      call_id: "call-2",
+      attempt: 1,
+      tool: "shell",
+      reason: "judge_denied: another target",
+      requested_mode: "sandbox",
+      effective_mode: "sandbox",
+      outcome: "declined",
+    }),
+    "live",
+    executionId,
+  );
+  host.onEvent(
+    ev({
+      type: "tool_call",
+      agent: "lead",
+      call_id: "call-2",
+      at: 5,
+      server: "shell",
+      tool: "shell",
+      arguments: { command: "rm other.tmp" },
+      ok: false,
+      error: "Action denied: judge_denied: another target",
+    }),
+    "live",
+    executionId,
+  );
+  expect(host.deniedActions()).toHaveLength(2);
+  expect(await host.authorizeDeniedAction({ callId: "call-1", attempt: 1 })).toBe(true);
+  expect(fake.steerCalls).toEqual([
+    {
+      executionId,
+      message: expect.any(String),
+      authorizedDenial: { call_id: "call-1", attempt: 1 },
+    },
+  ]);
+  expect(host.deniedAction()?.callId).toBe("call-2");
+  expect(await host.authorizeDeniedAction()).toBe(true);
+  expect(host.deniedActions()).toHaveLength(0);
+  expect(await host.authorizeDeniedAction()).toBe(false);
+  fake.runs[0]!.resolve(completed(executionId));
+  await turn;
 });
 
 test("a late event from another execution cannot enter the current run's sink", async () => {

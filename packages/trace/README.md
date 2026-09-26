@@ -1,6 +1,10 @@
 # @clarvis/trace
 
 Records and persists a Clarvis run's trace.
+Approval requests, policy decisions and execution attempts retain typed action
+identity and requested/effective mode independently of bounded tool output.
+Production: `mapEntry` in `src/trace-mapper.ts`; Test:
+`packages/kernel/tests/integration/approval-policy.test.ts`.
 
 Successful `run_ended` events preserve the accepted `final` or `checkpoint` disposition. A missing
 disposition retains ordinary final semantics. The mapper does not attach it to failed or cancelled

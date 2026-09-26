@@ -151,8 +151,8 @@ Test: `packages/code/tests/unit/runtime-package-discovery.test.ts` and
 archive, verifies the manifest, required notices/licenses, and zero-map rule, runs `--version` and
 `--help`, and on POSIX observes the complete-app marker under a real PTY using the packaged runtime.
 It also extracts the archive under a separate test-owned installation root, restores verified
-permissions, and requires `write_file` and `shell` to report the native Sandbox backend while a
-private home file remains unreadable. A Host fallback fails the smoke.
+permissions, and requires `write_file` and `shell` to report the native Sandbox backend while an
+explicitly denied synthetic home file remains unreadable. Host execution fails the smoke.
 Its elapsed value is explicitly the outer PTY/polling duration, not a first-paint benchmark. Test:
 `packages/code/tooling/release/smoke.ts` and
 `packages/code/tooling/artifact/pty.ts`; the native probe is

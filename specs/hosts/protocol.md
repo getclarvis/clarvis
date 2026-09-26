@@ -4,8 +4,32 @@ The config service exposes `getIsolationStatus` over the ordinary typed
 operation catalog; it returns the global preference, platform backend and
 observed availability without exposing environment or secret paths. `tool_call`
 may carry structured execution data, validated by the strict run-event codec.
-The effective mode is per operation because Host fallback does not change the
-saved Sandbox preference. Production: `ConfigService` and `IsolationStatus` in
+The protocol also carries `approval_requested`, `approval_resolved`,
+`execution_policy_result` and `execution_attempt` with action identity, reason
+and requested/effective mode. `execution_approval` is a typed elicitation kind;
+an accepted response is still checked against the current host authority before
+launch. Approval events optionally name `judge` or `manual` as their route so a
+client can show review progress without inferring it from a reason string. Production: `RunEvent` and `ElicitationRequest` in
+`packages/protocol/src/runs.ts`, `RUN_EVENT_SCHEMAS` in
+`packages/kernel/src/transport/run-event-codec.ts`. Test:
+`packages/kernel/tests/integration/approval-policy.test.ts` and
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`SettingsData.judge` and `approval_mode` carry the global auto/manual preference
+without a provider secret or endpoint in the request. A judge denial and a
+technical review failure remain distinct reasons in `approval_resolved`; neither
+authorizes an action. Production: `SettingsData` in
+`packages/protocol/src/config.ts` and `createApprovalService` in
+`packages/kernel/src/execution/approval-service.ts`. Test:
+`packages/kernel/tests/integration/judge-approval.test.ts`.
+`Message.authorized_denial` identifies a prior denial by call and attempt in
+the current owner/run. It is accepted as operator steering evidence and cannot
+directly execute the old tool call. Production: `Message` in
+`packages/protocol/src/runs.ts`, `createIsolationService` in
+`packages/kernel/src/execution/isolation-service.ts`. Test:
+`run bindings retain global preference and separate owners` in
+`packages/kernel/tests/unit/isolation-service.test.ts`.
+The effective mode is per operation because an approved permission delta can
+select a scoped profile without changing the saved preference. Production: `ConfigService` and `IsolationStatus` in
 `packages/protocol/src/config.ts`, `RunEvent` in
 `packages/protocol/src/runs.ts`, `OPERATIONS.config` in
 `packages/kernel/src/transport/operations.ts`, and `RUN_EVENT_SCHEMAS` in
@@ -259,6 +283,9 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 | Method | Signature | File |
 | --- | --- | --- |
 | `getSettings` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
+| `getExecutionRules` | `() => Promise<ExecutionRulesView>`; host derives workspace trust | `packages/protocol/src/config.ts` |
+| `checkExecutionRule` | `(command, cwd) => Promise<ExecutionRuleCheck>`; no execution or judge call | `packages/protocol/src/config.ts` |
+| `updateExecutionRules` | `(scope, document, expectedRevision) => Promise<ExecutionRulesView>`; authenticated CAS write | `packages/protocol/src/config.ts` |
 | `previewSettingsRepair` | `(scope: Scope) => Promise<SettingsRepairPlan \| null>` | `packages/protocol/src/config.ts` |
 | `repairSettings` | `(scope: Scope, expectedRevision: string) => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
 | `approveWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
@@ -573,18 +600,16 @@ distinguishing fields:
 | `compaction_skipped` | `reason` (5-member union) | `RunEvent` |
 | `elicitation_requested` | `agent?`, `subagent_id?`, `question`, `options?` | `RunEvent` |
 | `elicitation_resolved` | `agent?`, `subagent_id?`, `question`, `outcome`, `answer?`, `options?` | `RunEvent` |
+| `approval_requested` / `approval_resolved` | action identity, requested/effective mode, reason; resolution outcome | `RunEvent` |
+| `execution_policy_result` / `execution_attempt` | action identity, decision/source or attempt phase/backend | `RunEvent` |
 | `steering_applied` | `message` | `RunEvent` |
 | `memory_ingest` | `detail: MemoryIngestDetail` | `RunEvent` |
 | `capability_event` | `capability`, `kind`, `projection`, `detail?`, `truncated` | `RunEvent` |
 | `events_dropped` | `dropped` | `RunEvent` |
 | `mcp_degraded` | `servers: { name; reason }[]` | `RunEvent` |
 
-Counted directly from the union source, the union has exactly **38 top-level alternation arms**. Of
-those, 37 each declare exactly one `type`
-string literal, and one arm declares two — `type: "delegation_completed" | "delegation_failed"`
-(`packages/protocol/src/runs.ts`) covers both `delegation_completed` and `delegation_failed` in a single object shape,
-since the two share every other field. 37 + 2 = **39 distinct `type` values**, which is exactly the
-set the table above enumerates.
+The `RunEvent` union in `packages/protocol/src/runs.ts` is the authoritative
+catalog. The delegation completed/failed pair shares one object shape.
 
 Durability is not inferable from the union alone. The kernel's exhaustive `RUN_EVENT_POLICY`, checked
 with `satisfies Record<RunEvent["type"], RunEventPolicy>`, currently marks 15 values live-only:
@@ -724,7 +749,7 @@ serializing a definition, settings, or secrets (`packages/protocol/src/extension
 | `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }` | `ElicitationResponse` |
 
 `ElicitationRequest.kind` includes `"ask_user"` (a free question), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
-(an installed workflow preflight) — plus a deliberately open `(string & {})` escape, "so a kernel may
+(an installed workflow preflight) and `"execution_approval"` (a host action decision) — plus a deliberately open `(string & {})` escape, "so a kernel may
 add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`).
 This is structurally the same open/closed pattern already noted for `capability_event` in §5
 invariant 4, applied to elicitation instead of to the `RunEvent` union itself.

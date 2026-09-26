@@ -30,6 +30,9 @@ export interface AgentToolsetOptions {
   executionPort?: AgentToolsOptions["executionPort"];
   executionPolicy?: AgentToolsOptions["executionPolicy"];
   sandboxBackend?: AgentToolsOptions["sandboxBackend"];
+  actionAuthorization?: AgentToolsOptions["actionAuthorization"];
+  actionIdentity?: AgentToolsOptions["actionIdentity"];
+  selectAuthorizedExecution?: AgentToolsOptions["selectAuthorizedExecution"];
   /** Credential env-var names withheld from every spawned command. */
   secretEnvNames?: readonly string[];
   /**
@@ -88,6 +91,8 @@ export interface AgentToolset {
     onOutput?: (chunk: string) => void,
     onExecutionStarted?: () => void,
     runSignal?: AbortSignal,
+    callId?: string,
+    actor?: string,
   ) => Promise<AgentToolResult>;
 }
 
@@ -173,6 +178,13 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
       ...(opts.executionPort !== undefined ? { executionPort: opts.executionPort } : {}),
       ...(opts.executionPolicy !== undefined ? { executionPolicy: opts.executionPolicy } : {}),
       ...(opts.sandboxBackend !== undefined ? { sandboxBackend: opts.sandboxBackend } : {}),
+      ...(opts.actionAuthorization !== undefined
+        ? { actionAuthorization: opts.actionAuthorization }
+        : {}),
+      ...(opts.actionIdentity !== undefined ? { actionIdentity: opts.actionIdentity } : {}),
+      ...(opts.selectAuthorizedExecution !== undefined
+        ? { selectAuthorizedExecution: opts.selectAuthorizedExecution }
+        : {}),
       ...(opts.secretEnvNames !== undefined ? { secretEnvNames: opts.secretEnvNames } : {}),
       ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     });
@@ -182,8 +194,10 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
         const session = config.sessionManager.getSession(sessionId, config.sessionAgent);
         return { stop: () => session.stop(), completed: session.completed };
       },
-      dispatch: (name, args, signal, onOutput, onExecutionStarted) =>
+      dispatch: (name, args, signal, onOutput, onExecutionStarted, _runSignal, callId, actor) =>
         pkgDispatch(name, args, config, signal, {
+          ...(callId ? { actionCallId: callId } : {}),
+          ...(actor ? { actionActor: actor } : {}),
           ...(onOutput ? { onOutput } : {}),
           ...(onExecutionStarted ? { onExecutionStarted } : {}),
         }).then((r) => {
@@ -275,7 +289,7 @@ export function createAgentToolsetWithAdapter(
     defs,
     names,
     ...(resolved.continuation === undefined ? {} : { continuation: resolved.continuation }),
-    dispatch: (name, args, signal, onOutput, onExecutionStarted, runSignal) => {
+    dispatch: (name, args, signal, onOutput, onExecutionStarted, runSignal, callId, actor) => {
       if (!names.has(name)) {
         return Promise.resolve({
           isError: true,
@@ -297,7 +311,7 @@ export function createAgentToolsetWithAdapter(
               if (active && !signal?.aborted && !runSignal?.aborted) onExecutionStarted();
             };
       return raceAbort(
-        resolved.dispatch(name, args, signal, output, started),
+        resolved.dispatch(name, args, signal, output, started, runSignal, callId, actor),
         signal,
         runSignal,
       ).finally(() => {

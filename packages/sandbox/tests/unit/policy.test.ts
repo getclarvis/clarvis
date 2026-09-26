@@ -6,7 +6,7 @@ import { globalRoot as resolveGlobalRoot } from "@clarvis/paths";
 import { createExecutionPolicy, InvalidExecutionPolicy } from "../../src/index.ts";
 
 describe("execution policy", () => {
-  test("defaults to Host with the documented preferences", () => {
+  test("constructs broad-read policy without implicit home denies", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-policy-"));
     try {
       const policy = createExecutionPolicy({
@@ -21,7 +21,9 @@ describe("execution policy", () => {
       expect(policy.globalAgentsRoot).toBe(join(root, ".agents"));
       expect(policy.workflowsRoot).toBe(join(root, ".clarvis", "workflows"));
       expect(policy.settingsFile).toBe(join(root, ".clarvis", "settings.json"));
-      expect(policy.denies).toContain(join(root, ".ssh"));
+      expect(policy.denies).toEqual([]);
+      expect(policy.readOnlyPaths).toContain(join(root, ".git"));
+      expect(policy.readOnlyPaths).toContain(join(root, ".clarvis"));
       expect(Object.isFrozen(policy)).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -46,25 +48,6 @@ describe("execution policy", () => {
           workspaceRoot: root,
           homeRoot: root,
           denies: ["relative"],
-        }),
-      ).toThrow(InvalidExecutionPolicy);
-      mkdirSync(join(root, ".ssh"));
-      symlinkSync(join(root, ".ssh"), join(root, "global-alias"));
-      expect(() =>
-        createExecutionPolicy({
-          id: "bad",
-          workspaceRoot: root,
-          homeRoot: root,
-          globalRoot: join(root, "global-alias"),
-        }),
-      ).toThrow(InvalidExecutionPolicy);
-      mkdirSync(join(root, ".agents"));
-      expect(() =>
-        createExecutionPolicy({
-          id: "bad",
-          workspaceRoot: root,
-          homeRoot: root,
-          globalRoot: join(root, ".agents", "global"),
         }),
       ).toThrow(InvalidExecutionPolicy);
       expect(() =>
@@ -105,11 +88,9 @@ describe("execution policy", () => {
       expect(() =>
         createExecutionPolicy({
           id: "bad",
-          mode: "sandbox",
           workspaceRoot: separateWorkspace,
           homeRoot: root,
-          globalRoot: join(root, ".clarvis"),
-          temporaryWriteRoots: [join(root, ".clarvis")],
+          writableMetadataRoots: [join(root, ".clarvis")],
         }),
       ).toThrow(InvalidExecutionPolicy);
     } finally {

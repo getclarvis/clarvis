@@ -47,6 +47,8 @@ describe("globalPaths", () => {
 
   test("the operator's own files sit at the root, as they do in a workspace", () => {
     expect(p.settingsFile).toBe(join(GLOBAL, "settings.json"));
+    expect(p.executionRulesDir).toBe(join(GLOBAL, "rules"));
+    expect(p.executionRulesFile).toBe(join(GLOBAL, "rules", "default.json"));
     expect(p.agentsDir).toBe(join(GLOBAL, "agents"));
     expect(p.keysFile).toBe(join(GLOBAL, "keys.json"));
     expect(p.subscriptionsFile).toBe(join(GLOBAL, "subscriptions.json"));
@@ -98,6 +100,11 @@ describe("globalPaths", () => {
 
 describe("workspacePaths", () => {
   const p = workspacePaths(WS);
+
+  test("places authored execution rules under the workspace configuration root", () => {
+    expect(p.executionRulesDir).toBe(join(p.clarvisDir, "rules"));
+    expect(p.executionRulesFile).toBe(join(p.clarvisDir, "rules", "default.json"));
+  });
 
   // `workspacePaths` resolves its root, so every derived path hangs off
   // `p.root` and not off the literal `WS`.

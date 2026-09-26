@@ -339,6 +339,15 @@ describe("configuration documents against product loaders", () => {
         agent: "coder",
         messages: [{ role: "user", content: "Author the review-project workflow and its brief" }],
       });
+      configure.onElicit((request) => {
+        if (request.kind === "execution_approval") {
+          void configure.respond({
+            id: request.id,
+            action: "accept",
+            content: { approved: "yes" },
+          });
+        }
+      });
       expect(await configure.done).toMatchObject({ status: "completed" });
       expect(llm.calls).toHaveLength(3);
       expect(await kernel.workflows.list()).toMatchObject({ items: [] });

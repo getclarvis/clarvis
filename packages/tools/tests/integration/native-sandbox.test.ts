@@ -136,7 +136,7 @@ test.skipIf(
     });
     expect(Buffer.byteLength(JSON.stringify(largeEdit.meta), "utf8")).toBeLessThanOrEqual(1_024);
     for (const path of privatePaths) {
-      expect((await tools.callTool("read_file", { path })).isError).toBe(true);
+      expect((await tools.callTool("read_file", { path })).isError).toBe(false);
       expect((await tools.callTool("write_file", { path, content: "breach" })).isError).toBe(true);
       expect(readFileSync(path, "utf8")).toBe("private");
     }
@@ -156,12 +156,11 @@ test.skipIf(
       command: 'printf direct-sandbox-write > "$CLARVIS_HOME/settings.json"',
     });
     expect(directSettings.meta?.execution_mode).toBe("sandbox");
-    expect(
-      JSON.parse(
-        directSettings.content[0]?.type === "text" ? directSettings.content[0].text : "{}",
-      ) as { exit_code?: number },
-    ).toMatchObject({ exit_code: 0 });
-    expect(readFileSync(settings, "utf8")).toBe("direct-sandbox-write");
+    const directExit = JSON.parse(
+      directSettings.content[0]?.type === "text" ? directSettings.content[0].text : "{}",
+    ) as { exit_code?: number };
+    expect(directExit.exit_code).not.toBe(0);
+    expect(readFileSync(settings, "utf8")).toBe("before");
     expect((await tools.callTool("read_file", { path: settings })).meta?.execution_mode).toBe(
       "sandbox",
     );
@@ -229,7 +228,7 @@ test.skipIf(
       temporaryRoots: [scratch],
       executionPolicy: policy,
       sandboxBackend: backend,
-      executionPort: new CoordinatedToolExecutor(crashExecutor, true),
+      executionPort: new CoordinatedToolExecutor(crashExecutor),
     });
     try {
       expect((await crashTools.callTool("read_file", { path: settings })).isError).toBe(false);
@@ -316,45 +315,35 @@ test.skipIf(
       const workflowFile = join(workflows, "flow.txt");
       expect(
         (await readonlyTools.callTool("write_file", { path: agentFile, content: "agent" })).isError,
-      ).toBe(false);
-      expect(readFileSync(agentFile, "utf8")).toBe("agent");
+      ).toBe(true);
+      expect(existsSync(agentFile)).toBe(false);
       expect(
         (await readonlyTools.callTool("write_file", { path: workflowFile, content: "flow" }))
           .isError,
-      ).toBe(false);
-      expect(readFileSync(workflowFile, "utf8")).toBe("flow");
+      ).toBe(true);
+      expect(existsSync(workflowFile)).toBe(false);
       expect((await readonlyTools.callTool("shell", { command: "pwd" })).isError).toBe(false);
     } finally {
       await readonlyTools.close();
     }
-    const recoverableReadonly = createAgentTools({
+    const stillDenied = createAgentTools({
       workspaceRoot: workspace,
       temporaryRoots: [scratch],
       executionPolicy: readonlyPolicy,
       sandboxBackend: backend,
       executionPort: new CoordinatedToolExecutor(
         new SandboxToolExecutor(readonlyPolicy, backend, scratch),
-        true,
       ),
     });
     try {
-      const recovered = await recoverableReadonly.callTool("write_file", {
+      const denied = await stillDenied.callTool("write_file", {
         path: "recovered.txt",
-        content: "host-authorized",
+        content: "x",
       });
-      if (recovered.isError) {
-        throw new Error(
-          `Read-only workspace recovery failed: ${JSON.stringify(recovered.content)}`,
-        );
-      }
-      expect(recovered.meta).toMatchObject({
-        requested_mode: "sandbox",
-        effective_mode: "host",
-        fallback_reason: "readonly_workspace",
-      });
-      expect(readFileSync(join(workspace, "recovered.txt"), "utf8")).toBe("host-authorized");
+      expect(denied.isError).toBe(true);
+      expect(existsSync(join(workspace, "recovered.txt"))).toBe(false);
     } finally {
-      await recoverableReadonly.close();
+      await stillDenied.close();
     }
     if (process.platform === "linux") {
       const deniedFile = join(workspace, "explicit-deny.txt");
@@ -387,7 +376,6 @@ test.skipIf(
     }
     const settingsPort = new CoordinatedToolExecutor(
       new SandboxToolExecutor(policy, backend, scratch),
-      true,
     );
     const settingsTools = createAgentTools({
       workspaceRoot: workspace,
@@ -401,25 +389,15 @@ test.skipIf(
         path: settings,
         content: "after",
       });
-      if (replaced.isError) {
-        throw new Error(
-          `Settings replacement recovery failed: ${JSON.stringify(replaced.content)}`,
-        );
-      }
-      expect(replaced.meta?.execution_mode).toBe("host");
-      expect(replaced.meta?.sandbox_fallback).toBe(true);
-      expect(readFileSync(settings, "utf8")).toBe("after");
+      expect(replaced.isError).toBe(true);
+      expect(readFileSync(settings, "utf8")).toBe("before");
       rmSync(settings);
       const created = await settingsTools.callTool("write_file", {
         path: settings,
         content: "created",
       });
-      if (created.isError) {
-        throw new Error(`Settings creation recovery failed: ${JSON.stringify(created.content)}`);
-      }
-      expect(created.meta?.execution_mode).toBe("host");
-      expect(created.meta?.sandbox_fallback).toBe(true);
-      expect(readFileSync(settings, "utf8")).toBe("created");
+      expect(created.isError).toBe(true);
+      expect(existsSync(settings)).toBe(false);
     } finally {
       await settingsTools.close();
     }

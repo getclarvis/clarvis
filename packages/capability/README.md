@@ -1,6 +1,17 @@
 # @clarvis/capability
 
 Neutral `RunRequest` carries capability parameters through the generic request view.
+`ActionAuthorizationPort` carries a host-owned action decision with actor, call,
+attempt, profile and revision identity across the loop boundary. Approval,
+policy and execution-attempt trace kinds are neutral; the Kernel owns their
+decisions. Production: `ActionAuthorizationPort` in
+`src/action-authorization.ts` and `TraceKindDetailMap` in `src/trace-kinds.ts`.
+Test: `packages/kernel/tests/integration/approval-policy.test.ts`.
+The port also exposes a generic host stop reason after repeated denied reviews;
+the loop does not depend on the judge package. Production: `stopReason` in
+`src/action-authorization.ts` and `runAgentLoop` in
+`packages/loop/src/runtime/loop/loop.ts`. Test:
+`packages/kernel/tests/integration/judge-approval.test.ts`.
 
 The **capability contract**: what a cross-cutting loop feature is written against, and the machinery
 that composes a list of them. A dependency-free leaf of the graph — its only external dependency is

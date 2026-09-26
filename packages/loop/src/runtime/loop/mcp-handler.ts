@@ -1,3 +1,4 @@
+import type { ActionAuthorizationPort } from "@clarvis/capability";
 import type { HandlerBase } from "@clarvis/capability";
 import type { NamespacedRegistry } from "@clarvis/capability";
 import type { ConvergenceGuards } from "../guards/convergence-guards.ts";
@@ -28,10 +29,12 @@ export function buildMcpHandler(deps: {
   guards: ConvergenceGuards;
   progress: (r: { errText: string | null; productive: boolean }) => boolean;
   availableWireNames?: string[];
+  actionAuthorization?: ActionAuthorizationPort;
 }): ToolHandler {
   const { base } = deps;
   const wireNames = deps.availableWireNames ?? deps.registry.tools.map((t) => t.wireName);
   return {
+    authorizationHandled: true,
     matches: () => true,
     canonicalName: (call) => deps.registry.resolve(call.name)?.fullName,
     async handle(call, iteration): Promise<HandlerVerdict> {
@@ -48,6 +51,7 @@ export function buildMcpHandler(deps: {
           : {}),
         iteration,
         ...(base.signal ? { signal: base.signal } : {}),
+        ...(deps.actionAuthorization ? { actionAuthorization: deps.actionAuthorization } : {}),
       });
       const text =
         errText === null

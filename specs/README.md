@@ -93,7 +93,9 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`tools-read.md`](execution/tools-read.md) | The three observing tools (`read_file`, `read_image`, `list_dir`) and bounded reads | `tools` |
 | [`tools-mutation.md`](execution/tools-mutation.md) | The four file mutation tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
 | [`tools-shell-and-sessions.md`](execution/tools-shell-and-sessions.md) | Running commands with `shell` and `shell_session`, process trees, killing, bounded capture, and cursors | `tools` |
-| [`sandbox.md`](execution/sandbox.md) | Native launch policy, file worker, process backends and explicit Host recovery | `sandbox`, `tools` |
+| [`sandbox.md`](execution/sandbox.md) | Native launch policy, file worker, process backends and per-action permissions | `sandbox`, `tools`, `kernel` |
+| [`execpolicy.md`](execution/execpolicy.md) | Deterministic POSIX command rules, bounded analysis, approval classification and Kernel rule loading | `execpolicy`, `paths`, `kernel` |
+| [`judge.md`](execution/judge.md) | Semantic assessment of eligible execution approvals, inspection isolation and automatic routing | `judge`, `kernel`, `capability`, `tools`, `protocol`, `code` |
 | [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |
 | [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees with last-wins precedence; serving catalog, body and confined resource pages through `load_skill` and `read_skill_resource`; and routing named or description-matching skills into the run | `skills`, `kernel`, `loop` |
 

@@ -5,6 +5,14 @@ import { goalsSettingsSpec, type GoalsSettingsBlock } from "@clarvis/goal/settin
 import { plansSettingsSpec, type PlansSettingsBlock } from "@clarvis/plan/settings";
 import { workflowsSettingsSpec, type WorkflowsSettingsBlock } from "@clarvis/workflows";
 import { isolationSettingsSpec, type IsolationSettings } from "./isolation-settings.ts";
+import { executionRequirementsSpec, type ExecutionRequirements } from "./execution-requirements.ts";
+import {
+  approvalModeSettingsSpec,
+  approvalPolicySettingsSpec,
+  type ApprovalModeSetting,
+  type ApprovalPolicySetting,
+} from "./approval-settings.ts";
+import { judgeSettingsSpec, type JudgeSettings } from "./judge-settings.ts";
 
 /**
  * The capabilities this kernel hosts that declare their own `settings.json`
@@ -23,6 +31,10 @@ kernelCapabilityRegistry.register(plansSettingsSpec);
 kernelCapabilityRegistry.register(goalsSettingsSpec);
 kernelCapabilityRegistry.register(workflowsSettingsSpec);
 kernelCapabilityRegistry.register(isolationSettingsSpec);
+kernelCapabilityRegistry.register(executionRequirementsSpec);
+kernelCapabilityRegistry.register(approvalModeSettingsSpec);
+kernelCapabilityRegistry.register(approvalPolicySettingsSpec);
+kernelCapabilityRegistry.register(judgeSettingsSpec);
 
 /**
  * Compose the kernel's schema authority with host extensions for every owned
@@ -67,4 +79,8 @@ export type KernelSettingsFile = LoopSettingsFile & {
   goals?: GoalsSettingsBlock;
   workflows?: WorkflowsSettingsBlock;
   isolation?: IsolationSettings;
+  execution_requirements?: ExecutionRequirements;
+  approval_mode?: ApprovalModeSetting;
+  approval_policy?: ApprovalPolicySetting;
+  judge?: JudgeSettings;
 };

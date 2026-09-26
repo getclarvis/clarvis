@@ -337,14 +337,14 @@ The following commands and candidates (`packages/code/src/keys/interaction.ts`,
 | `app.suspend` | `ctrl+z` | (none) |
 | `focus.next` | `tab` | `overlay==none` |
 | `agent.picker` | `shift+tab` | `overlay==none` |
-| `review.picker` | `<leader>g` | `overlay==none` |
+| `approval.picker` | `<leader>a` | `overlay==none`; no active run |
 | `memory.picker` | `<leader>m` | `overlay==none` |
 | `isolation.picker` | `<leader>i` | `overlay==none`; no active run |
 | `activity.toggle` | `<leader>s` | `overlay==none` |
 | `tool.interruptFocused` | `<leader>t` | eligible focused shell |
 | `plan.open` | `<leader>p` | `overlay in (none, plan)` |
 | `workflow.current` | `<leader>w` | `overlay==none`; current workflow required |
-| `goal.toggle` | `<leader>o` | `overlay==none` |
+| `goal.toggle` | `<leader>g` | `overlay==none` |
 | `transcript.diff` | `<leader>d` | `overlay==none` |
 | `transcript.toggleCollapse` | `<leader>k` | `overlay==none` |
 | `transcript.focusPrev` | `<leader>up` | `overlay==none` |
@@ -397,7 +397,8 @@ For an `enhanced` environment with all modifiers `"supported"` (no manual overri
 {
   "run.cancel": "ctrl+c",
   "app.escape": "escape",
-  "review.picker": "<leader>g",
+  "approval.picker": "<leader>a",
+  "goal.toggle": "<leader>g",
   "plan.open": "<leader>p"
 }
 ```
@@ -1062,7 +1063,7 @@ Tests: `packages/code/tests/integration/interaction.test.ts`; full-shell paths a
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx`.
 
 **INV-D13.** Application actions use Ctrl+X consistently across client platforms and profiles:
-M Memory, P Plan, O Goal, W Workflow, S Sidebar, K block
+M Memory, A Approval, I Isolation, P Plan, G Goal, W Workflow, S Sidebar, K block
 expansion, E expanded editor, and Up/Down block navigation. These are sequential keypresses,
 not simultaneous chords. The shared OpenTUI timed-leader addon expires a pending prefix after
 two seconds. Keyboard manual overrides remain supported.

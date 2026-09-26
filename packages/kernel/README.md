@@ -12,10 +12,10 @@ adapter is Git and never writes to the repository.
 
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
-For Sandbox runs, the file kernel snapshots global isolation settings and
+For runs, the file kernel snapshots global isolation, approval and execution requirements and
 identifies its Bun executable directory, source tool worker and product as
 protected installation roots. The native backend preserves host filesystem reads
-and applies write grants and private-path denies; the kernel does not discover
+and applies write grants and explicit read denies; the kernel does not discover
 or register the operator's tools. Internal Goal and Memory
 runs bind the same owner-scoped policy before entering the loop and release it
 after execution.
@@ -35,7 +35,7 @@ public symbol has one thematic owner; the root is not a compatibility barrel for
 | `@clarvis/kernel/policy`      | sanitization, tool identity, event mapping/policy/spans and ingest state                                                      |
 | `@clarvis/kernel/local`       | shell/process/executable helpers and local filesystem/git adapters                                                            |
 | `@clarvis/kernel/logger`      | logger constructor and types without loading file-kernel bootstrap                                                            |
-| `@clarvis/kernel/paths`       | curated path vocabulary for application bootstrap and persistence without a direct foundation dependency                        |
+| `@clarvis/kernel/paths`       | curated path vocabulary for application bootstrap and persistence without a direct foundation dependency                      |
 | `@clarvis/kernel/system-docs` | verified publication of the product-owned Markdown skill for installers and source launchers                                  |
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
@@ -774,15 +774,55 @@ already-finished spinner.
 
 ## Control plane and tool execution
 
+`src/execution/execpolicy-loader.ts` loads lexical JSON rule files from global configuration and
+from a workspace only when its caller has admitted workspace trust. It retains host requirements
+on invalid files or I/O failure and returns a classified warning. Invalid rules fall back to host
+requirements; I/O failure stops configuration loading. `ConfigService.getExecutionRules` and
+`checkExecutionRule` show the applied policy without running a command or calling the judge.
+`updateExecutionRules` replaces a validated document under a lease and exact digest comparison.
+Workspace trust is derived by the Kernel, and a stale edit returns a conflict. The deterministic
+library is specified in [the execution policy spec](../../specs/execution/execpolicy.md).
+
 The kernel provides services for configuration, plugins, secrets, models, provider
 authentication, files, memory, plans, workflows, skills, sessions, tasks, storage,
 Extension Profiles and runs. These are control-plane APIs rather than model-callable
 MCP tools. The tools capability executes shell and file calls under the global
-`isolation` preference, defaulting to Host. Sandbox applies only to built-in
+`isolation` preference, defaulting to Sandbox with disabled network. Sandbox applies only to built-in
 tools and descendants. The global block keeps Sandbox workspace/network
 preferences when Host is selected; a workspace block is ignored without a
 trust prompt. `config.getIsolationStatus` reports the configured preference,
 backend and observed availability; each tool result reports its actual mode.
+`approval_mode` selects `manual` (default) or `auto`; `approval_policy` defaults
+to `on-request`. Selecting auto through `ConfigService.updateSettings` requires a
+configured judge/default/agent model and matching provider before the single settings write.
+The run-scoped service evaluates command rules and permission
+requests against the post-hook action, then routes eligible requests to Kernel
+elicitation or `@clarvis/judge`. The global `judge` block can select a catalog
+model, guidance, deadline, attempt cap and context-overflow fallback. Steering
+invalidates a pending decision and fresh review precedes launch. Backend failure does
+not grant Host access. Production: `createApprovalService` in
+`packages/kernel/src/execution/approval-service.ts` and `createIsolationService`
+in `packages/kernel/src/execution/isolation-service.ts`, `createRunJudge` in
+`packages/kernel/src/execution/judge-service.ts`. Test:
+`packages/kernel/tests/integration/approval-policy.test.ts` and
+`packages/kernel/tests/integration/judge-approval.test.ts`.
+Manual review shows the action, cwd, effects and requested permissions. For a complete literal
+single-segment command it can offer the displayed argv prefix for global persistence. The Kernel
+checks the current rules before a digest-checked write; write failure leaves a valid one-time
+approval intact and reports that remembering failed. Production: `createApprovalService` in
+`packages/kernel/src/execution/approval-service.ts`, `createIsolationService` in
+`packages/kernel/src/execution/isolation-service.ts`, and `createConfigService` in
+`packages/kernel/src/config/config-service.ts`. Test:
+`packages/kernel/tests/integration/approval-policy.test.ts` and
+`packages/kernel/tests/integration/execution-rules-config.test.ts`.
+A valid judge denial is available for an explicit operator authorization while
+the run is active. `IsolationService.steer` binds that evidence to the denied
+call and only supplies it to one materially identical new attempt; it does not
+launch the old call or override deterministic restrictions.
+Production: `createIsolationService` in
+`packages/kernel/src/execution/isolation-service.ts`. Test:
+`packages/kernel/tests/unit/isolation-service.test.ts` and
+`packages/kernel/tests/integration/judge-approval.test.ts`.
 Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and
 `dispatch` in `packages/tools/src/core.ts`. Test:
 `packages/kernel/tests/integration/file-kernel.test.ts` and

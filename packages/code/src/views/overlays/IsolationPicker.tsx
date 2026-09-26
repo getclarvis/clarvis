@@ -11,12 +11,12 @@ import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
 import { tokens } from "../../theme/tokens.ts";
 import { ListPicker } from "./ListPicker.tsx";
 
-type Pane = "mode" | "workspace" | "network";
+type Pane = "mode" | "workspace" | "network" | "host-confirm";
 type Choice<T extends string> = { value: T; label: string; detail: string };
 
 const MODES: Choice<IsolationChoice["mode"]>[] = [
-  { value: "host", label: "Host", detail: "Run tools with host access" },
-  { value: "sandbox", label: "Sandbox", detail: "Limit file access; recover on host when needed" },
+  { value: "host", label: "Host", detail: "Advanced: built-in tools run with host access" },
+  { value: "sandbox", label: "Sandbox", detail: "Limit built-in tool file and network access" },
 ];
 const WORKSPACE: Choice<IsolationChoice["workspace"]>[] = [
   {
@@ -106,9 +106,13 @@ export function IsolationPicker(props: {
           confirmLabel="use"
           size="lg"
           responsiveNavigation
-          onConfirm={(choice) =>
-            void save({ mode: choice.value }, `Isolation: ${choice.label}`, true)
-          }
+          onConfirm={(choice) => {
+            if (choice.value === "host" && mode().mode !== "host") setPane("host-confirm");
+            else
+              void save({ mode: choice.value }, `Isolation: ${choice.label}`, true).catch(() =>
+                props.notify("Could not save global isolation", "error"),
+              );
+          }}
           onClose={props.onClose}
           onSelect={(choice) => {
             setSandboxSelected(choice?.value === "sandbox");
@@ -146,8 +150,8 @@ export function IsolationPicker(props: {
                 </box>
                 <text fg={tokens.muted}>
                   {status()?.availability === "unavailable"
-                    ? "Unavailable — host fallback"
-                    : `Backend: ${status()?.backend ?? "checking"}; host fallback is automatic`}
+                    ? "Sandbox unavailable — execution will fail until restored"
+                    : `Backend: ${status()?.backend ?? "checking"}`}
                 </text>
               </box>
             ) : (
@@ -157,6 +161,44 @@ export function IsolationPicker(props: {
               </box>
             )
           }
+        />
+      </Show>
+      <Show when={pane() === "host-confirm"}>
+        <ListPicker
+          keymap={props.interaction.keymap}
+          active={() => props.active() && pane() === "host-confirm"}
+          locked={saving}
+          title="Full host access"
+          items={() => [
+            { value: "cancel", label: "Keep sandbox", detail: "Return to isolation choices" },
+            {
+              value: "confirm",
+              label: "Enable host",
+              detail: "Built-in tools can access host files and network",
+            },
+          ]}
+          initialIndex={0}
+          idPrefix="isolation-host-confirm-"
+          confirmLabel="select"
+          size="lg"
+          onConfirm={(choice) => {
+            if (choice.value === "confirm")
+              void save({ mode: "host" }, "Isolation: Host", true).catch(() =>
+                props.notify("Could not save global isolation", "error"),
+              );
+            else setPane("mode");
+          }}
+          onClose={() => setPane("mode")}
+          cells={(choice, selected) => [
+            { width: 17, fg: selected() ? tokens.fg : tokens.muted, text: choice.label },
+            { grow: true, marginLeft: 1, fg: tokens.muted, text: choice.detail },
+          ]}
+          preview={() => (
+            <text fg={tokens.muted}>
+              Host access removes the sandbox for built-in tools. Forbidden execution rules still
+              apply.
+            </text>
+          )}
         />
       </Show>
       <Show when={pane() === "workspace"}>
@@ -177,7 +219,7 @@ export function IsolationPicker(props: {
           cells={(choice, selected) => radio(choice, selected, mode().workspace)}
           preview={() => (
             <text fg={tokens.muted}>
-              Temporary roots and global agent/workflow/settings exceptions stay writable.
+              Temporary roots stay writable; protected metadata stays read only.
             </text>
           )}
         />

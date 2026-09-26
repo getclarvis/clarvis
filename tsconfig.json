@@ -10,6 +10,8 @@
     { "path": "packages/trace/tsconfig.build.json" },
     { "path": "packages/mcp-client/tsconfig.build.json" },
     { "path": "packages/sandbox/tsconfig.build.json" },
+    { "path": "packages/execpolicy/tsconfig.build.json" },
+    { "path": "packages/judge/tsconfig.build.json" },
     { "path": "packages/tools/tsconfig.build.json" },
     { "path": "packages/hooks/tsconfig.build.json" },
     { "path": "packages/skills/tsconfig.build.json" },

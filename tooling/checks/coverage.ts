@@ -28,6 +28,8 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const PACKAGE_THRESHOLDS = {
   capability: { functions: 1, lines: 1 },
   code: { functions: 0.93, lines: 0.96 },
+  execpolicy: { functions: 0.94, lines: 0.94 },
+  judge: { functions: 0.93, lines: 0.98 },
   goal: { functions: 0.95, lines: 0.98 },
   hooks: { functions: 1, lines: 1 },
   kernel: { functions: 0.94, lines: 0.97 },
@@ -109,6 +111,8 @@ const NO_COUNTER_ALLOWLIST = {
     "src/remote-host.ts",
     "src/runtime.tsx",
   ],
+  execpolicy: ["src/types.ts"],
+  judge: ["src/types.ts"],
   goal: [
     // Type-only: host repository and runtime authority contracts.
     "src/ports.ts",

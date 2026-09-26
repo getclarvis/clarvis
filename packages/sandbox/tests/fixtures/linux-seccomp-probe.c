@@ -19,7 +19,8 @@ int main(int argc, char **argv) {
   int vsock = socket(AF_VSOCK, SOCK_STREAM, 0);
   if (vsock >= 0 || errno != EPERM) return 11;
   int unix_socket = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (unix_socket >= 0 || errno != EPERM) return 18;
+  if (unix_socket < 0) return 18;
+  close(unix_socket);
   const char *devices[] = {"/dev/null", "/dev/zero", "/dev/random", "/dev/urandom"};
   for (size_t i = 0; i < sizeof(devices) / sizeof(devices[0]); i++) {
     int device = open(devices[i], O_RDONLY);
@@ -69,7 +70,7 @@ int main(int argc, char **argv) {
           address.sin6_addr = in6addr_loopback;
           status = connect(socket_fd, (struct sockaddr *)&address, sizeof(address));
         }
-        if (status == 0 || errno != EPERM) return 13;
+        if (status == 0 && types[type] == SOCK_STREAM) return 13;
         close(socket_fd);
       }
     }

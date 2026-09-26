@@ -131,6 +131,14 @@ const IsolationPicker = lazy(async () => {
   const module = await import("./overlays/IsolationPicker.tsx");
   return { default: module.IsolationPicker };
 });
+const ApprovalPicker = lazy(async () => {
+  const module = await import("./overlays/ApprovalPicker.tsx");
+  return { default: module.ApprovalPicker };
+});
+const DeniedActionPrompt = lazy(async () => {
+  const module = await import("./overlays/DeniedActionPrompt.tsx");
+  return { default: module.DeniedActionPrompt };
+});
 
 /** Minimal painted alpha that lets OpenTUI hit-test the pointer blocker without hiding the UI. */
 const POINTER_BLOCKER_BG = "#00000001";
@@ -225,6 +233,9 @@ export interface AppRunControls {
   fitContext?: RunHost["fitCurrentContext"];
   cancel: () => boolean;
   canControl?: () => boolean;
+  deniedAction?: RunHost["deniedAction"];
+  deniedActions?: RunHost["deniedActions"];
+  authorizeDeniedAction?: RunHost["authorizeDeniedAction"];
   interruptTool?: (toolExecutionId: string) => Promise<unknown>;
   /** Detach an unresponsive run after a host-owned cancellation grace. */
   forceStop?: () => void;
@@ -776,6 +787,17 @@ export function App(props: AppProps): JSX.Element {
       if (props.run.active()) return;
       if (overlays.openPicker("isolationPicker")) notify("");
     },
+    openApprovalPicker: () => {
+      if (props.run.active()) return;
+      if (overlays.openPicker("approvalPicker")) notify("");
+    },
+    openDeniedAction: () => {
+      if (!props.run.canControl?.() || !props.run.deniedAction?.()) {
+        notify("No judge-denied action is available in the active run.", "warn");
+        return;
+      }
+      if (overlays.openPicker("deniedAction")) notify("");
+    },
     focusNext: () => {
       ts.clearFocus();
       inputEl?.focus();
@@ -928,7 +950,9 @@ export function App(props: AppProps): JSX.Element {
   createEffect(() => {
     if (
       props.run.active() &&
-      ["agentPicker", "memoryPicker", "isolationPicker"].includes(overlays.overlay())
+      ["agentPicker", "memoryPicker", "isolationPicker", "approvalPicker"].includes(
+        overlays.overlay(),
+      )
     )
       overlays.dismissTop();
   });
@@ -995,6 +1019,8 @@ export function App(props: AppProps): JSX.Element {
     const settings = props.fleet.settings.effective();
     return {
       memory: memoryState(settings, props.fleet.memoryMode.mode(), resolvedModel()),
+      isolation: props.fleet.isolationMode.choice().mode,
+      approval: settings.approval_mode ?? "manual",
       plans: plansState(settings),
     };
   });
@@ -1186,6 +1212,8 @@ export function App(props: AppProps): JSX.Element {
       agentName: agentName(),
       model: resolvedModel(),
       memory: headerRunPolicy().memory,
+      isolation: headerRunPolicy().isolation,
+      approval: headerRunPolicy().approval,
       plans: headerRunPolicy().plans,
       connection: props.backend.connection(),
       doctorDirty: doctorDirty() && !focusedRepairSurface(),
@@ -1704,6 +1732,54 @@ export function App(props: AppProps): JSX.Element {
                   notify={notify}
                   onClose={() => overlays.dismissTop()}
                   onApplied={() => overlays.dismissTop()}
+                />
+              </Suspense>
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() => overlays.overlay() === "approvalPicker"}
+            retention="retain-one"
+            placement="portal"
+          >
+            {(lifecycle) => (
+              <Suspense fallback={<text>Loading approval{glyph("ellipsis")}</text>}>
+                <ApprovalPicker
+                  interaction={interaction}
+                  settings={props.fleet.settings}
+                  active={lifecycle.active}
+                  notify={notify}
+                  onClose={() => overlays.dismissTop()}
+                />
+              </Suspense>
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() => overlays.overlay() === "deniedAction"}
+            retention="retain-one"
+            placement="portal"
+          >
+            {(lifecycle) => (
+              <Suspense fallback={<text>Loading denied action{glyph("ellipsis")}</text>}>
+                <DeniedActionPrompt
+                  interaction={interaction}
+                  denials={() => props.run.deniedActions?.() ?? []}
+                  active={lifecycle.active}
+                  onClose={() => overlays.dismissTop()}
+                  onConfirm={(denial) => {
+                    const authorize = props.run.authorizeDeniedAction;
+                    if (!authorize) return;
+                    void authorize(denial)
+                      .then((accepted) => {
+                        notify(
+                          accepted
+                            ? "Scoped authorization queued."
+                            : "The denied action is no longer available.",
+                          accepted ? "success" : "warn",
+                        );
+                        overlays.dismissTop();
+                      })
+                      .catch(() => notify("Could not authorize the denied action.", "error"));
+                  }}
                 />
               </Suspense>
             )}

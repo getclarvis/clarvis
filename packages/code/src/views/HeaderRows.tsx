@@ -28,7 +28,7 @@ export function HeaderRows(props: HeaderRowsProps): JSX.Element {
     let used = 9;
     for (const field of fields) {
       const raw = field.text.replace(/^\s*·\s*/, "").trim();
-      const gap = field.key === "version" ? " " : "  ·  ";
+      const gap = field.key === "version" ? " " : plan.width < 72 ? " · " : "  ·  ";
       const needed = Bun.stringWidth(gap + raw);
       if (used > 0 && used + needed > available) {
         result.push([]);

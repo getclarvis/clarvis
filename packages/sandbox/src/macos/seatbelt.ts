@@ -48,19 +48,12 @@ function traversalAncestors(paths: readonly string[]): string[] {
 
 /** Produce a Seatbelt profile with narrow grants and explicit deny precedence. */
 export function seatbeltProfile(policy: ExecutionPolicy): string {
-  for (const exception of [policy.globalAgentsRoot, policy.workflowsRoot, policy.settingsFile]) {
-    if (existsSync(exception) && realpathSync(exception) !== exception) {
-      throw new SandboxSetupError(
-        "sandbox_setup_failed",
-        "Configuration exception is an unsafe alias",
-      );
-    }
-  }
   const readSubtrees = ["/"];
   const writeSubtrees = existing([
     "/tmp",
     "/private/tmp",
     ...policy.temporaryWriteRoots,
+    ...policy.additionalWriteRoots,
     ...(policy.workspaceAccess === "read-write" ? [policy.workspaceRoot] : []),
   ]);
   const lines = [
@@ -74,15 +67,10 @@ export function seatbeltProfile(policy: ExecutionPolicy): string {
     '(allow mach-lookup (global-name "com.apple.system.opendirectoryd.libinfo"))',
   ];
   for (const path of readSubtrees) {
-    lines.push(
-      `(allow file-read* ${subpathGrant(path, [...descendantExclusions(path, policy.globalRoot), "/dev"])})`,
-    );
+    lines.push(`(allow file-read* ${subpathGrant(path, ["/dev"])})`);
   }
   for (const path of writeSubtrees) {
-    const exclusions = descendantExclusions(path, policy.globalRoot);
-    if (path !== policy.workspaceRoot || policy.workspaceAccess !== "read-write") {
-      exclusions.push(...descendantExclusions(path, policy.homeRoot));
-    }
+    const exclusions: string[] = [];
     if (policy.workspaceAccess === "read-only") {
       exclusions.push(...descendantExclusions(path, policy.workspaceRoot));
     }
@@ -91,20 +79,21 @@ export function seatbeltProfile(policy: ExecutionPolicy): string {
   for (const ancestor of traversalAncestors([
     ...readSubtrees,
     ...writeSubtrees,
-    policy.globalAgentsRoot,
-    policy.workflowsRoot,
-    policy.settingsFile,
+    ...policy.readOnlyPaths,
   ])) {
     lines.push(`(allow file-read-metadata (literal ${quoted(ancestor)}))`);
   }
-  for (const path of existing([policy.globalAgentsRoot, policy.workflowsRoot])) {
-    lines.push(`(allow file-read* file-write* (subpath ${quoted(path)}))`);
-  }
-  for (const path of existing([policy.settingsFile])) {
-    lines.push(`(allow file-read* file-write* (literal ${quoted(path)}))`);
-  }
   if (policy.network === "enabled") lines.push("(allow network*)");
-  lines.push("(deny system-socket (socket-domain AF_UNIX))");
+  lines.push("(allow system-socket (socket-domain AF_UNIX))");
+  for (const path of new Set([
+    ...policy.readOnlyPaths,
+    ...existing(policy.readOnlyPaths),
+    ...policy.installationRoots,
+    ...existing(policy.installationRoots),
+  ])) {
+    lines.push(`(deny file-write* (subpath ${quoted(path)}))`);
+    lines.push(`(deny file-write* (literal ${quoted(path)}))`);
+  }
   for (const path of new Set([...policy.denies, ...existing(policy.denies)])) {
     lines.push(`(deny file-read* file-write* (subpath ${quoted(path)}))`);
     lines.push(`(deny file-read* file-write* (literal ${quoted(path)}))`);

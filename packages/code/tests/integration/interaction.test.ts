@@ -73,6 +73,9 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
     openMemoryPicker: () => {
       calls.push("openMemoryPicker");
     },
+    openApprovalPicker: () => {
+      calls.push("openApprovalPicker");
+    },
     focusNext: () => {
       calls.push("focusNext");
     },
@@ -185,12 +188,14 @@ test("modified arrows stay portable — they are plain xterm, not an enhanced ca
   expect(portable()["transcript.focusNext"]).toBe("<leader>down");
 });
 
-test("Ctrl+X O owns Goal detail while Ctrl+X K owns transcript expansion", () => {
-  expect(portable()["goal.toggle"]).toBe("<leader>o");
+test("Ctrl+X G owns Goal detail, Ctrl+X A opens approval, and Ctrl+X K expands", () => {
+  expect(portable()["goal.toggle"]).toBe("<leader>g");
+  expect(portable()["approval.picker"]).toBe("<leader>a");
   expect(portable()["transcript.toggleCollapse"]).toBe("<leader>k");
   expect(DEFAULT_BINDING_CANDIDATES["transcript.copyMode"]).toBeUndefined();
   const vital = buildVitalBindings(portable(), DEFAULT_WHEN);
   expect(find(vital, "goal.toggle")[0]?.when).toBe("overlay==none");
+  expect(find(vital, "approval.picker")[0]?.when).toBe("overlay==none");
   expect(find(vital, "transcript.toggleCollapse")[0]?.when).toBe("overlay==none");
 });
 
@@ -278,6 +283,7 @@ test("a pending modal keeps scrolling, suspend and cancel, and withholds the res
     "app.escape",
     "agent.picker",
     "memory.picker",
+    "approval.picker",
     "goal.toggle",
     "transcript.diff",
     "transcript.toggleCollapse",

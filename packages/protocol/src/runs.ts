@@ -46,6 +46,8 @@ export type MessageContent = string | ContentPart[];
 export interface Message {
   /** Host/client correlation for authenticated steering; never provider message content. */
   steering_id?: string;
+  /** Operator confirmation bound by the Kernel to a previously denied action. */
+  authorized_denial?: { call_id: string; attempt: number };
   role: Role;
   content: MessageContent;
 }
@@ -420,6 +422,19 @@ export interface ToolInterruptReceipt {
  * view needs — iterations, tools, reasoning/output, plan, sub-agents, limits —
  * without exposing the engine's internal trace shape.
  */
+type ActionFacts = {
+  at: Timestamp;
+  owner: string;
+  execution_id: string;
+  actor: string;
+  call_id: string;
+  attempt: number;
+  tool: string;
+  reason: string;
+  requested_mode: "host" | "sandbox";
+  effective_mode: "host" | "sandbox";
+};
+
 export type RunEvent =
   | { type: "run_started"; at: Timestamp; lead_model?: string; subagent_model?: string }
   | {
@@ -758,6 +773,22 @@ export type RunEvent =
       question: string;
       options?: string[];
     }
+  | (ActionFacts & { type: "approval_requested"; route?: "judge" | "manual" })
+  | (ActionFacts & {
+      type: "approval_resolved";
+      outcome: "approved" | "declined" | "cancelled" | "invalidated" | "unavailable";
+      route?: "judge" | "manual";
+    })
+  | (ActionFacts & {
+      type: "execution_policy_result";
+      decision: "allow" | "prompt" | "forbidden";
+      source: "rule" | "fallback" | "heuristic" | "host" | "reviewer";
+    })
+  | (ActionFacts & {
+      type: "execution_attempt";
+      phase: "admitted" | "started" | "settled" | "uncertain";
+      backend?: "host" | "bubblewrap" | "seatbelt";
+    })
   /** Settled elicitation answer (for resume reconstruction; not shown live). */
   | {
       type: "elicitation_resolved";

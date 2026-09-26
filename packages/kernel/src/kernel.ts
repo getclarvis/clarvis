@@ -887,6 +887,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const config =
     opts.configService ??
     createConfigService(opts.configStore, {
+      executionRulePaths: { globalDir, workspaceRoot: opts.workspaceRoot },
       ...(opts.isolationService === undefined
         ? {}
         : { isolationAvailability: opts.isolationService.availability }),

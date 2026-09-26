@@ -141,6 +141,8 @@ export interface DispatchPolicy {
 }
 
 export interface ToolHandler {
+  /** Handler performs authorization after its own final argument validation. */
+  authorizationHandled?: boolean;
   matches(call: LLMToolCall): boolean;
   /** Stable tool identity for lifecycle consumers when the wire name is projected. */
   canonicalName?(call: LLMToolCall): string | undefined;

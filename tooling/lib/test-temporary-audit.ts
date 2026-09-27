@@ -54,9 +54,9 @@ export function temporaryAuditExit(exit: AuditedExit, remaining: readonly string
 
 async function checkedParent(parent: string): Promise<string> {
   const path = resolve(parent);
-  if (!(await lstat(path)).isDirectory() || (await realpath(path)) !== path)
+  if (!(await lstat(path)).isDirectory())
     throw new Error(`temporary audit parent must be a real directory: ${path}`);
-  return path;
+  return await realpath(path);
 }
 
 async function remainingEntries(root: string): Promise<string[]> {
@@ -114,7 +114,9 @@ export async function runTestTemporaryAudit(
   label: string,
   deps: TemporaryAuditDependencies,
 ): Promise<AuditedExit> {
-  const parent = resolve(deps.parent ?? tmpdir());
+  const parent = deps.io
+    ? resolve(deps.parent ?? tmpdir())
+    : await checkedParent(deps.parent ?? tmpdir());
   const io = deps.io ?? realIo();
   const root = await io.acquire(parent);
   const rel = relative(parent, root);

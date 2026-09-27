@@ -45,7 +45,8 @@ Production: `test-runtime/clarvis-home-preload.ts` (`installTestHome`),
 
 `bun run test:cleanup -- <command> [args...]` audits one existing command under an exclusive
 temporary area. The observer reports the command exit and remaining entry names before removing
-its own area; a passing command with residue fails. CI composes the same observer with the existing
+its own area; a passing command with residue fails. It resolves symlinked ancestors of the temporary
+parent while rejecting a parent that is itself a symlink. CI composes the same observer with the existing
 coverage executor for each workspace attempt, while tooling and native gates use the focused
 entrypoint. Production: `lib/test-temporary-audit.ts` (`runTestTemporaryAudit`),
 `checks/test-temporary-audit.ts` (`main`), and `checks/ci-coverage.ts` (`main`). Test:

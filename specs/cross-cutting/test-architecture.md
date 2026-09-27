@@ -326,9 +326,11 @@ or machine failure cannot run finalizers.
 The qualification wrapper `test:cleanup` runs one unchanged argv with an exclusive, initially empty
 temporary area exposed through `TMPDIR`, `TMP` and `TEMP`. It removes an inherited
 `CLARVIS_TEST_HOME_HANDOFF` marker so the child's preload owns its new root and disables the
-Node compile cache for this disposable command. After the executor confirms child closure and
-checks its POSIX process group, the wrapper records the command's original exit and the remaining
-relative entry names before containing only its own area. A passing command with residue fails qualification;
+Node compile cache for this disposable command. The parent must itself be a directory; the wrapper
+resolves symlinked ancestors before allocating the area so native temporary paths remain valid.
+After the executor confirms child closure and checks its POSIX process group, the wrapper records
+the command's original exit and the remaining relative entry names before containing only its own
+area. A passing command with residue fails qualification;
 an already failing command retains its exit status and reports the residue separately. Inspection
 or containment errors fail qualification. If dependent process exit cannot be confirmed, the area is
 retained with its exact path. Processes that deliberately leave the owned process group still require

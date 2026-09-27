@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -58,6 +58,36 @@ test("passes a clean command with isolated environment and removes its area", as
   expect(events[1]?.remaining).toEqual([]);
   expect(existsSync(area)).toBe(false);
 });
+
+if (process.platform !== "win32")
+  test("resolves a symlinked ancestor but rejects a symlinked parent", async () => {
+    const base = await parent();
+    const actual = join(base, "actual");
+    const nested = join(actual, "nested");
+    const alias = join(base, "alias");
+    await mkdir(nested, { recursive: true });
+    await symlink(actual, alias, "dir");
+    let area = "";
+    const result = await runTestTemporaryAudit(command(), "symlinked ancestor", {
+      parent: join(alias, "nested"),
+      emit: () => {},
+      execute: (received) => {
+        area = received.env.TMPDIR;
+        expect(area.startsWith(`${nested}/`)).toBe(true);
+        return Promise.resolve({ code: 0, signal: null });
+      },
+    });
+    expect(result.code).toBe(0);
+    expect(existsSync(area)).toBe(false);
+    await expect(
+      runTestTemporaryAudit(command(), "symlinked parent", {
+        parent: alias,
+        emit: () => {},
+        execute: () => Promise.resolve({ code: 0, signal: null }),
+      }),
+    ).rejects.toThrow("temporary audit parent must be a real directory");
+    expect(await readdir(nested)).toEqual([]);
+  });
 
 test("reports residue before containment and preserves a failed command status", async () => {
   for (const code of [0, 7]) {

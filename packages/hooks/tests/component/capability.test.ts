@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import type { HookInvocation, HookResult, HookRunner, HookSpec } from "../../src/index.ts";
+import type { HookInvocation, HookResult, HookRunner, HookSpec } from "#src/index.ts";
 import {
   buildSeedBlock,
   compileWorkspaceHooks,
@@ -7,7 +7,7 @@ import {
   createWorkspaceHooksCapability,
   HOOKS_SEED_MARKER,
   runUserPromptExpansionHooks,
-} from "../../src/capability.ts";
+} from "#src/capability.ts";
 import type { HookConfig } from "@clarvis/capability";
 import {
   createCapabilityServices,

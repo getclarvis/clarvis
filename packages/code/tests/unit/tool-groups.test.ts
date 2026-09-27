@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isExplorationTool, TranscriptRows } from "../../src/core/transcript/rows.ts";
+import { isExplorationTool, TranscriptRows } from "#src/core/transcript/rows.ts";
 
 test("only allowlisted reads group; shell, mutations and unknown MCP remain individual", () => {
   for (const name of ["read_file", "read_image", "read_image", "list_dir"])

@@ -1,16 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createComputed, createMemo, createRoot } from "solid-js";
 import type { WorkspaceService } from "@clarvis/protocol";
-import {
-  applyEvent,
-  createTranscriptStore,
-  type TranscriptStore,
-} from "../../src/adapters/store.ts";
-import { createRunHost, type RunHost } from "../../src/run-host.ts";
-import { createActivityStore } from "../../src/adapters/activity-store.ts";
-import { createElicitSlot } from "../../src/adapters/elicit-slot.ts";
-import type { SessionMeta, SessionStore } from "../../src/adapters/session-store.ts";
-import type { PromptHistory } from "../../src/core/prompt-history.ts";
+import { applyEvent, createTranscriptStore, type TranscriptStore } from "#src/adapters/store.ts";
+import { createRunHost, type RunHost } from "#src/run-host.ts";
+import { createActivityStore } from "#src/adapters/activity-store.ts";
+import { createElicitSlot } from "#src/adapters/elicit-slot.ts";
+import type { SessionMeta, SessionStore } from "#src/adapters/session-store.ts";
+import type { PromptHistory } from "#src/core/prompt-history.ts";
 import { runEvent } from "../helpers/run-events.ts";
 
 const ev = runEvent;

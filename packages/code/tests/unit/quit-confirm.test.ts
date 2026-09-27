@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createQuitConfirm, type QuitConfirm } from "../../src/views/quit-confirm.ts";
+import { createQuitConfirm, type QuitConfirm } from "#src/views/quit-confirm.ts";
 
 function harness(state: { dirty?: boolean; run?: boolean; draft?: boolean } = {}): {
   qc: QuitConfirm;

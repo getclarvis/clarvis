@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { TraceEntry, TraceEvent } from "@clarvis/capability";
 
-import { mapEntry } from "../../src/trace-mapper.ts";
+import { mapEntry } from "#src/trace-mapper.ts";
 
 const ANCHOR = 1_700_000_000_000;
 

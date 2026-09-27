@@ -1,5 +1,5 @@
 import { describe, expect, test } from "../helpers/bun-test.ts";
-import { splitFrontmatterFence } from "../../src/frontmatter-fence.ts";
+import { splitFrontmatterFence } from "#src/frontmatter-fence.ts";
 
 const BOM = String.fromCodePoint(0xfeff);
 

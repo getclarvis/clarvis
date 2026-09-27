@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import type { MCPConnection } from "@clarvis/capability";
-import { BunStdioClientTransport } from "../../src/bun-stdio-client.ts";
-import { createMCPBoundedFetch } from "../../src/bounded-fetch.ts";
-import { buildRegistry, toWireToolName } from "../../src/registry.ts";
-import { paginate } from "../../src/resources.ts";
+import { BunStdioClientTransport } from "#src/bun-stdio-client.ts";
+import { createMCPBoundedFetch } from "#src/bounded-fetch.ts";
+import { buildRegistry, toWireToolName } from "#src/registry.ts";
+import { paginate } from "#src/resources.ts";
 import { createRecordingLogger } from "../helpers/recording-logger.ts";
 
 interface PrivateStreamReaders {

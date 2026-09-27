@@ -16,8 +16,8 @@
 
 import type { Accessor, JSX } from "solid-js";
 import { batch, createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 import { SelectableRow } from "../primitives/selectable-row.tsx";
 import { clampListIndex } from "./list-navigation.ts";
 import { verb, type LevelSpec } from "./level-keys.ts";

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAgentTools } from "../../../src/index.ts";
+import { createAgentTools } from "#src/index.ts";
 
 const roots: string[] = [];
 

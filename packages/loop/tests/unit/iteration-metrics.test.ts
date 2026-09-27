@@ -1,10 +1,7 @@
 import { describe, it, expect } from "../bun-test.ts";
-import {
-  cacheReadRatio,
-  recordIterationMetrics,
-} from "../../src/runtime/loop/iteration-metrics.ts";
+import { cacheReadRatio, recordIterationMetrics } from "#src/runtime/loop/iteration-metrics.ts";
 import { createTrace } from "@clarvis/trace";
-import { createTokenLedger } from "../../src/runtime/budget/index.ts";
+import { createTokenLedger } from "#src/runtime/budget/index.ts";
 import type { LeadIterationDetail, SubagentIterationDetail } from "@clarvis/capability";
 
 describe("cacheReadRatio", () => {

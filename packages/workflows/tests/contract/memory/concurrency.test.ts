@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createSemaphore } from "@clarvis/capability";
 
-import { createWorkflowSemaphore } from "../../../src/concurrency.ts";
+import { createWorkflowSemaphore } from "#src/concurrency.ts";
 
 describe("createWorkflowSemaphore", () => {
   test("is @clarvis/capability's semaphore under the workflow-facing name", () => {

@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "nod
 import path from "node:path";
 import { describe, expect, it } from "bun:test";
 import { discoverSkills, resolveConfig } from "@clarvis/skills";
-import { SkillError } from "../../src/errors.ts";
+import { SkillError } from "#src/errors.ts";
 import {
   MAX_SKILL_DIRECTORY_ENTRIES,
   MAX_SKILL_FILE_BYTES,
@@ -18,8 +18,8 @@ import {
   MAX_SKILL_ROOTS,
   MAX_SKILLS,
   MAX_SKILLS_PER_ROOT,
-} from "../../src/limits.ts";
-import { enumerateResources, listSkillDirs } from "../../src/scan.ts";
+} from "#src/limits.ts";
+import { enumerateResources, listSkillDirs } from "#src/scan.ts";
 import {
   captureWarnings,
   cleanup,

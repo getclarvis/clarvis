@@ -7,7 +7,7 @@ import {
 import { useRenderer } from "@opentui/solid";
 import { batch, createEffect, createSignal, on, onCleanup, Show, untrack } from "solid-js";
 import type { Accessor, JSX } from "solid-js";
-import { diffColorProps, syntaxStyle } from "../../theme/syntax.ts";
+import { diffColorProps, syntaxStyle } from "#src/theme/syntax.ts";
 
 interface SyntaxSnapshot {
   readonly content: string;

@@ -9,8 +9,8 @@ import * as path from "node:path";
 
 import { TMP_PREFIX } from "@clarvis/paths";
 
-import { createFileMemoryStore } from "../../src/file-store.ts";
-import type { MemoryStore } from "../../src/types.ts";
+import { createFileMemoryStore } from "#src/file-store.ts";
+import type { MemoryStore } from "#src/types.ts";
 import { makeRoot, seedFile } from "../helpers/fs.ts";
 
 const modeBitsEnforced = process.getuid?.() !== 0;

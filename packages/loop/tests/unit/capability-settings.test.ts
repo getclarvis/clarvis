@@ -1,17 +1,14 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { z } from "zod";
 import { createCapabilityRegistry, type CapabilitySettingsSpec } from "@clarvis/capability";
-import {
-  readCapabilitySettings,
-  settingsSchemaFor,
-} from "../../src/settings/capability-settings.ts";
-import { settingsSchema } from "../../src/settings/settings-schema.ts";
+import { readCapabilitySettings, settingsSchemaFor } from "#src/settings/capability-settings.ts";
+import { settingsSchema } from "#src/settings/settings-schema.ts";
 import {
   pluginManifestSchema,
   pluginManifestSchemaFor,
   pluginSettingsFragment,
   unknownManifestKeys,
-} from "../../src/settings/plugin-schema.ts";
+} from "#src/settings/plugin-schema.ts";
 
 const MANIFEST = { name: "auditor", version: "1.0.0", description: "an auditing plugin" };
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildDigest, renderDigest } from "../../src/digest.ts";
+import { buildDigest, renderDigest } from "#src/digest.ts";
 import { run, toolCall } from "../helpers/fixtures.ts";
 
 describe("digest", () => {

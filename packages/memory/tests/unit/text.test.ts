@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { truncate } from "../../src/text.ts";
+import { truncate } from "#src/text.ts";
 
 describe("truncate", () => {
   test("adds an ellipsis only when over the cap", () => {

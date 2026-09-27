@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import type { Scope } from "../../keys/commands.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import type { Scope } from "#src/keys/commands.ts";
 
 /** Renders a config {@link Scope} label in the accent color used for scope chrome. */
 export function ScopeBadge(props: { scope: Scope }): JSX.Element {

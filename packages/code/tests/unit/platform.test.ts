@@ -2,8 +2,8 @@ import { expect, mock, test } from "bun:test";
 import type {
   ClipboardProcessRequest,
   ClipboardProcessResult,
-} from "../../src/adapters/clipboard-process.ts";
-import { readClipboardImage } from "../../src/adapters/platform.ts";
+} from "#src/adapters/clipboard-process.ts";
+import { readClipboardImage } from "#src/adapters/platform.ts";
 function selection(env: NodeJS.ProcessEnv = {}, platform: NodeJS.Platform = "linux") {
   return { processEnv: () => env, runtimePlatform: () => platform };
 }

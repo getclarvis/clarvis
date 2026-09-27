@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "bun:test";
-import { createJsonMessageWriter, JsonMessageDecoder } from "../../../src/core/json-message.ts";
+import { createJsonMessageWriter, JsonMessageDecoder } from "#src/core/json-message.ts";
 
 describe("bounded logical JSON transfer", () => {
   it("preserves Unicode across fragments and serializes complete messages without interleaving", async () => {

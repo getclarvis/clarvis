@@ -4,9 +4,9 @@ import {
   profileReadinessIssues,
   type ReadinessCode,
   type ReadinessContext,
-} from "../../src/validation/profile-readiness.ts";
-import { validateBody } from "../../src/validation/request-schema.ts";
-import { BUILTIN_GRANT_NAMES } from "../../src/validation/request/grant-registry.ts";
+} from "#src/validation/profile-readiness.ts";
+import { validateBody } from "#src/validation/request-schema.ts";
+import { BUILTIN_GRANT_NAMES } from "#src/validation/request/grant-registry.ts";
 import { loadEnv } from "@clarvis/capability";
 
 const env = loadEnv({});

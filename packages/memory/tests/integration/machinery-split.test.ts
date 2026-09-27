@@ -6,8 +6,8 @@ import { join } from "node:path";
 
 import { workspacePaths, workspaceStatePaths } from "@clarvis/paths";
 
-import { createFileMemoryStore } from "../../src/file-store.ts";
-import type { MemoryStore } from "../../src/types.ts";
+import { createFileMemoryStore } from "#src/file-store.ts";
+import type { MemoryStore } from "#src/types.ts";
 
 const made: string[] = [];
 

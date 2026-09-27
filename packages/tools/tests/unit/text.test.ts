@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { decodeText, encodeText, reencode } from "../../src/lib/text.ts";
+import { decodeText, encodeText, reencode } from "#src/lib/text.ts";
 
 const BOM = "﻿";
 

@@ -1,17 +1,17 @@
 import { applyGoalControl, admitGoalRun, prepareGoalSettlement } from "@clarvis/goal";
-import { goalStateFromSession, goalStateToDto } from "../../src/goals/session-state.ts";
-import { settleGoalSession } from "../../src/goals/settlement.ts";
+import { goalStateFromSession, goalStateToDto } from "#src/goals/session-state.ts";
+import { settleGoalSession } from "#src/goals/settlement.ts";
 import type { RunDetail, RunResult, Session } from "@clarvis/protocol";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { writeFileDurable } from "@clarvis/paths";
-import { createSessionService } from "../../src/sessions/session-service.ts";
-import { createHostedSessionCoordinator } from "../../src/hosting/sessions.ts";
-import { createHostedRegistry, type HostedRegistry } from "../../src/hosting/registry.ts";
-import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
-import { openHostedProjection } from "../../src/hosting/projection.ts";
-import { createManagedRun } from "../../src/runs/managed-run.ts";
+import { createSessionService } from "#src/sessions/session-service.ts";
+import { createHostedSessionCoordinator } from "#src/hosting/sessions.ts";
+import { createHostedRegistry, type HostedRegistry } from "#src/hosting/registry.ts";
+import { decodeHostedRegistryState } from "#src/hosting/state.ts";
+import { openHostedProjection } from "#src/hosting/projection.ts";
+import { createManagedRun } from "#src/runs/managed-run.ts";
 
 const [root, mode, phase] = process.argv.slice(2);
 if (root === undefined || !["initial", "recover"].includes(mode ?? ""))

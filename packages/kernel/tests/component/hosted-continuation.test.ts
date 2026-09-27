@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { HostedContinuationProposal } from "../../src/hosting/registry.ts";
+import type { HostedContinuationProposal } from "#src/hosting/registry.ts";
 import { fixture, input, until } from "../helpers/hosted-registry.ts";
 
 const checkpoint = {

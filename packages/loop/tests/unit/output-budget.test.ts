@@ -9,7 +9,7 @@ import {
 import {
   OutputBudgetExhaustedError,
   withOutputTokenBudget,
-} from "../../src/runtime/loop/output-budget.ts";
+} from "#src/runtime/loop/output-budget.ts";
 
 function budget(total: number): OutputTokenBudget & { spent(): number } {
   let spent = 0;

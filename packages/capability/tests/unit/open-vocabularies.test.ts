@@ -5,13 +5,9 @@ import {
   BUILTIN_RUN_ENDED_REASONS,
   isBuiltinErrorCode,
   isBuiltinRunEndedReason,
-} from "../../src/run.ts";
-import {
-  BUILTIN_TRACE_EVENT_TYPES,
-  isBuiltinTraceEvent,
-  type TraceEvent,
-} from "../../src/trace.ts";
-import { BUILTIN_AGENT_ERROR_CODES, type AgentResult } from "../../src/agent-result.ts";
+} from "#src/run.ts";
+import { BUILTIN_TRACE_EVENT_TYPES, isBuiltinTraceEvent, type TraceEvent } from "#src/trace.ts";
+import { BUILTIN_AGENT_ERROR_CODES, type AgentResult } from "#src/agent-result.ts";
 
 /**
  * The three vocabularies opened so a capability can terminate, fail and record

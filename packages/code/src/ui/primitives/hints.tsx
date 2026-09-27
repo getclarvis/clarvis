@@ -1,8 +1,8 @@
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph, type GlyphName } from "../../theme/glyphs.ts";
-import { tone } from "../../theme/tone.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph, type GlyphName } from "#src/theme/glyphs.ts";
+import { tone } from "#src/theme/tone.ts";
 
 /** Renders an empty-state message with an optional leading icon and a muted hint line below it. */
 export function EmptyHint(props: { text: string; hint?: string; icon?: GlyphName }): JSX.Element {

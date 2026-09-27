@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import type { SkillsService } from "@clarvis/protocol";
-import { createKernelCapabilitiesClient } from "../../src/adapters/kernel-capabilities-client.ts";
+import { createKernelCapabilitiesClient } from "#src/adapters/kernel-capabilities-client.ts";
 
 function skillsService(over: Partial<SkillsService> = {}): SkillsService {
   return {

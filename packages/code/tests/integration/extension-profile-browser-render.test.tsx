@@ -4,9 +4,9 @@ import type {
   ExtensionProfileService,
   ResolvedExtensionProfile,
 } from "@clarvis/protocol";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { ExtensionProfileBrowser } from "../../src/views/config/ExtensionProfileBrowser.tsx";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { ExtensionProfileBrowser } from "#src/views/config/ExtensionProfileBrowser.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 

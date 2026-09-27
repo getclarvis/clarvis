@@ -22,7 +22,7 @@ import {
   type GoalRuntimePort,
   type GoalCreationPort,
   type GoalStewardCompletionDecision,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 function fixture(overrides: Partial<GoalRuntimePort> = {}) {
   let state = applyGoalControl(

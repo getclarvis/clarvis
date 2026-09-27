@@ -3,8 +3,8 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NOOP_LOGGER } from "@clarvis/capability";
-import { createConfigService } from "../../src/config/config-service.ts";
-import { createFileConfigStore } from "../../src/config/file-config-store.ts";
+import { createConfigService } from "#src/config/config-service.ts";
+import { createFileConfigStore } from "#src/config/file-config-store.ts";
 
 const roots: string[] = [];
 afterEach(() => {

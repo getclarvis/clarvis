@@ -2,19 +2,19 @@ import { loadEnv, ValidationError } from "@clarvis/capability";
 import type { TraceStore } from "@clarvis/trace";
 import type { StoredExecution, StoredSummary } from "@clarvis/trace";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
-import type { PluginBootstrapSkill } from "../../src/runtime/capabilities/skills-settings.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
+import type { PluginBootstrapSkill } from "#src/runtime/capabilities/skills-settings.ts";
 import type { Capability, ProviderConfig, RunResponse } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
 import type { MCPClientFactory } from "@clarvis/mcp-client";
 import { createConnectionManager } from "@clarvis/mcp-client";
 import type { Logger } from "@clarvis/capability";
-import type { Elicit } from "../../src/runtime/tools/ask-user-tool.ts";
+import type { Elicit } from "#src/runtime/tools/ask-user-tool.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { LifecycleHook, SteerSource } from "@clarvis/capability";
 import type { TraceEvent } from "@clarvis/capability";
 import type { ExecutionStatus, RunRequest, Trace } from "@clarvis/capability";
-import type { ToolInterruptSource } from "../../src/runtime/tools/tool-interrupt.ts";
+import type { ToolInterruptSource } from "#src/runtime/tools/tool-interrupt.ts";
 
 interface ExecutionDetail {
   execution_id: string;
@@ -141,11 +141,11 @@ export async function makeHarness(opts: HarnessOptions): Promise<TestHarness> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd();
   const capabilities: Capability[] = [...(opts.capabilities ?? [])];
   if (opts.agentTools !== undefined) {
-    const { createAgentToolsCapability } = await import("../../src/runtime/capabilities/tools.ts");
+    const { createAgentToolsCapability } = await import("#src/runtime/capabilities/tools.ts");
     capabilities.push(createAgentToolsCapability());
   }
   if (opts.askUser === true) {
-    const { createAskUserCapability } = await import("../../src/runtime/capabilities/ask-user.ts");
+    const { createAskUserCapability } = await import("#src/runtime/capabilities/ask-user.ts");
     capabilities.push(createAskUserCapability());
   }
   if (opts.skills !== undefined) {

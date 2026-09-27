@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { firstUserText, storedExecutionToRunSnapshot } from "../../src/run-snapshot.ts";
+import { firstUserText, storedExecutionToRunSnapshot } from "#src/run-snapshot.ts";
 import type { TraceEvent } from "@clarvis/capability";
 import { makeExecutionRecord } from "../helpers/fixtures.ts";
 

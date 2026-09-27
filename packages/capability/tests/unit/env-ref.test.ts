@@ -1,5 +1,5 @@
 import { describe, expect, test } from "../helpers/bun-test.ts";
-import { envRefPattern, extractEnvRefs } from "../../src/env-ref.ts";
+import { envRefPattern, extractEnvRefs } from "#src/env-ref.ts";
 
 describe("envRefPattern", () => {
   test("returns a fresh, globally-flagged RegExp on every call", () => {

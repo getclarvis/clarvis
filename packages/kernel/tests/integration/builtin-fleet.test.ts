@@ -4,10 +4,10 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
 import { globalPaths } from "@clarvis/paths";
-import { createFileKernel } from "../../src/bootstrap.ts";
-import { createConfigService, createFileConfigStore } from "../../src/config.ts";
-import { createSettingsRunAssembler } from "../../src/runs/settings-assembler.ts";
-import { DEFAULT_ENTRY_AGENT } from "../../src/config/builtin-agents/index.ts";
+import { createFileKernel } from "#src/bootstrap.ts";
+import { createConfigService, createFileConfigStore } from "#src/config.ts";
+import { createSettingsRunAssembler } from "#src/runs/settings-assembler.ts";
+import { DEFAULT_ENTRY_AGENT } from "#src/config/builtin-agents/index.ts";
 
 /**
  * A host that has never written an agent file: a bare workspace and a global

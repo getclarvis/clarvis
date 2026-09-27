@@ -8,8 +8,8 @@ import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
 import { connectOrLaunchLocalKernel } from "@clarvis/kernel/bootstrap";
 import type { KernelClient } from "@clarvis/protocol";
 
-import { WorkspaceClientManager } from "../../src/adapters/workspace-client-manager.ts";
-import { prepareStartupFoundation } from "../../src/startup-foundation.ts";
+import { WorkspaceClientManager } from "#src/adapters/workspace-client-manager.ts";
+import { prepareStartupFoundation } from "#src/startup-foundation.ts";
 import { openTempDir } from "../helpers/tracked-temp.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 

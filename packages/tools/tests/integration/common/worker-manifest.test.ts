@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createExecutionPolicy, SandboxSetupError, type SandboxBackend } from "@clarvis/sandbox";
-import { createAgentTools, SandboxToolExecutor } from "../../../src/index.ts";
+import { createAgentTools, SandboxToolExecutor } from "#src/index.ts";
 
 test("a changed worker source is rejected and its repaired manifest is rechecked", async () => {
   const root = mkdtempSync(join(process.cwd(), ".worker-identity-"));

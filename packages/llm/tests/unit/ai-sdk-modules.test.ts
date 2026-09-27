@@ -1,16 +1,16 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
 import { APICallError, type ModelMessage } from "ai";
 import { ProviderError, type LLMCallParams } from "@clarvis/capability";
-import { buildRequestOptions } from "../../src/ai-sdk/request-options.ts";
-import { buildCallResult, normalizeModelText, normalizeUsage } from "../../src/ai-sdk/result.ts";
-import { toProviderError } from "../../src/ai-sdk/errors.ts";
+import { buildRequestOptions } from "#src/ai-sdk/request-options.ts";
+import { buildCallResult, normalizeModelText, normalizeUsage } from "#src/ai-sdk/result.ts";
+import { toProviderError } from "#src/ai-sdk/errors.ts";
 import {
   applyBodyExtras,
   applyCacheControlMarkers,
   CACHE_MARKER_KEY,
   openAICompatibleSettings,
   resolveConfiguredHeaders,
-} from "../../src/openai-compatible-request.ts";
+} from "#src/openai-compatible-request.ts";
 
 /** The request half of {@link buildRequestOptions}, which is what these assert on. */
 const buildRequest = (

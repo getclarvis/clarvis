@@ -4,6 +4,13 @@
   "description": "Executes workspace shell hooks for Clarvis — match, spawn, bounded capture, verdict parse.",
   "license": "MIT",
   "type": "module",
+  "imports": {
+    "#src/*.ts": {
+      "bun": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",

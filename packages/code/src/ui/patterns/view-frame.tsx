@@ -1,10 +1,10 @@
 import type { Accessor, JSX } from "solid-js";
 import { For, Show } from "solid-js";
 import { useTerminalSize } from "./terminal-size.tsx";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tone } from "../../theme/tone.ts";
-import type { ViewHost } from "../../keys/commands.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tone } from "#src/theme/tone.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
 import { ScopeBadge } from "../primitives/index.ts";
 import { InteractionNavigationBar } from "./navigation-bar.tsx";
 import type { ActiveAction } from "./active-actions.ts";

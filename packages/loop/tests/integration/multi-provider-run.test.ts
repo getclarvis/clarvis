@@ -3,7 +3,7 @@ import type { LLMProvider } from "@clarvis/capability";
 import type { MCPClientFactory } from "@clarvis/mcp-client";
 import { mockMCPFactory } from "./_fixtures.ts";
 import { makeHarness, TEST_PROVIDERS, type TestHarness } from "./_helpers.ts";
-import { validateBody } from "../../src/validation/index.ts";
+import { validateBody } from "#src/validation/index.ts";
 import { loadEnv } from "@clarvis/capability";
 
 let harness: TestHarness | null = null;

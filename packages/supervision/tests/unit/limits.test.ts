@@ -1,8 +1,8 @@
 import { describe, it, expect } from "bun:test";
 import type { EnvConfig, RunRequest } from "@clarvis/capability";
 
-import { resolveAgentsLimits } from "../../src/limits.ts";
-import { AGENTS_DEFAULTS } from "../../src/settings.ts";
+import { resolveAgentsLimits } from "#src/limits.ts";
+import { AGENTS_DEFAULTS } from "#src/settings.ts";
 
 const ENV = {} as EnvConfig;
 

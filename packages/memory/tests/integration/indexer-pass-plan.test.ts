@@ -13,13 +13,13 @@ import { describe, expect, it } from "bun:test";
 
 import type { ExecuteRunDeps } from "@clarvis/loop";
 import { createTestTraceStore } from "@clarvis/loop/testing";
-import { DEFAULT_BUDGETS } from "../../src/config.ts";
-import { planPass } from "../../src/indexer/run.ts";
-import { createTouchedLedger } from "../../src/indexer/pyramid.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
+import { DEFAULT_BUDGETS } from "#src/config.ts";
+import { planPass } from "#src/indexer/run.ts";
+import { createTouchedLedger } from "#src/indexer/pyramid.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
 import { makeExecutionRecord, run as runSnapshot } from "../helpers/fixtures.ts";
 import { fakeIndexerRuntime } from "../helpers/indexer-runtime.ts";
-import type { IndexerRuntime } from "../../src/types.ts";
+import type { IndexerRuntime } from "#src/types.ts";
 import type { Capability } from "@clarvis/capability";
 
 const MODEL = "anthropic/x";

@@ -1,19 +1,19 @@
 import { createSignal, onCleanup, Show, type Accessor, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { ViewHost } from "../../keys/commands.ts";
-import { loopScheduleLabel } from "../../core/loop-schedule.ts";
-import { tokens } from "../../theme/tokens.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { loopScheduleLabel } from "#src/core/loop-schedule.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import {
   bindLevelKeys,
   SelectableList,
   SelectableRow,
   ViewFrame,
-} from "../../views/config/view-host.tsx";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
-import type { HintTone } from "../../views/hint.ts";
+} from "#src/views/config/view-host.tsx";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
+import { clampListIndex } from "#src/ui/patterns/list-navigation.ts";
+import { scrollbarOptions } from "#src/theme/surfaces.ts";
+import type { HintTone } from "#src/views/hint.ts";
 import type { LoopController, LoopJob } from "./controller.ts";
 
 const instant = (value: number | undefined): string =>

@@ -10,7 +10,7 @@ import {
   type LoopUsage,
   type ScheduledTurnAdmission,
   type ScheduledTurnRequest,
-} from "../../core/loop-schedule.ts";
+} from "#src/core/loop-schedule.ts";
 import { LOOP_PROMPT_MAX_BYTES, type LoopCommand } from "./parser.ts";
 
 /** One bounded in-memory registration, separate from the lifetime of its current run. */

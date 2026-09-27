@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
-import { createHookRunner } from "../../src/runner.ts";
-import { runHookCommand } from "../../src/subprocess.ts";
-import { NOOP_HOOK_LOGGER, type HookInvocation, type HookLogger } from "../../src/types.ts";
+import { createHookRunner } from "#src/runner.ts";
+import { runHookCommand } from "#src/subprocess.ts";
+import { NOOP_HOOK_LOGGER, type HookInvocation, type HookLogger } from "#src/types.ts";
 import { FakeChild, fakeClock, fakeSpawn, tick, type SpawnCall } from "../helpers/fake-child.ts";
 
 const POSIX_SHELL = { flavor: "posix", file: "sh" } as const;

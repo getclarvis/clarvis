@@ -5,7 +5,7 @@ import type {
   HostingService,
   RunEvent,
 } from "@clarvis/protocol";
-import { readHostedSnapshot } from "../../src/transport/hosted-snapshot.ts";
+import { readHostedSnapshot } from "#src/transport/hosted-snapshot.ts";
 
 const delta = (text: string): RunEvent => ({
   type: "text_delta",

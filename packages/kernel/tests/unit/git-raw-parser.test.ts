@@ -5,7 +5,7 @@ import {
   parseGitNumstatZ,
   parseGitRawZ,
   parseGitUnmergedZ,
-} from "../../src/workspace/git-raw-parser.ts";
+} from "#src/workspace/git-raw-parser.ts";
 
 describe("git NUL parsers", () => {
   it("parses raw additions, deletions and renames", () => {

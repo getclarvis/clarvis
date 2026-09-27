@@ -1,8 +1,8 @@
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { resolveResourcePath } from "../../src/paths.ts";
-import { SkillError } from "../../src/errors.ts";
+import { resolveResourcePath } from "#src/paths.ts";
+import { SkillError } from "#src/errors.ts";
 import { cleanup, makeWorkspace } from "../helpers/fixtures.ts";
 
 describe("resolveResourcePath", () => {

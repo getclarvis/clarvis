@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { NOOP_PATHS_LOGGER, setPathsLogger } from "@clarvis/paths";
-import { announceOnce, pathsLogger } from "../../src/diag.ts";
+import { announceOnce, pathsLogger } from "#src/diag.ts";
 import { recorder } from "../helpers/recorder.ts";
 
 afterEach(() => {

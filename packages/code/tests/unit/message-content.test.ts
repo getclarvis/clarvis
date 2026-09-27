@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ContentPart, MessageContent } from "@clarvis/protocol";
-import { contentToText } from "../../src/adapters/message-content.ts";
+import { contentToText } from "#src/adapters/message-content.ts";
 
 /**
  * The behavioral cases `contentToText` must satisfy, named to match the

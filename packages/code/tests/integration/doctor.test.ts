@@ -10,7 +10,7 @@ import {
   startupRoute,
   type BackendProbe,
   type DoctorCtx,
-} from "../../src/onboarding/doctor.ts";
+} from "#src/onboarding/doctor.ts";
 import {
   compareAgentDisplayOrder,
   createConfigService,
@@ -18,15 +18,15 @@ import {
   resolveAgentsByName,
 } from "@clarvis/kernel/config";
 import type { Scope, SecretService } from "@clarvis/protocol";
-import { findAgentConflicts } from "../../src/adapters/agents-store.ts";
+import { findAgentConflicts } from "#src/adapters/agents-store.ts";
 import {
   createSettingsAdapter,
   type SettingsAdapter,
   type SettingsFile,
-} from "../../src/adapters/settings.ts";
-import { createKeysAdapter } from "../../src/adapters/provider-secrets.ts";
-import { createDiagnosticSession } from "../../src/adapters/diagnostic-session.ts";
-import { installDiagnosticSession } from "../../src/core/diagnostic-events.ts";
+} from "#src/adapters/settings.ts";
+import { createKeysAdapter } from "#src/adapters/provider-secrets.ts";
+import { createDiagnosticSession } from "#src/adapters/diagnostic-session.ts";
+import { installDiagnosticSession } from "#src/core/diagnostic-events.ts";
 
 function configFrom(dirs: ScopeDirs) {
   return createConfigService(storeFrom(dirs));
@@ -53,9 +53,9 @@ function settingsFrom(
 ): Promise<SettingsAdapter> {
   return createSettingsAdapter(configFrom(dirs), opts);
 }
-import { createCodeConfigStore, type CodeConfig } from "../../src/adapters/code-config.ts";
-import { docToAgentFile, readEnvView, type AgentFile } from "../../src/adapters/agent-files.ts";
-import type { ClarvisDirs } from "../../src/adapters/agents.ts";
+import { createCodeConfigStore, type CodeConfig } from "#src/adapters/code-config.ts";
+import { docToAgentFile, readEnvView, type AgentFile } from "#src/adapters/agent-files.ts";
+import type { ClarvisDirs } from "#src/adapters/agents.ts";
 import { globalPaths, workspacePaths } from "@clarvis/kernel/paths";
 
 interface ScopeDirs {

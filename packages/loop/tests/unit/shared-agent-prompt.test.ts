@@ -1,11 +1,11 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { INPUT_LIMITS } from "../../src/validation/input-limits.ts";
-import { DEFAULT_SHARED_AGENT_PROMPT } from "../../src/runtime/prompts/shared-agent-prompt.ts";
+import { INPUT_LIMITS } from "#src/validation/input-limits.ts";
+import { DEFAULT_SHARED_AGENT_PROMPT } from "#src/runtime/prompts/shared-agent-prompt.ts";
 import {
   parseSharedPromptDocument,
   renderSharedPromptDocument,
   resolveSharedPrompt,
-} from "../../src/runtime/prompts/resolve-shared-prompt.ts";
+} from "#src/runtime/prompts/resolve-shared-prompt.ts";
 
 const REPLACE = renderSharedPromptDocument("replace", "Custom fleet policy.");
 const DISABLED = renderSharedPromptDocument("disabled");

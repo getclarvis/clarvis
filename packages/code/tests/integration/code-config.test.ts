@@ -8,11 +8,11 @@ import {
   mergeEffectiveTheme,
   mergeThemeBlock,
   type CodeConfig,
-} from "../../src/adapters/code-config.ts";
-import { createThemePreview } from "../../src/theme/theme.ts";
-import { readStartupKeySources } from "../../src/adapters/startup-key-sources.ts";
-import type { ThemeConfig } from "../../src/theme/model.ts";
-import type { ClarvisDirs } from "../../src/adapters/agents.ts";
+} from "#src/adapters/code-config.ts";
+import { createThemePreview } from "#src/theme/theme.ts";
+import { readStartupKeySources } from "#src/adapters/startup-key-sources.ts";
+import type { ThemeConfig } from "#src/theme/model.ts";
+import type { ClarvisDirs } from "#src/adapters/agents.ts";
 import {
   globalPaths,
   workspacePaths,

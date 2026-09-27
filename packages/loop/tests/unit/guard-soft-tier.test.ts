@@ -1,14 +1,14 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { createDoomLoopGuard } from "../../src/runtime/guards/doom-loop-guard.ts";
-import { createStagnationGuard, hashResult } from "../../src/runtime/guards/stagnation-guard.ts";
-import { createConvergenceGuards } from "../../src/runtime/guards/convergence-guards.ts";
+import { createDoomLoopGuard } from "#src/runtime/guards/doom-loop-guard.ts";
+import { createStagnationGuard, hashResult } from "#src/runtime/guards/stagnation-guard.ts";
+import { createConvergenceGuards } from "#src/runtime/guards/convergence-guards.ts";
 import {
   buildGuardEscalationAsk,
   escalateGuardTrip,
-} from "../../src/runtime/guards/guard-escalation.ts";
-import type { GuardTrip } from "../../src/runtime/guards/convergence-guards.ts";
-import { createComputeClock } from "../../src/runtime/support/index.ts";
-import { ElicitTimeoutError } from "../../src/runtime/tools/index.ts";
+} from "#src/runtime/guards/guard-escalation.ts";
+import type { GuardTrip } from "#src/runtime/guards/convergence-guards.ts";
+import { createComputeClock } from "#src/runtime/support/index.ts";
+import { ElicitTimeoutError } from "#src/runtime/tools/index.ts";
 
 const TRIP: GuardTrip = { code: "tool_failure_loop", message: "looping" };
 

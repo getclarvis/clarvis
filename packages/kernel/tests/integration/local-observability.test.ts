@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createNodeProcessRunner } from "../../src/local.ts";
-import { createGitPluginFetcher } from "../../src/adapters/git/plugin-fetcher.ts";
-import type { ProcessRunner } from "../../src/ports/process-runner.ts";
+import { createNodeProcessRunner } from "#src/local.ts";
+import { createGitPluginFetcher } from "#src/adapters/git/plugin-fetcher.ts";
+import type { ProcessRunner } from "#src/ports/process-runner.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
 describe("local.process.failed", () => {

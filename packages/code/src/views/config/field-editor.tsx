@@ -6,14 +6,14 @@ import {
   registerManagedTextareaLayer,
 } from "@opentui/keymap/addons/opentui";
 import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
-import { tokens } from "../../theme/tokens.ts";
-import { borderChars, glyph } from "../../theme/glyphs.ts";
-import type { Interaction } from "../../keys/interaction.ts";
-import { LAYER } from "../../ui/patterns/level-keys.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { borderChars, glyph } from "#src/theme/glyphs.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { LAYER } from "#src/ui/patterns/level-keys.ts";
 import { CatalogPicker, type CatalogPickerSpec } from "./CatalogPicker.tsx";
 import type { CatalogRow } from "./catalog-pick.ts";
-import { uiCommand } from "../../keys/actions.ts";
-import { SurfaceBoundary } from "../../ui/patterns/surface-lifecycle.tsx";
+import { uiCommand } from "#src/keys/actions.ts";
+import { SurfaceBoundary } from "#src/ui/patterns/surface-lifecycle.tsx";
 
 const secretMask = (): string => glyph("bullet");
 

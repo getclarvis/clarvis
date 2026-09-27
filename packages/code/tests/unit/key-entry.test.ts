@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { FieldEditor } from "../../src/views/config/view-host.tsx";
-import { promptForApiKey } from "../../src/views/config/key-entry.ts";
+import type { FieldEditor } from "#src/views/config/view-host.tsx";
+import { promptForApiKey } from "#src/views/config/key-entry.ts";
 
 function fakeFe(): { fe: FieldEditor; label: () => string; submit: (raw: string) => void } {
   let label = "";

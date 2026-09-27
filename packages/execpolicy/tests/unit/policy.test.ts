@@ -10,7 +10,7 @@ import {
   ruleDigest,
   type ApprovalPolicy,
   type RuleSource,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 const source = (rules: RuleSource["rules"]): RuleSource => ({
   layer: "global",

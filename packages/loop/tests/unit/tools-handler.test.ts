@@ -6,9 +6,9 @@ import type {
   TraceKind,
   TracePort,
 } from "@clarvis/capability";
-import { buildAgentToolsHandler } from "../../src/runtime/capabilities/tools.ts";
-import type { AgentToolResult, AgentToolset } from "../../src/runtime/tools/builtin/toolset.ts";
-import { OPERATOR_INTERRUPTED_TOOL } from "../../src/runtime/tools/tool-interrupt.ts";
+import { buildAgentToolsHandler } from "#src/runtime/capabilities/tools.ts";
+import type { AgentToolResult, AgentToolset } from "#src/runtime/tools/builtin/toolset.ts";
+import { OPERATOR_INTERRUPTED_TOOL } from "#src/runtime/tools/tool-interrupt.ts";
 
 function call(name: string, args: unknown, id = "c1"): LLMToolCall {
   return { id, name, arguments: args };

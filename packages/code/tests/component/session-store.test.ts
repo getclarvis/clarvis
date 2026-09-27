@@ -16,7 +16,7 @@ import {
   uuidv7,
   type SessionMeta,
   type SessionTotals,
-} from "../../src/adapters/session-store.ts";
+} from "#src/adapters/session-store.ts";
 
 function fakeSessions(seed: Session[] = []): SessionService & { store: Map<string, Session> } {
   const store = new Map<string, Session>(seed.map((s) => [s.id, s]));

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { analyze, extractTitle, isIndexFile, selfFileFor, titleFromDir } from "../../src/tree.ts";
+import { analyze, extractTitle, isIndexFile, selfFileFor, titleFromDir } from "#src/tree.ts";
 
 describe("memory tree edge behavior", () => {
   test("recognizes both index names and falls back to a directory title", () => {

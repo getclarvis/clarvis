@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "../bun-test.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
-import type { Elicit } from "../../src/runtime/tools/ask-user-tool.ts";
+import type { Elicit } from "#src/runtime/tools/ask-user-tool.ts";
 
 let h: TestHarness | null = null;
 afterEach(async () => {

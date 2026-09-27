@@ -1,17 +1,17 @@
 import type { JSX } from "solid-js";
 import { For, Show } from "solid-js";
-import { detachObserved } from "../../../core/tasks.ts";
-import type { EnvKeyStatus, ProviderKind } from "../../../adapters/settings.ts";
-import type { KeySource } from "../../../adapters/provider-secrets.ts";
-import { PROVIDER_KINDS } from "../../../adapters/models-catalog.ts";
-import { KEY_SOURCES, SOURCE_MEANING } from "../../../features/providers/controller.ts";
-import { tokens } from "../../../theme/tokens.ts";
-import { glyph } from "../../../theme/glyphs.ts";
-import { truncateEnd } from "../../truncate.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import type { EnvKeyStatus, ProviderKind } from "#src/adapters/settings.ts";
+import type { KeySource } from "#src/adapters/provider-secrets.ts";
+import { PROVIDER_KINDS } from "#src/adapters/models-catalog.ts";
+import { KEY_SOURCES, SOURCE_MEANING } from "#src/features/providers/controller.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { truncateEnd } from "#src/views/truncate.ts";
 import { catalogReady, providerRows } from "../catalog-pick.ts";
 import { issueSet, mapProviderIssues } from "../validation.ts";
 import { Dash, FieldRow, SelectableRow } from "../view-host.tsx";
-import { verb, type LevelSpec } from "../../../ui/patterns/level-keys.ts";
+import { verb, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import type { ProvidersViewContext } from "./context.ts";
 
 export const PROVIDER_DETAIL_FIELDS = [

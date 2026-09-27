@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { globalPaths, HOME_ENV, workspaceStatePaths } from "@clarvis/paths";
-import { createStorageService } from "../../src/storage/storage-service.ts";
+import { createStorageService } from "#src/storage/storage-service.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

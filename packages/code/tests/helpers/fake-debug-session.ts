@@ -1,4 +1,4 @@
-import type { DebugSessionController } from "../../src/adapters/debug-session.ts";
+import type { DebugSessionController } from "#src/adapters/debug-session.ts";
 
 /** A `/debug` controller that records what it was asked to do and touches no disk. */
 export interface FakeDebugSessionController extends DebugSessionController {

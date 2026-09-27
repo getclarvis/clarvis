@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { ElicitRequestParams, ElicitResult } from "../../src/adapters/elicit-types.ts";
-import { createElicitSlot } from "../../src/adapters/elicit-slot.ts";
+import type { ElicitRequestParams, ElicitResult } from "#src/adapters/elicit-types.ts";
+import { createElicitSlot } from "#src/adapters/elicit-slot.ts";
 
 const REQ_A = { message: "question A" } as ElicitRequestParams;
 const REQ_B = { message: "question B" } as ElicitRequestParams;

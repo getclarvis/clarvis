@@ -8,7 +8,7 @@ import {
   runtimeErrorResult,
   timeoutResult,
   unavailableResult,
-} from "../../src/tool-results.ts";
+} from "#src/tool-results.ts";
 
 describe("MCP tool result mapping", () => {
   it("preserves successful SDK results", () => {

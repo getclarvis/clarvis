@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
-import { createBoundedFetch, ProviderResponseLimitError } from "../../src/ai-sdk/bounded-fetch.ts";
+import { createBoundedFetch, ProviderResponseLimitError } from "#src/ai-sdk/bounded-fetch.ts";
 
 function fetchOf(response: Response): typeof globalThis.fetch {
   return (async () => response) as unknown as typeof globalThis.fetch;

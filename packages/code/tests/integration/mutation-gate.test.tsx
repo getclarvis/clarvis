@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
-import { resolveToolRenderer, type ToolCallView } from "../../src/views/tools/registry.tsx";
+import { resolveToolRenderer, type ToolCallView } from "#src/views/tools/registry.tsx";
 import {
   diffStats,
   isLeadMutation,
   isOversizeMutation,
   MUTATION_GATE_LINES,
   mutationStats,
-} from "../../src/views/tools/mutation-gate.ts";
+} from "#src/views/tools/mutation-gate.ts";
 
 function bigDiff(lines: number): string {
   const added = Array.from({ length: lines }, (_, i) => `+line ${i}`);

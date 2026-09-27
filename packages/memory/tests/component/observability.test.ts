@@ -10,14 +10,14 @@
 import { describe, expect, it } from "bun:test";
 import { createRateLimiter } from "@clarvis/capability";
 
-import { DEFAULT_BUDGETS } from "../../src/config.ts";
-import { drainIndexJobs } from "../../src/drain.ts";
-import { indexRun } from "../../src/indexer/run.ts";
-import { MemoryRecoveryRequiredError } from "../../src/journal.ts";
-import { planReindex } from "../../src/reindex.ts";
-import { createInMemoryMemoryStore, createTestClock } from "../../src/testing.ts";
-import type { IndexerRuntime, MemoryStore } from "../../src/types.ts";
-import { captureWorkspaceState } from "../../src/workspace-state.ts";
+import { DEFAULT_BUDGETS } from "#src/config.ts";
+import { drainIndexJobs } from "#src/drain.ts";
+import { indexRun } from "#src/indexer/run.ts";
+import { MemoryRecoveryRequiredError } from "#src/journal.ts";
+import { planReindex } from "#src/reindex.ts";
+import { createInMemoryMemoryStore, createTestClock } from "#src/testing.ts";
+import type { IndexerRuntime, MemoryStore } from "#src/types.ts";
+import { captureWorkspaceState } from "#src/workspace-state.ts";
 import { doc, run } from "../helpers/fixtures.ts";
 import { fakeIndexerRuntime, writeStep } from "../helpers/indexer-runtime.ts";
 import { recordingLogger } from "../helpers/recording-logger.ts";

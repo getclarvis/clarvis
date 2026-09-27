@@ -11,7 +11,7 @@ import {
   createGoalController,
   type GoalBinding,
   type GoalController,
-} from "../../src/features/goal/controller.ts";
+} from "#src/features/goal/controller.ts";
 
 const controllers: GoalController[] = [];
 afterEach(() => {

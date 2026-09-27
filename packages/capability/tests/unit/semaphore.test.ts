@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { createSemaphore } from "../../src/semaphore.ts";
+import { createSemaphore } from "#src/semaphore.ts";
 
 describe("createSemaphore", () => {
   it("allows up to `limit` concurrent acquisitions, queueing the rest", async () => {

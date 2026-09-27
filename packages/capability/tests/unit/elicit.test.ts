@@ -1,12 +1,8 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
 
-import {
-  ElicitTimeoutError,
-  elicitWithClockPause,
-  type ElicitRawResult,
-} from "../../src/elicit.ts";
-import type { ComputeClock, ComputeRegion } from "../../src/compute-clock.ts";
-import type { Logger } from "../../src/ports.ts";
+import { ElicitTimeoutError, elicitWithClockPause, type ElicitRawResult } from "#src/elicit.ts";
+import type { ComputeClock, ComputeRegion } from "#src/compute-clock.ts";
+import type { Logger } from "#src/ports.ts";
 
 /**
  * A hand-rolled fake clock recording pause()/resume() calls in the order they

@@ -1,4 +1,4 @@
-import type { LoopClock } from "../../src/core/loop-schedule.ts";
+import type { LoopClock } from "#src/core/loop-schedule.ts";
 
 export class TestLoopClock implements LoopClock {
   wall = Date.parse("2026-01-01T10:00:00Z");

@@ -1,6 +1,6 @@
 import type { ValidateFunction } from "ajv";
-import { createAjv } from "../../validation/ajv.ts";
-import { errorText } from "../../error-text.ts";
+import { createAjv } from "#src/validation/ajv.ts";
+import { errorText } from "#src/error-text.ts";
 import { sanitizeErrorMessage, type Logger } from "@clarvis/capability";
 
 /**

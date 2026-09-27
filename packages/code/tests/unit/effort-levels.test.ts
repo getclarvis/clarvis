@@ -4,9 +4,9 @@ import {
   normalizeReasoningEfforts,
   recommendedReasoningEffort,
   supportedReasoningEfforts,
-} from "../../src/adapters/effort-levels.ts";
-import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
-import type { ProviderConfig } from "../../src/adapters/settings.ts";
+} from "#src/adapters/effort-levels.ts";
+import { createModelsCatalog } from "#src/adapters/models-catalog.ts";
+import type { ProviderConfig } from "#src/adapters/settings.ts";
 
 const catalog = createModelsCatalog({
   source: "bundle",

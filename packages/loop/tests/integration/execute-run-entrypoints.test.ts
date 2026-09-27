@@ -6,7 +6,7 @@ import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { loadEnv } from "@clarvis/capability";
 import { createConnectionManager } from "@clarvis/mcp-client";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
 import type { TraceStore } from "@clarvis/trace";
 import type { ToolsLogger } from "@clarvis/tools";
 import type { PathsLogger } from "@clarvis/paths";
@@ -14,11 +14,11 @@ import {
   buildExecuteRunDeps,
   createHostExtensionAdmission,
   createHostModelCallAdmission,
-} from "../../src/runtime/build-run-deps.ts";
-import { createAgentToolsCapability } from "../../src/runtime/capabilities/tools.ts";
-import { createAskUserCapability } from "../../src/runtime/capabilities/ask-user.ts";
+} from "#src/runtime/build-run-deps.ts";
+import { createAgentToolsCapability } from "#src/runtime/capabilities/tools.ts";
+import { createAskUserCapability } from "#src/runtime/capabilities/ask-user.ts";
 import { createHooksCapability } from "@clarvis/hooks/capability";
-import { createLogger } from "../../src/logger.ts";
+import { createLogger } from "#src/logger.ts";
 import { ProviderError } from "@clarvis/capability";
 import type { RunRequest } from "@clarvis/capability";
 

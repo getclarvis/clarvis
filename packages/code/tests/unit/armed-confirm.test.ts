@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
 import type { KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
-import { useArmedConfirm, type ArmedConfirm } from "../../src/views/confirm.ts";
-import { LAYER } from "../../src/ui/patterns/level-keys.ts";
+import { useArmedConfirm, type ArmedConfirm } from "#src/views/confirm.ts";
+import { LAYER } from "#src/ui/patterns/level-keys.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 function fakeKeymap(): {

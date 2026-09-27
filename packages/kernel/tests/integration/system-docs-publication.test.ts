@@ -11,8 +11,8 @@ import {
   SYSTEM_DOCS_FILES,
   systemDocsDestination,
   systemDocsSourceForModule,
-} from "../../src/skills/system-docs.ts";
-import { createSystemDocsProvider } from "../../src/skills/system-docs-provider.ts";
+} from "#src/skills/system-docs.ts";
+import { createSystemDocsProvider } from "#src/skills/system-docs-provider.ts";
 import { NOOP_LOGGER } from "@clarvis/capability";
 
 const asset = fileURLToPath(new URL("../../assets/skills/.system/clarvis-docs/", import.meta.url));

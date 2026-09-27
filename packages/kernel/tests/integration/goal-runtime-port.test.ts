@@ -12,8 +12,8 @@ import {
   type GoalRepository,
 } from "@clarvis/goal";
 import { createJsonTraceStore, mapEntry } from "@clarvis/trace";
-import { createGoalEvidenceSource, goalEvidenceDigest } from "../../src/goals/evidence.ts";
-import { createGoalRuntimePort } from "../../src/goals/runtime-port.ts";
+import { createGoalEvidenceSource, goalEvidenceDigest } from "#src/goals/evidence.ts";
+import { createGoalRuntimePort } from "#src/goals/runtime-port.ts";
 import { goalHostFixture } from "../helpers/goal-host.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];

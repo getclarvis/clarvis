@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import type { RunEvent } from "@clarvis/protocol";
-import { createTranscriptStore } from "../../src/adapters/store.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
+import { createTranscriptStore } from "#src/adapters/store.ts";
+import { BlockView } from "#src/views/blocks.tsx";
 import { applyRunEvent } from "../helpers/run-events.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 

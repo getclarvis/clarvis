@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
-import { WORKFLOW_RESULT_SCHEMAS, type WorkflowResultSchema } from "../../src/schemas.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
+import { WORKFLOW_RESULT_SCHEMAS, type WorkflowResultSchema } from "#src/schemas.ts";
 
 const entries = Object.entries(WORKFLOW_RESULT_SCHEMAS);
 

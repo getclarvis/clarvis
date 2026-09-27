@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { MouseEvent } from "@opentui/core";
-import { applyEvent } from "../../src/adapters/store.ts";
+import { applyEvent } from "#src/adapters/store.ts";
 import { openTranscript, transcriptRenderables } from "../helpers/transcript-render.tsx";
 import { transcriptToolEvents } from "../helpers/transcript-fixtures.ts";
 

@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { createServer } from "node:tls";
-import { createExecutionPolicy, prepareLaunch, SeatbeltBackend } from "../../../src/index.ts";
+import { createExecutionPolicy, prepareLaunch, SeatbeltBackend } from "#src/index.ts";
 
 test.skipIf(process.platform !== "darwin")(
   "Seatbelt enforces workspace read-only and broad ordinary reads",

@@ -3,9 +3,9 @@ import {
   BUILTIN_WORKFLOWS,
   BUILTIN_WORKFLOW_NAMES,
   resolveWorkflowDefinitions,
-} from "../../src/builtin-workflows/index.ts";
-import type { WorkflowDefinition } from "../../src/artifact.ts";
-import { interpolate } from "../../src/interpolate.ts";
+} from "#src/builtin-workflows/index.ts";
+import type { WorkflowDefinition } from "#src/artifact.ts";
+import { interpolate } from "#src/interpolate.ts";
 
 function override(name: string, description: string): WorkflowDefinition {
   return {

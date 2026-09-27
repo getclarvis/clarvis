@@ -1,13 +1,13 @@
 import type { JSX } from "solid-js";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import type { ProviderConfig, SettingsAdapter } from "../../adapters/settings.ts";
-import type { KeysAdapter } from "../../adapters/provider-secrets.ts";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
+import type { ProviderConfig, SettingsAdapter } from "#src/adapters/settings.ts";
+import type { KeysAdapter } from "#src/adapters/provider-secrets.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
 import {
   catalogProviderFromProtocol,
   type CatalogProvider,
   type ModelsCatalog,
-} from "../../adapters/models-catalog.ts";
+} from "#src/adapters/models-catalog.ts";
 import type {
   DeviceAuthorization,
   ModelCatalogService,
@@ -15,16 +15,16 @@ import type {
   SubscriptionAccountStatus,
   SubscriptionScheme,
 } from "@clarvis/protocol";
-import type { ViewHost } from "../../keys/commands.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
 import type { HintTone } from "../hint.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { createMapEditor } from "../../ui/patterns/map-editor.tsx";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { createMapEditor } from "#src/ui/patterns/map-editor.tsx";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import {
   createProvidersController,
   type ModelRemovalBlock,
   type ProviderMapField,
-} from "../../features/providers/controller.ts";
+} from "#src/features/providers/controller.ts";
 import {
   bodyFootnote,
   bodyKeyProblem,
@@ -33,10 +33,10 @@ import {
   headersFootnote,
   headerSuggestions,
   headerValueProblem,
-} from "../../features/providers/request-params.ts";
-import { presentProvidersEvent } from "../../features/providers/events.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import { errorText } from "../../adapters/errors.ts";
+} from "#src/features/providers/request-params.ts";
+import { presentProvidersEvent } from "#src/features/providers/events.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import { errorText } from "#src/adapters/errors.ts";
 import { modelRows } from "./catalog-pick.ts";
 import type { CatalogPickerSpec } from "./CatalogPicker.tsx";
 import { promptForApiKey } from "./key-entry.ts";

@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createConfigService, createFileConfigStore } from "../../src/config.ts";
+import { createConfigService, createFileConfigStore } from "#src/config.ts";
 
 const [globalDir, coordinationDir, workerIndexRaw, iterationsRaw] = process.argv.slice(2);
 const workerIndex = Number(workerIndexRaw);

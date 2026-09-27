@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { stewardStatusLabel } from "../../src/features/goal/presentation.ts";
+import { stewardStatusLabel } from "#src/features/goal/presentation.ts";
 import type { GoalRecord } from "@clarvis/protocol";
 import {
   lifecycleLabel,
@@ -7,7 +7,7 @@ import {
   scopedUsageText,
   settingSummary,
   uiLifecycle,
-} from "../../src/ui/presentation.ts";
+} from "#src/ui/presentation.ts";
 import {
   compactionNoticeText,
   planMetaText,
@@ -18,8 +18,8 @@ import {
   TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS,
   TRANSCRIPT_MOUNTED_TEXT_SHORTENED_NOTICE,
   TRANSCRIPT_PROSE_RELEASED_DISPLAY,
-} from "../../src/core/transcript/presenters.ts";
-import type { TranscriptNode } from "../../src/core/transcript/types.ts";
+} from "#src/core/transcript/presenters.ts";
+import type { TranscriptNode } from "#src/core/transcript/types.ts";
 
 test("Steward status labels distinguish clarification from operator action", () => {
   const goal = (status: NonNullable<GoalRecord["steward"]>["status"]): GoalRecord =>

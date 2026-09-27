@@ -10,7 +10,7 @@ import {
   GREP_SCAN_MAX_MS,
   GREP_WINDOW_OVERLAP,
   matchWindowed,
-} from "../../src/text/grep.ts";
+} from "#src/text/grep.ts";
 import {
   DEFAULT_MIN_LENGTH,
   DEFAULT_STOPWORDS,
@@ -23,7 +23,7 @@ import {
   tokenList,
   tokenize,
   tokenizeQuery,
-} from "../../src/text/tokenize.ts";
+} from "#src/text/tokenize.ts";
 
 describe("tokenList", () => {
   test("keeps accented Portuguese words whole", () => {

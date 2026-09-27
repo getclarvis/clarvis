@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
-import { createTestRunInfrastructure, createTestTraceStore } from "../../src/testing/index.ts";
+import { createTestRunInfrastructure, createTestTraceStore } from "#src/testing/index.ts";
 
 describe("engine testing runtime", () => {
   it("owns fresh trace and MCP infrastructure for downstream real-loop tests", async () => {

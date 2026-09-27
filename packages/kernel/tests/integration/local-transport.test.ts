@@ -10,17 +10,17 @@ import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-c
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
 import { MockLLM } from "@clarvis/loop/testing";
 import type { KernelTransport } from "@clarvis/protocol";
-import { createInProcessKernel } from "../../src/kernel.ts";
-import { createMemoryConfigStore } from "../../src/config.ts";
-import { createKernelServer } from "../../src/transport/server.ts";
-import { connectKernelClient } from "../../src/transport/client.ts";
+import { createInProcessKernel } from "#src/kernel.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
+import { createKernelServer } from "#src/transport/server.ts";
+import { connectKernelClient } from "#src/transport/client.ts";
 import {
   connectLocalKernelTransport,
   listenLocalKernel,
   type LocalKernelListenerOptions,
-} from "../../src/transport/local.ts";
-import { kernelError } from "../../src/core/errors.ts";
-import { CLARVIS_WIRE_VERSION, M } from "../../src/transport/wire.ts";
+} from "#src/transport/local.ts";
+import { kernelError } from "#src/core/errors.ts";
+import { CLARVIS_WIRE_VERSION, M } from "#src/transport/wire.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];

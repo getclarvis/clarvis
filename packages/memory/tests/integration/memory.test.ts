@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { MockLLM, MockLLMScriptStep } from "@clarvis/loop/testing";
 
-import { createFileMemory, createMemory } from "../../src/index.ts";
-import type { Memory } from "../../src/memory-contract.ts";
-import { createInMemoryMemoryStore, createTestClock } from "../../src/testing.ts";
-import type { MemoryStore } from "../../src/types.ts";
+import { createFileMemory, createMemory } from "#src/index.ts";
+import type { Memory } from "#src/memory-contract.ts";
+import { createInMemoryMemoryStore, createTestClock } from "#src/testing.ts";
+import type { MemoryStore } from "#src/types.ts";
 import { doc, run, toolCall } from "../helpers/fixtures.ts";
 import { makeRoot } from "../helpers/fs.ts";
 import { editStep, fakeIndexerRuntime, writeStep } from "../helpers/indexer-runtime.ts";

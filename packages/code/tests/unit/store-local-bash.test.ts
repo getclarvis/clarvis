@@ -5,9 +5,9 @@ import {
   type LocalBashDisplay,
   type TranscriptNode,
   type TranscriptToolNode,
-} from "../../src/adapters/store.ts";
+} from "#src/adapters/store.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
-import { parseBash } from "../../src/adapters/tool-parsers.ts";
+import { parseBash } from "#src/adapters/tool-parsers.ts";
 
 const ev = runEvent;
 

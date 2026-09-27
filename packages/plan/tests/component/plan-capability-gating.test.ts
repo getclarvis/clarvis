@@ -22,16 +22,16 @@ import {
   type RunCapabilityContext,
   type RunRequest,
 } from "@clarvis/capability";
-import { createPlanStore, type PlanRef } from "../../src/index.ts";
-import { createInMemoryPlanRepository } from "../../src/testing.ts";
-import { createPlansCapability } from "../../src/capability/index.ts";
+import { createPlanStore, type PlanRef } from "#src/index.ts";
+import { createInMemoryPlanRepository } from "#src/testing.ts";
+import { createPlansCapability } from "#src/capability/index.ts";
 import {
   CREATE_PLAN_TOOL_NAME,
   LIST_PLANS_TOOL_NAME,
   READ_PLAN_TOOL_NAME,
   REVISE_PLAN_TOOL_NAME,
   TRANSITION_PLAN_TASK_TOOL_NAME,
-} from "../../src/capability/runtime-tools.ts";
+} from "#src/capability/runtime-tools.ts";
 import {
   fakeAgentBuildContext,
   fakeExecutionRecord,

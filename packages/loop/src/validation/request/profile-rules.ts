@@ -1,5 +1,5 @@
 import type { EnvConfig, ModelExecutionResolver } from "@clarvis/capability";
-import { requireModelExecution } from "../../model-execution.ts";
+import { requireModelExecution } from "#src/model-execution.ts";
 import { parseModelRef, ValidationError } from "@clarvis/capability";
 import type { ParsedRunRequest } from "./request-schema.ts";
 import { INPUT_LIMITS } from "../input-limits.ts";

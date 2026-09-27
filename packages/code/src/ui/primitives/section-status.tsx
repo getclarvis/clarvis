@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
 import { For } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 import { LABEL_WIDTH } from "./field-row.tsx";
 
 /** Renders a section divider label with a leading rule glyph, in the accent2 color. */

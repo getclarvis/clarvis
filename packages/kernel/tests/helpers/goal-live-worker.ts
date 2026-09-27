@@ -12,9 +12,9 @@ import {
 import { createFilePlanRepository, createPlanStore } from "@clarvis/plan";
 import { localHostPaths, writeFileDurableSync } from "@clarvis/paths";
 import type { KernelClient } from "@clarvis/protocol";
-import { openHostedProjection } from "../../src/hosting/projection.ts";
-import { connectKernelClient } from "../../src/transport/client.ts";
-import { connectLocalKernelTransport, listenLocalKernel } from "../../src/transport/local.ts";
+import { openHostedProjection } from "#src/hosting/projection.ts";
+import { connectKernelClient } from "#src/transport/client.ts";
+import { connectLocalKernelTransport, listenLocalKernel } from "#src/transport/local.ts";
 import { CacheBudget } from "../../../../tooling/cache/limits.ts";
 import { createCacheRecorder } from "../../../../tooling/cache/recorder.ts";
 import type { CachePurpose } from "../../../../tooling/cache/types.ts";

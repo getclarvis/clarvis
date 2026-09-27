@@ -16,8 +16,8 @@ import {
   createStdioTransport,
   serveKernelOverStdio,
   connectKernelClient,
-} from "../../src/index.ts";
-import { createMemoryConfigStore } from "../../src/config.ts";
+} from "#src/index.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 
 const createInProcessKernel: typeof rawCreateInProcessKernel = (options) => {

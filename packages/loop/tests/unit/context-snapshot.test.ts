@@ -6,7 +6,7 @@ import {
   DISABLED_COMPACTION,
   type CompactionConfig,
   type LiveSeedEntry,
-} from "../../src/runtime/context/index.ts";
+} from "#src/runtime/context/index.ts";
 
 const ROOMY: CompactionConfig = {
   enabled: true,

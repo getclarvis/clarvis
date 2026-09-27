@@ -1,21 +1,17 @@
 import { expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
-import { createProvidersController } from "../../src/features/providers/controller.ts";
-import { presentProvidersEvent } from "../../src/features/providers/events.ts";
+import { createProvidersController } from "#src/features/providers/controller.ts";
+import { presentProvidersEvent } from "#src/features/providers/events.ts";
 import type {
   FieldIssue,
   ProviderConfig,
   Scope,
   SettingsAdapter,
   SettingsFile,
-} from "../../src/adapters/settings.ts";
-import type { KeysAdapter, KeySource } from "../../src/adapters/provider-secrets.ts";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
-import type {
-  CatalogModel,
-  CatalogProvider,
-  ModelsCatalog,
-} from "../../src/adapters/models-catalog.ts";
+} from "#src/adapters/settings.ts";
+import type { KeysAdapter, KeySource } from "#src/adapters/provider-secrets.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { CatalogModel, CatalogProvider, ModelsCatalog } from "#src/adapters/models-catalog.ts";
 
 function fakeSettings(
   provider: ProviderConfig | undefined,

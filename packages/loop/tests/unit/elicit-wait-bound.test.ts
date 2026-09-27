@@ -4,7 +4,7 @@ import {
   ElicitTimeoutError,
   type Elicit,
   type ElicitParams,
-} from "../../src/runtime/tools/ask-user-tool.ts";
+} from "#src/runtime/tools/ask-user-tool.ts";
 
 const params: ElicitParams = {
   message: "q",

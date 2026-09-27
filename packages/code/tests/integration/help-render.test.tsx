@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { createTestKeymap } from "@opentui/keymap/testing";
-import { Help } from "../../src/views/overlays/Help.tsx";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { CommandEntryView } from "../../src/keys/commands.ts";
-import { registerUiActionFields, uiCommand } from "../../src/keys/actions.ts";
-import { registerWhenField } from "../../src/keys/when-dsl.ts";
-import { LAYER } from "../../src/keys/keyspec.ts";
+import { Help } from "#src/views/overlays/Help.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { CommandEntryView } from "#src/keys/commands.ts";
+import { registerUiActionFields, uiCommand } from "#src/keys/actions.ts";
+import { registerWhenField } from "#src/keys/when-dsl.ts";
+import { LAYER } from "#src/keys/keyspec.ts";
 
 function fakeInteraction(): { interaction: Interaction; cleanup(): void } {
   const harness = createTestKeymap({ defaultKeys: true });

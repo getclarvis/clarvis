@@ -7,8 +7,8 @@ import {
 } from "@opentui/core";
 import { TestRecorder, type RecordedFrame } from "@opentui/core/testing";
 import { createSignal } from "solid-js";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
+import type { TranscriptNode } from "#src/adapters/store.ts";
+import { BlockView } from "#src/views/blocks.tsx";
 import { openRender } from "../helpers/tracked-render.ts";
 
 function tokenCells(recorded: RecordedFrame, token: string, width: number) {

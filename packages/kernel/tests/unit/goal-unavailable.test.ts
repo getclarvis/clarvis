@@ -1,5 +1,5 @@
 import { expect, it } from "bun:test";
-import { unavailableGoalService } from "../../src/goals/unavailable.ts";
+import { unavailableGoalService } from "#src/goals/unavailable.ts";
 
 it("keeps goal operations unavailable without an authenticated conversation host", async () => {
   const goals = unavailableGoalService("No conversation host");

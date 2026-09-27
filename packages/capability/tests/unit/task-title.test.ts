@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
-import { TASK_TITLE_MAX, parseTaskTitle } from "../../src/task-title.ts";
+import { TASK_TITLE_MAX, parseTaskTitle } from "#src/task-title.ts";
 
 describe("parseTaskTitle", () => {
   it("normalizes surrounding and repeated horizontal whitespace", () => {

@@ -1,4 +1,4 @@
-import { fuzzyFilter } from "../../core/fuzzy.ts";
+import { fuzzyFilter } from "#src/core/fuzzy.ts";
 import type { CompleteItem, CompleteProvider } from "./autocomplete.ts";
 
 /** One user-invocable skill as the `$` composer popup should present it. */

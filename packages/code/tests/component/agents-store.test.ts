@@ -6,7 +6,7 @@ import {
   findAgentConflicts,
   loadAgentFiles,
   loadAgentFilesSnapshot,
-} from "../../src/adapters/agents-store.ts";
+} from "#src/adapters/agents-store.ts";
 
 function record(scope: AgentRecord["scope"], name: string, model: string): AgentRecord {
   return {

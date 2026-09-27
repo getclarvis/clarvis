@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { createScanBudget } from "../../src/lib/scan-budget.ts";
-import { DEFAULT_REGEX_SCAN_BUDGET_MS } from "../../src/config.ts";
+import { createScanBudget } from "#src/lib/scan-budget.ts";
+import { DEFAULT_REGEX_SCAN_BUDGET_MS } from "#src/config.ts";
 
 function controlledClock(): { now: () => number; advance: (ms: number) => void } {
   let current = 0;

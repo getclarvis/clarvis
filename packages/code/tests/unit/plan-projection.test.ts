@@ -6,7 +6,7 @@ import {
   isExpectedPlanDiscard,
   isLivePlan,
   reducePlanProjection,
-} from "../../src/adapters/plan-projection.ts";
+} from "#src/adapters/plan-projection.ts";
 
 const created: Extract<RunEvent, { type: "plan_created" }> = {
   type: "plan_created",

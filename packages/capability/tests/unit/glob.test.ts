@@ -1,5 +1,5 @@
 import { describe, expect, test } from "../helpers/bun-test.ts";
-import { escapeRegExp, globToRegExp } from "../../src/glob.ts";
+import { escapeRegExp, globToRegExp } from "#src/glob.ts";
 
 describe("escapeRegExp", () => {
   test("escapes every regex metacharacter", () => {

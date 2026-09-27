@@ -4,7 +4,7 @@ import {
   MAX_MCP_INSTRUCTIONS_SECTION_CHARS,
   createMcpInstructionsRunCapability,
   renderMcpInstructions,
-} from "../../src/runtime/mcp-instructions.ts";
+} from "#src/runtime/mcp-instructions.ts";
 
 function opened(name: string, instructions?: string): OpenedConnection {
   return {

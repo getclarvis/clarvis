@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { sanitizeText } from "@clarvis/capability";
 
-import * as barrel from "../../src/index.ts";
+import * as barrel from "#src/index.ts";
 
 // The barrel's redaction surface is an invisible property: re-adding
 // `sanitizeDeep` here — or widening the re-export to `export * from

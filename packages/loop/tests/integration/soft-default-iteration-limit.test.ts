@@ -1,10 +1,10 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { loadEnv } from "@clarvis/capability";
-import { runOrchestrator, type OrchestratorDeps } from "../../src/runtime/orchestrator.ts";
+import { runOrchestrator, type OrchestratorDeps } from "#src/runtime/orchestrator.ts";
 import { MockLLM, mockConnections, mockMCPFactory } from "./_fixtures.ts";
-import { createAskUserCapability } from "../../src/runtime/capabilities/ask-user.ts";
+import { createAskUserCapability } from "#src/runtime/capabilities/ask-user.ts";
 import type { RunRequest, McpServerConfig } from "@clarvis/capability";
-import type { Elicit } from "../../src/runtime/tools/ask-user-tool.ts";
+import type { Elicit } from "#src/runtime/tools/ask-user-tool.ts";
 
 const env = loadEnv({
   ANTHROPIC_API_KEY: "k",

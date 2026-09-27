@@ -17,9 +17,9 @@
  */
 import { describe, expect, it } from "../bun-test.ts";
 import type { LLMToolCall, RunCapability } from "@clarvis/capability";
-import { orderCapabilities } from "../../src/runtime/capability-order.ts";
-import { selectHandler } from "../../src/runtime/loop/loop-contract.ts";
-import type { ToolHandler } from "../../src/runtime/loop/loop-contract.ts";
+import { orderCapabilities } from "#src/runtime/capability-order.ts";
+import { selectHandler } from "#src/runtime/loop/loop-contract.ts";
+import type { ToolHandler } from "#src/runtime/loop/loop-contract.ts";
 
 function cap(name: string, order?: number): RunCapability {
   return { name, ...(order === undefined ? {} : { order }) } as RunCapability;

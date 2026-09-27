@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
-import { health, type MemoryHealthCode } from "../../src/health.ts";
-import { createMemory } from "../../src/index.ts";
-import { reindex } from "../../src/reindex.ts";
-import { MemoryStorageLimitError } from "../../src/storage-limits.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
-import type { MemoryStore } from "../../src/types.ts";
-import type { Memory } from "../../src/memory-contract.ts";
+import { health, type MemoryHealthCode } from "#src/health.ts";
+import { createMemory } from "#src/index.ts";
+import { reindex } from "#src/reindex.ts";
+import { MemoryStorageLimitError } from "#src/storage-limits.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
+import type { MemoryStore } from "#src/types.ts";
+import type { Memory } from "#src/memory-contract.ts";
 
 const NOW = 1_800_000_000_000;
 const DAY = 86_400_000;

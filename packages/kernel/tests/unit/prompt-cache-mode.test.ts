@@ -7,7 +7,7 @@ import {
   PROVIDER_KINDS,
   type CatalogCost,
   type ModelsCatalog,
-} from "../../src/config.ts";
+} from "#src/config.ts";
 
 describe("T1: cacheModeOf", () => {
   it("reads a priced creation as explicit", () => {
@@ -146,7 +146,7 @@ describe("nothing on the run path consults the catalog", () => {
     // Anthropic whenever the mode is not "off" and marks openai-compatible only
     // on "explicit", which derivation never returns. The value belongs in
     // settings.json, written where a model is configured.
-    const kernel: Record<string, unknown> = await import("../../src/config.ts");
+    const kernel: Record<string, unknown> = await import("#src/config.ts");
     expect(kernel.withPromptCacheModes).toBeUndefined();
     expect(kernel.resolvePromptCacheModes).toBeUndefined();
     expect(typeof kernel.derivePromptCacheMode).toBe("function");

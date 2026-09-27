@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createAgentTools } from "../../../src/index.ts";
+import { createAgentTools } from "#src/index.ts";
 import { configurationRoots } from "@clarvis/paths";
 import { makeWorkspace, cleanup, write, resultText } from "../../helpers/fixtures.ts";
 import { expectedToolNames } from "../../helpers/tool-surface.ts";

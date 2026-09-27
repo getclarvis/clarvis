@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, beforeEach, vi } from "../helpers/bun-
 import { streamText as realStreamText } from "ai";
 import { AiSdkAdapter } from "@clarvis/llm/adapter";
 import { ProviderError, type LLMCallParams } from "@clarvis/capability";
-import { bridgeModelCallTimeout } from "../../src/model-call-timeout-bridge.ts";
+import { bridgeModelCallTimeout } from "#src/model-call-timeout-bridge.ts";
 
 const mockStream = vi.fn();
 const mockGenerate = vi.fn();

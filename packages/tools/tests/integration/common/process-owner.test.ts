@@ -1,7 +1,7 @@
 import { expect, it } from "bun:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { isAlive, ownedTreeRunning, stopOwnedProcess } from "../../../src/lib/process-owner.ts";
+import { isAlive, ownedTreeRunning, stopOwnedProcess } from "#src/lib/process-owner.ts";
 import { cleanup, makeConfig, makeWorkspace } from "../../helpers/fixtures.ts";
 
 it("escalates from TERM to KILL for an owned process that ignores TERM", async () => {

@@ -14,10 +14,10 @@
 import { describe, expect, it } from "../bun-test.ts";
 import type { AgentResult } from "@clarvis/capability";
 import { createTrace } from "@clarvis/trace";
-import { createIterationCounter, createTokenLedger } from "../../src/runtime/budget/index.ts";
-import { DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
-import { runAgent, type RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
+import { createIterationCounter, createTokenLedger } from "#src/runtime/budget/index.ts";
+import { DISABLED_COMPACTION } from "#src/runtime/context/index.ts";
+import { runAgent, type RunAgentInput } from "#src/runtime/loop/run-agent.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
 import { MockLLM } from "../helpers/fixtures.ts";
 
 /** Repeating one unknown tool call keeps the signature identical, so the doom guard trips. */

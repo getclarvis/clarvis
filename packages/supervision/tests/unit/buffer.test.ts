@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { createAgentBuffer } from "../../src/buffer.ts";
+import { createAgentBuffer } from "#src/buffer.ts";
 
 const big = { maxLines: 1000, maxBytes: 1_000_000 };
 

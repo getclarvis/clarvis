@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
 import { loadEnv } from "@clarvis/capability";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
 import { mockConnections, mockMCPFactory } from "./_fixtures.ts";

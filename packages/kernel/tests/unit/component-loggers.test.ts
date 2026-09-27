@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
-import { createComponentLoggers } from "../../src/component-loggers.ts";
+import { createComponentLoggers } from "#src/component-loggers.ts";
 
 interface Derived {
   bindings: Record<string, unknown>;

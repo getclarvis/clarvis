@@ -15,17 +15,17 @@ import { AiSdkAdapter } from "@clarvis/llm/adapter";
 import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-client";
 import type { RunHandle, Session } from "@clarvis/protocol";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
-import { prepareHostedGoalTurn } from "../../src/goals/hosted-turn.ts";
-import { createGoalEvidenceSource } from "../../src/goals/evidence.ts";
-import { createGoalRepository } from "../../src/goals/repository.ts";
-import { createHostedRegistry } from "../../src/hosting/registry.ts";
-import { createHostedProjection } from "../../src/hosting/projection.ts";
+import { prepareHostedGoalTurn } from "#src/goals/hosted-turn.ts";
+import { createGoalEvidenceSource } from "#src/goals/evidence.ts";
+import { createGoalRepository } from "#src/goals/repository.ts";
+import { createHostedRegistry } from "#src/hosting/registry.ts";
+import { createHostedProjection } from "#src/hosting/projection.ts";
 import {
   createHostedSessionCoordinator,
   type HostedPreparationContext,
-} from "../../src/hosting/sessions.ts";
-import { createSessionService } from "../../src/sessions/session-service.ts";
-import { createRunService } from "../../src/runs/run-service.ts";
+} from "#src/hosting/sessions.ts";
+import { createSessionService } from "#src/sessions/session-service.ts";
+import { createRunService } from "#src/runs/run-service.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HOOK_MESSAGE_MAX_CHARS, parseHookStdout } from "../../src/parse.ts";
+import { HOOK_MESSAGE_MAX_CHARS, parseHookStdout } from "#src/parse.ts";
 
 const GATE = { truncated: false, allowContext: false, allowRewrite: false } as const;
 const CONTEXTUAL = { truncated: false, allowContext: true, allowRewrite: false } as const;

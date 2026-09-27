@@ -1303,11 +1303,13 @@ type-position reference through `importedSpecifiers` and asserts all five specif
 **INV-CB-9b.** Every relative import under `src`, `tooling` and `tests` names the actual TypeScript
 source extension (`.ts` or `.tsx`). A `.js` specifier is valid only when it refers to a real runtime
 artifact rather than aliasing a neighboring TypeScript source; generated `dist/index.js` and lazy
-chunks therefore remain JavaScript. Production: `packages/code/tsconfig.json`
-(`allowImportingTsExtensions`) and the package's relative source imports. Test:
-`tooling/checks/import-extensions.ts` (`aliasedTypeScriptImports`), the repository-wide guard owned
-by **build-and-ci**, resolves every relative runtime extension and rejects it when a matching
-TypeScript source exists.
+chunks therefore remain JavaScript. Code's private `#src/*` mapping names the same source files
+for long internal imports and package tests/tooling; short relatives remain relative.
+Production: `packages/code/tsconfig.json` (`allowImportingTsExtensions`),
+`packages/code/package.json` (`imports`), and `tooling/checks/import-extensions.ts`
+(`invalidPrivateImportConvention`, `invalidRelativeImportExtensions`). Test:
+`tooling/tests/unit/import-extensions.test.ts` (import convention cases) and
+`tooling/tests/architecture/module-resolution-contract.test.ts` (Code aliases with outputs hidden).
 
 **INV-CB-10 (owns INV-252).** The manifest declares exactly two `@clarvis/*` dependencies:
 `@clarvis/kernel` and `@clarvis/protocol`.
@@ -1753,7 +1755,7 @@ schema construction onto the pre-paint path merely to obtain this helper"
 the eight sanctioned `@clarvis/kernel` entrypoints, §5) but would defeat the fast-path measurement
 `cli-fast-path.test.ts` exists to hold (§7.4's first bullet). The duplication is pinned identical to its
 source rather than merely similar: `packages/code/tests/unit/errors.test.ts` imports both
-`errorText` from `../../src/adapters/errors.ts` and `@clarvis/kernel/policy`'s and asserts the two agree
+`errorText` from `#src/adapters/errors.ts` and `@clarvis/kernel/policy`'s and asserts the two agree
 on ten cases spanning both branches (a plain `Error`, a subclass, an `Error` with a `cause`, an empty
 message, a bare string, a number, `null`, `undefined`, a non-`Error` object shaped like one, and a
 `Symbol`) — so a future edit to the kernel's version that this copy does not follow would fail the test
@@ -1765,8 +1767,8 @@ Its importers span every layer this document's boundary rules separate:
 `packages/code/src/views/overlay-host.ts`, `packages/code/src/onboarding/doctor.ts`,
 `packages/code/src/app/commands.tsx`, nine `views/config/*.tsx` screens,
 `packages/code/src/features/agents/events.ts`, `packages/code/src/features/providers/events.ts`,
-`packages/code/src/adapters/marketplace.ts`, and `packages/code/src/adapters/plugin-install.ts` — all importing the same relative `./errors.ts` (or
-`../adapters/errors.ts`) sibling rather than reaching past it into the kernel.
+`packages/code/src/adapters/marketplace.ts`, and `packages/code/src/adapters/plugin-install.ts` — all importing the same Code-owned module via a nearby relative or `#src/adapters/errors.ts`,
+without reaching past it into the kernel.
 
 ## 8. Open questions
 

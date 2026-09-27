@@ -8,8 +8,8 @@ import {
   createPlanStore,
   type PlanStore,
 } from "@clarvis/plan";
-import { createPlansService } from "../../src/plans/plans-service.ts";
-import { KernelException } from "../../src/core/errors.ts";
+import { createPlansService } from "#src/plans/plans-service.ts";
+import { KernelException } from "#src/core/errors.ts";
 
 function makeStore(): PlanStore {
   const ws = ownedTempDirSync(join(tmpdir(), "clarvis-plans-svc-"));

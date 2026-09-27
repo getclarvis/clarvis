@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RunEvent, Session, StartHostedTurnParams } from "@clarvis/protocol";
-import { startHeadlessRun } from "../../src/adapters/headless-run.ts";
+import { startHeadlessRun } from "#src/adapters/headless-run.ts";
 import { hostedAttachment, hostedRef, hostingFixture } from "../helpers/hosted-run.ts";
 
 function fixture() {

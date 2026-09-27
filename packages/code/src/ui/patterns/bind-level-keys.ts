@@ -1,5 +1,5 @@
 import { createEffect, onCleanup, type Accessor } from "solid-js";
-import type { ViewHost } from "../../keys/commands.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
 
 interface EditingState {
   editing: Accessor<object | null>;

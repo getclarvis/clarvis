@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { buildSubmitResultTool, SUBMIT_RESULT_TOOL_NAME } from "../../src/runtime/tools/index.ts";
+import { buildSubmitResultTool, SUBMIT_RESULT_TOOL_NAME } from "#src/runtime/tools/index.ts";
 
 const schema = { type: "object", properties: { x: { type: "string" } } };
 

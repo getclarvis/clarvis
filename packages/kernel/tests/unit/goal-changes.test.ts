@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createGoalChanges } from "../../src/goals/changes.ts";
+import { createGoalChanges } from "#src/goals/changes.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
 describe("goal display invalidations", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { runWithClockAndTimeout } from "../../src/runtime/run-timeout.ts";
+import { runWithClockAndTimeout } from "#src/runtime/run-timeout.ts";
 import type { Usage } from "@clarvis/capability";
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {

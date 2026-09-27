@@ -16,7 +16,7 @@ import {
   createFileKernel as rawCreateFileKernel,
   createKernelEnvironment,
   resolveSecretEnvironment,
-} from "../../src/bootstrap.ts";
+} from "#src/bootstrap.ts";
 import {
   agentsPluginsDir,
   globalPaths,
@@ -25,7 +25,7 @@ import {
   workspaceScopeKey,
   workspaceStatePaths,
 } from "@clarvis/paths";
-import { discoverGitWorkspace } from "../../src/git-workspace.ts";
+import { discoverGitWorkspace } from "#src/git-workspace.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
 const createFileKernel: typeof rawCreateFileKernel = async (options) => {

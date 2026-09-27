@@ -4,7 +4,7 @@ import type { ExecuteRunDeps } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import type { RunHandle } from "@clarvis/protocol";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
-import { createRunService } from "../../src/runs/run-service.ts";
+import { createRunService } from "#src/runs/run-service.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve!: () => void;

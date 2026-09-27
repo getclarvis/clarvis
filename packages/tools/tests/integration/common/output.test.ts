@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { makeWorkspace, cleanup, makeConfig, callTool, write } from "../../helpers/fixtures.ts";
-import { allocateBudget, bound, createOutputCoalescer } from "../../../src/lib/output.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import { allocateBudget, bound, createOutputCoalescer } from "#src/lib/output.ts";
+import type { ServerConfig } from "#src/config.ts";
 
 describe("bound()", () => {
   it("returns the input unchanged when it fits", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { skillFrontmatterSchema } from "../../src/schema.ts";
+import { skillFrontmatterSchema } from "#src/schema.ts";
 
 describe("skillFrontmatterSchema", () => {
   it("accepts the minimal name + description frontmatter", () => {

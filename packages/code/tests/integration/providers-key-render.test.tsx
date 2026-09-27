@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { ProvidersPanel } from "../../src/views/config/ProvidersPanel.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { ProvidersPanel } from "#src/views/config/ProvidersPanel.tsx";
 import type {
   FieldIssue,
   ProviderConfig,
@@ -10,17 +10,17 @@ import type {
   SettingsAdapter,
   SettingsFile,
   SettingsPatch,
-} from "../../src/adapters/settings.ts";
-import type { KeysAdapter, KeySource } from "../../src/adapters/provider-secrets.ts";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
-import { createModelsCatalog, type ModelsCatalog } from "../../src/adapters/models-catalog.ts";
+} from "#src/adapters/settings.ts";
+import type { KeysAdapter, KeySource } from "#src/adapters/provider-secrets.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import { createModelsCatalog, type ModelsCatalog } from "#src/adapters/models-catalog.ts";
 import type {
   ModelCatalog,
   ModelCatalogService,
   ProviderAuthService,
   SubscriptionAccountStatus,
 } from "@clarvis/protocol";
-import { glyph } from "../../src/theme/glyphs.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 import { captureUntil } from "../helpers/render-support.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 

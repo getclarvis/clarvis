@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 import {
   projectTranscriptToolDisplay,
   TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS,
   TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE,
-} from "../../src/core/transcript/index.ts";
-import { TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS } from "../../src/core/transcript/presenters.ts";
+} from "#src/core/transcript/index.ts";
+import { TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS } from "#src/core/transcript/presenters.ts";
 
 type ToolNode = Extract<TranscriptNode, { kind: "tool_call" }>;
 

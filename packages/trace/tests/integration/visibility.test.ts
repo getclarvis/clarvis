@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJsonTraceStore, createTraceVisibilityView, JOURNAL_VERSION } from "@clarvis/trace";
-import { createMemoryTraceStore } from "../../src/testing.ts";
+import { createMemoryTraceStore } from "#src/testing.ts";
 import { makeExecutionRecord } from "../helpers/execution-record.ts";
 import { journalHeader, JOURNAL_OWNER, JOURNAL_STARTED_AT } from "../helpers/journal-fixtures.ts";
 

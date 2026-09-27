@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
-import { createNodeProcessRunner } from "../../src/adapters/process/node-process-runner.ts";
-import { createGitChangesProvider } from "../../src/workspace/git-changes-provider.ts";
-import { createWorkspaceChangesService } from "../../src/workspace/workspace-changes-service.ts";
+import { createNodeProcessRunner } from "#src/adapters/process/node-process-runner.ts";
+import { createGitChangesProvider } from "#src/workspace/git-changes-provider.ts";
+import { createWorkspaceChangesService } from "#src/workspace/workspace-changes-service.ts";
 import type {
   WorkspaceChangesContext,
   WorkspaceChangesProvider,
-} from "../../src/workspace/changes-provider.ts";
+} from "#src/workspace/changes-provider.ts";
 import type { WorkspaceChangesAvailability } from "@clarvis/protocol";
 
 const roots: string[] = [];

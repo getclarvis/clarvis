@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "bun:test";
-import { clarvisSkillRoots } from "../../src/preset.ts";
+import { clarvisSkillRoots } from "#src/preset.ts";
 import { agentsSkillsDirs, HOME_ENV } from "@clarvis/paths";
 
 describe("clarvisSkillRoots", () => {

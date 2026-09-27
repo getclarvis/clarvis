@@ -11,6 +11,9 @@
   "engines": {
     "bun": ">=1.4.0"
   },
+  "imports": {
+    "#src/*": "./src/*"
+  },
   "scripts": {
     "setup": "bun run tooling/setup.ts",
     "start": "bun --preload @opentui/solid/preload run src/index.tsx",

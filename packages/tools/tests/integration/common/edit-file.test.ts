@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { applyEdit } from "../../../src/tools/edit-file.ts";
-import { ToolError } from "../../../src/errors.ts";
+import { applyEdit } from "#src/tools/edit-file.ts";
+import { ToolError } from "#src/errors.ts";
 import {
   makeWorkspace,
   cleanup,
@@ -13,7 +13,7 @@ import {
   mode,
   modeBitsEnforced,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 
 function toolError(fn: () => unknown): ToolError {
   try {

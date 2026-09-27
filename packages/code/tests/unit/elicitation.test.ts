@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
-import type { ElicitRequestParams } from "../../src/adapters/elicit-types.ts";
+import type { ElicitRequestParams } from "#src/adapters/elicit-types.ts";
 import {
   acceptResult,
   buildContent,
   initialValues,
   missingRequired,
   parseElicitForm,
-} from "../../src/adapters/elicitation.ts";
+} from "#src/adapters/elicitation.ts";
 
 const askUserText: ElicitRequestParams = {
   message: "What should I name the file?",

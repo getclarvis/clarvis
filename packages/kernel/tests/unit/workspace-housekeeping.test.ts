@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "bun:test";
-import { WorkspaceHousekeeping } from "../../src/application/workspace-housekeeping.ts";
+import { WorkspaceHousekeeping } from "#src/application/workspace-housekeeping.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve!: () => void;

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJsonTraceStore, projectTraceStoreWrites } from "@clarvis/trace";
 
-import { createMemoryTraceStore } from "../../../src/testing.ts";
+import { createMemoryTraceStore } from "#src/testing.ts";
 import { traceStoreConformance } from "./trace-store-conformance.ts";
 
 traceStoreConformance("memory", () => ({ store: createMemoryTraceStore() }));

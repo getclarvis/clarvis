@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { goalNetTokens } from "@clarvis/goal";
 import { ProviderError, type LLMCallParams, type LLMCallResult } from "@clarvis/capability";
 import type { PerAgentUsage, RunUsage } from "@clarvis/protocol";
-import { createGoalUsageTracker, measureGoalRunUsage } from "../../src/goals/usage.ts";
+import { createGoalUsageTracker, measureGoalRunUsage } from "#src/goals/usage.ts";
 
 const callParams: LLMCallParams = { model: "model", provider: "fixture", messages: [], tools: [] };
 const measured = { input_tokens: 100, output_tokens: 10, cached_tokens: 80, cache_write_tokens: 0 };

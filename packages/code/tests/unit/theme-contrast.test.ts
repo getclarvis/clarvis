@@ -5,10 +5,10 @@ import {
   contrastRatio,
   nudgeToAA,
   relativeLuminance,
-} from "../../src/theme/contrast.ts";
-import { parseColor, resolveTokens, type ThemeMode } from "../../src/theme/model.ts";
-import { SUBAGENT_ORDER } from "../../src/theme/tokens.ts";
-import type { PresetName } from "../../src/theme/model.ts";
+} from "#src/theme/contrast.ts";
+import { parseColor, resolveTokens, type ThemeMode } from "#src/theme/model.ts";
+import { SUBAGENT_ORDER } from "#src/theme/tokens.ts";
+import type { PresetName } from "#src/theme/model.ts";
 
 test("contrastRatio: black/white is 21, identical is 1", () => {
   const black = { r: 0, g: 0, b: 0 };

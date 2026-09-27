@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   analyzePackageGraph as analyzePackageGraphWithArchitecture,
@@ -69,6 +69,31 @@ function fixture(): string {
 }
 
 describe("analyzePackageGraph", () => {
+  test("private aliases participate in module cycles and entrypoint checks", () => {
+    const root = fixture();
+    const dir = join(root, "packages", "a");
+    const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    manifest.type = "module";
+    manifest.imports = { "#src/*": "./src/*" };
+    writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+    writeFileSync(join(dir, "src", "index.ts"), 'import "#src/one.ts";\n');
+    writeFileSync(join(dir, "src", "one.ts"), 'import "./two.ts";\n');
+    writeFileSync(join(dir, "src", "two.ts"), 'import "#src/one.ts";\n');
+    const report = analyzePackageGraph(root);
+    expect(
+      report.moduleCycles.some(
+        (cycle) =>
+          cycle.files.some((file) => file.endsWith("one.ts")) &&
+          cycle.files.some((file) => file.endsWith("two.ts")),
+      ),
+    ).toBe(true);
+    writeFileSync(join(dir, "src", "two.ts"), 'import type { A } from "#src/index.ts";\n');
+    const typeOnly = analyzePackageGraph(root);
+    expect(typeOnly.moduleCycles).toEqual([]);
+    expect(
+      typeOnly.errors.some((error) => error.includes("source imports its own public entrypoint")),
+    ).toBe(true);
+  });
   test("includes stale TypeScript aliases in graph violations", () => {
     const root = fixture();
     writeFileSync(

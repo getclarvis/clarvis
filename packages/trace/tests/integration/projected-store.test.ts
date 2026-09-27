@@ -6,7 +6,7 @@ import { PersistenceError } from "@clarvis/capability";
 import type { TraceEvent } from "@clarvis/capability";
 import { createJsonTraceStore, projectTraceStoreWrites } from "@clarvis/trace";
 import type { TraceWriteProjection } from "@clarvis/trace";
-import { createMemoryTraceStore } from "../../src/testing.ts";
+import { createMemoryTraceStore } from "#src/testing.ts";
 import { makeExecutionRecord } from "../helpers/execution-record.ts";
 import { journalHeader, leadIteration, JOURNAL_OWNER } from "../helpers/journal-fixtures.ts";
 import { recordingLogger, type LogRecord } from "../helpers/logger.ts";

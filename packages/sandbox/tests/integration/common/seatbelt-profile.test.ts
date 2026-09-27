@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createExecutionPolicy, seatbeltProfile } from "../../../src/index.ts";
+import { createExecutionPolicy, seatbeltProfile } from "#src/index.ts";
 
 test("Seatbelt preserves workspace metadata and explicit read denies", () => {
   const root = mkdtempSync(join(tmpdir(), 'clarvis-sandbox-"profile-'));

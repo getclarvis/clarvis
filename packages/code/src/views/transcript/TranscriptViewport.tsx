@@ -10,11 +10,11 @@ import {
   type Accessor,
   type JSX,
 } from "solid-js";
-import type { TranscriptStore } from "../../adapters/store.ts";
-import { createTranscriptProjection } from "../../adapters/transcript-projection.ts";
-import { TranscriptWindow, type ReaderPosition } from "../../core/transcript/window.ts";
-import { scrollbarOptions, SCROLLBOX_TABLE_GUTTER } from "../../theme/surfaces.ts";
-import { tokens } from "../../theme/tokens.ts";
+import type { TranscriptStore } from "#src/adapters/store.ts";
+import { createTranscriptProjection } from "#src/adapters/transcript-projection.ts";
+import { TranscriptWindow, type ReaderPosition } from "#src/core/transcript/window.ts";
+import { scrollbarOptions, SCROLLBOX_TABLE_GUTTER } from "#src/theme/surfaces.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import type { TranscriptState } from "../transcript-state.ts";
 import type { ActivityDetail } from "../activity-detail.ts";
 import { TranscriptRowView } from "./TranscriptRowView.tsx";

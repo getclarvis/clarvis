@@ -9,7 +9,7 @@ import {
   parsePathList,
   parseReadFile,
   synthesizeUnifiedDiff,
-} from "../../src/adapters/tool-parsers.ts";
+} from "#src/adapters/tool-parsers.ts";
 
 test("parseBash reads the JSON envelope (non-zero exit is not an error)", () => {
   const r = parseBash(

@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { SetupView, type SetupState } from "../../src/views/onboarding/SetupView.tsx";
-import { RecoveryView, type StartupIssue } from "../../src/views/onboarding/RecoveryView.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { SetupView, type SetupState } from "#src/views/onboarding/SetupView.tsx";
+import { RecoveryView, type StartupIssue } from "#src/views/onboarding/RecoveryView.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 

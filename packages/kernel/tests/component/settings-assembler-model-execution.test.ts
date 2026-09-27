@@ -1,9 +1,9 @@
-import { kernelCapabilityRegistry } from "../../src/config/capability-registry.ts";
+import { kernelCapabilityRegistry } from "#src/config/capability-registry.ts";
 import { expect, test } from "bun:test";
 import { loadEnv, type ModelExecutionInfo, type ModelExecutionResolver } from "@clarvis/capability";
 import { validateBody } from "@clarvis/loop/testing";
-import { createMemoryConfigStore } from "../../src/config/memory-config-store.ts";
-import { createSettingsRunAssembler } from "../../src/runs/settings-assembler.ts";
+import { createMemoryConfigStore } from "#src/config/memory-config-store.ts";
+import { createSettingsRunAssembler } from "#src/runs/settings-assembler.ts";
 
 const info: ModelExecutionInfo = {
   provider: "alias",

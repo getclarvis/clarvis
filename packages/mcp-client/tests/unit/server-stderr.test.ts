@@ -4,7 +4,7 @@ import {
   drainStderrStream,
   DEFAULT_SERVER_STDERR_MAX_BYTES,
   type NodeStderrStream,
-} from "../../src/server-stderr.ts";
+} from "#src/server-stderr.ts";
 
 function collect(maxBytes?: number): {
   push: (text: string) => void;

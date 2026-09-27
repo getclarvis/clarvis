@@ -10,7 +10,7 @@ import {
   readAt,
   updateAt,
   type MapEditorSpec,
-} from "../../src/ui/patterns/map-editor.tsx";
+} from "#src/ui/patterns/map-editor.tsx";
 
 /** A recording stand-in for the three field-editor modals a map editor drives. */
 function fakeEditor() {

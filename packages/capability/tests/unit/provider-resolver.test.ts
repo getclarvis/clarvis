@@ -1,6 +1,6 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { resolveProvider } from "../../src/provider-resolver.ts";
-import type { ProviderConfig } from "../../src/api.ts";
+import { resolveProvider } from "#src/provider-resolver.ts";
+import type { ProviderConfig } from "#src/api.ts";
 
 const registry: ProviderConfig[] = [
   {

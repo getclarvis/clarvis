@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { StartHostedTurnParams } from "@clarvis/protocol";
-import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
-import { kernelError } from "../../src/core/errors.ts";
+import { decodeHostedRegistryState } from "#src/hosting/state.ts";
+import { kernelError } from "#src/core/errors.ts";
 import { fixture, input, until } from "../helpers/hosted-registry.ts";
 
 /** One automatic successor proposal that still names its predecessor. */

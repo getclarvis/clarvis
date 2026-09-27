@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { wrapCells } from "../../src/views/truncate.ts";
+import { wrapCells } from "#src/views/truncate.ts";
 
 test("a name wider than its panel breaks by cell without losing a character", () => {
   const name = "nome-completo-do-arquivo.test.ts";

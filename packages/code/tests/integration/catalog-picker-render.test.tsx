@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex } from "@opentui/core";
-import { CatalogPicker } from "../../src/views/config/CatalogPicker.tsx";
-import type { CatalogRow } from "../../src/views/config/catalog-pick.ts";
-import { overlayBg, selectionBg } from "../../src/theme/surfaces.ts";
-import { applyAsciiMode } from "../../src/theme/glyphs.ts";
+import { CatalogPicker } from "#src/views/config/CatalogPicker.tsx";
+import type { CatalogRow } from "#src/views/config/catalog-pick.ts";
+import { overlayBg, selectionBg } from "#src/theme/surfaces.ts";
+import { applyAsciiMode } from "#src/theme/glyphs.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 afterEach(() => applyAsciiMode(false));

@@ -6,8 +6,8 @@ import {
   readBoundedBytes,
   readBoundedText,
   readBoundedTextChunk,
-} from "../../src/bounded-read.ts";
-import { SkillError } from "../../src/errors.ts";
+} from "#src/bounded-read.ts";
+import { SkillError } from "#src/errors.ts";
 import { cleanup, makeWorkspace } from "../helpers/fixtures.ts";
 import { recordingLogger } from "../helpers/logging.ts";
 

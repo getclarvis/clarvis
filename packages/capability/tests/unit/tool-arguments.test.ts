@@ -3,7 +3,7 @@ import {
   MALFORMED_ARGUMENTS_PREVIEW_CHARS,
   malformedArgumentsMessage,
   normalizeToolArguments,
-} from "../../src/tool-arguments.ts";
+} from "#src/tool-arguments.ts";
 
 /**
  * These pin the one decision the whole defect turned on: which shapes are a

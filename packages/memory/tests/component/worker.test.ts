@@ -1,10 +1,10 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import * as capability from "@clarvis/capability";
 
-import type { MemoryDrainReport } from "../../src/drain.ts";
-import { createTestClock } from "../../src/testing.ts";
-import type { Memory } from "../../src/memory-contract.ts";
-import { createIndexWorker } from "../../src/worker.ts";
+import type { MemoryDrainReport } from "#src/drain.ts";
+import { createTestClock } from "#src/testing.ts";
+import type { Memory } from "#src/memory-contract.ts";
+import { createIndexWorker } from "#src/worker.ts";
 import { recordingLogger } from "../helpers/recording-logger.ts";
 
 const emptyReport = (): MemoryDrainReport => ({

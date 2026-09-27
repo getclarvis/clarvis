@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { RunDetail, Session } from "@clarvis/protocol";
-import { projectGoalTrajectory } from "../../src/goals/trajectory.ts";
+import { projectGoalTrajectory } from "#src/goals/trajectory.ts";
 
 const session = (turns: Session["turns"]): Session => ({
   id: "session",

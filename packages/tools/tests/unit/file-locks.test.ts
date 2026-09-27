@@ -14,7 +14,7 @@
  * the 60s per-test timeout.
  */
 import { describe, expect, it } from "bun:test";
-import { withFileLocks } from "../../src/lib/atomic.ts";
+import { withFileLocks } from "#src/lib/atomic.ts";
 
 /** Reject rather than hang, so a deadlock regression reports as a failure. */
 function within<T>(ms: number, work: Promise<T>): Promise<T> {

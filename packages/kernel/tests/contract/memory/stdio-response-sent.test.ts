@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { PassThrough, Writable } from "node:stream";
-import { serveKernelOverStdio } from "../../../src/transport/stdio.ts";
+import { serveKernelOverStdio } from "#src/transport/stdio.ts";
 
 for (const outcome of ["written", "cancelled", "failed", "callback_failed"] as const) {
   test(`responseSent follows complete local write: ${outcome}`, async () => {

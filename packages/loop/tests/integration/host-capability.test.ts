@@ -2,7 +2,7 @@ import { describe, it, expect } from "../bun-test.ts";
 import { MockLLM, mockConnections, mockMCPFactory } from "./_fixtures.ts";
 import { createExtensionAdmissionController, loadEnv } from "@clarvis/capability";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
 import type { Capability, CapabilityEvent } from "@clarvis/capability";
 import type { LiveMessage } from "@clarvis/capability";
 

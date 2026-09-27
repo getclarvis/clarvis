@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { BubblewrapBackend, createExecutionPolicy, SeatbeltBackend } from "@clarvis/sandbox";
 import { createAgentTools, dispatch, SandboxToolExecutor } from "@clarvis/tools";
 import { createJudgeService } from "@clarvis/judge";
-import { createApprovalService } from "../../src/execution/approval-service.ts";
+import { createApprovalService } from "#src/execution/approval-service.ts";
 
 const productRoot = process.argv[2];
 const home = process.env.HOME;

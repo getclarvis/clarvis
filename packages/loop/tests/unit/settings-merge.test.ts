@@ -3,8 +3,8 @@ import {
   SETTINGS_MERGE_STRATEGY_KEYS,
   mergeSettings,
   type SettingsScope,
-} from "../../src/settings/settings-merge.ts";
-import { settingsSchema, type SettingsFile } from "../../src/settings/settings-schema.ts";
+} from "#src/settings/settings-merge.ts";
+import { settingsSchema, type SettingsFile } from "#src/settings/settings-schema.ts";
 import { MAX_HOOKS_PER_RUN } from "@clarvis/capability";
 import { createCapabilityRegistry } from "@clarvis/capability";
 import { z } from "zod";

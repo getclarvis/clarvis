@@ -5,10 +5,10 @@ import {
   ExecutionSessionManager,
   type SessionChild,
   type SessionOwnership,
-} from "../../src/lib/execution-session.ts";
-import { resolveConfig } from "../../src/config.ts";
+} from "#src/lib/execution-session.ts";
+import { resolveConfig } from "#src/config.ts";
 import { manualClock } from "../helpers/manual-clock.ts";
-import { createShell } from "../../src/tools/shell.ts";
+import { createShell } from "#src/tools/shell.ts";
 
 function fakeChild(pid: number) {
   const child = Object.assign(new EventEmitter(), {

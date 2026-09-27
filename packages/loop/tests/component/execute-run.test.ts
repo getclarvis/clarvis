@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
 import { loadEnv } from "@clarvis/capability";
 import { RUN_TRACE_PORT } from "@clarvis/capability";
 import type { Capability, TraceEvent } from "@clarvis/capability";

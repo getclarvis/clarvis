@@ -1,4 +1,4 @@
-import { candidateVersion } from "../src/adapters/source-candidate.ts";
+import { candidateVersion } from "#src/adapters/source-candidate.ts";
 import { spawnSync } from "node:child_process";
 import {
   lstat,
@@ -449,7 +449,7 @@ async function main(): Promise<void> {
     version?: string;
   };
   if (typeof product.version !== "string") throw new Error("Clarvis product version is missing");
-  const { publishSelectedSystemDocs } = await import("../src/bootstrap/system-docs-cli.ts");
+  const { publishSelectedSystemDocs } = await import("#src/bootstrap/system-docs-cli.ts");
   await publishSelectedSystemDocs({
     kind: "source",
     root: repositoryRoot,

@@ -7,7 +7,7 @@ import type {
   ToolInterruptDelivery,
   ToolInterruptSettleStatus,
   ToolInterruptSource,
-} from "../../src/runtime/tools/tool-interrupt.ts";
+} from "#src/runtime/tools/tool-interrupt.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { GateLLM } from "./_gate-llm.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";

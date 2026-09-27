@@ -1,10 +1,10 @@
 import type { Accessor, JSX } from "solid-js";
 import { Show } from "solid-js";
 import { useTerminalDimensions } from "@opentui/solid";
-import type { ViewHost } from "../../keys/commands.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { bindLevelKeys, ViewFrame } from "../config/view-host.tsx";
 import { BrandBanner, firstRunSplashFits } from "../Splash.tsx";
 

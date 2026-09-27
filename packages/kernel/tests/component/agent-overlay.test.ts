@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { builtinAgentRecord, resolveEffectiveAgent } from "../../src/config/agent-overlay.ts";
-import { readBuiltinAgent } from "../../src/config/builtin-agents/index.ts";
-import type { AgentRecord } from "../../src/config/config-store.ts";
+import { builtinAgentRecord, resolveEffectiveAgent } from "#src/config/agent-overlay.ts";
+import { readBuiltinAgent } from "#src/config/builtin-agents/index.ts";
+import type { AgentRecord } from "#src/config/config-store.ts";
 
 const MARSHALL = builtinAgentRecord(readBuiltinAgent("marshall")!);
 

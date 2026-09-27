@@ -7,19 +7,19 @@ import {
   type PreFinalizeContext,
 } from "@clarvis/capability";
 import { createTrace } from "@clarvis/trace";
-import { createTokenLedger } from "../../src/runtime/budget/index.ts";
-import { DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
+import { createTokenLedger } from "#src/runtime/budget/index.ts";
+import { DISABLED_COMPACTION } from "#src/runtime/context/index.ts";
 import {
   buildPreFinalizeGate,
   runVerdictHooks,
   UNSUPPORTED_REWRITE_MESSAGE,
-} from "../../src/runtime/loop/lifecycle-hooks.ts";
+} from "#src/runtime/loop/lifecycle-hooks.ts";
 import {
   prepareSpawn,
   runPreparedSubagent,
   type SpawnContext,
-} from "../../src/runtime/subagents/spawn-subagent.ts";
-import type { ResolvedSubagentProfile } from "../../src/runtime/subagents/subagent-profiles.ts";
+} from "#src/runtime/subagents/spawn-subagent.ts";
+import type { ResolvedSubagentProfile } from "#src/runtime/subagents/subagent-profiles.ts";
 import { MockLLM } from "../helpers/fixtures.ts";
 
 const env = loadEnv({});

@@ -13,7 +13,7 @@ import {
   workspaceScopeKey,
   worktreeCheckoutRoot,
   WORKSPACE_ENV,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 import { recorder } from "../helpers/recorder.ts";
 

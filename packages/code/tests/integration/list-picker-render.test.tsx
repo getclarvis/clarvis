@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex, type ScrollBoxRenderable } from "@opentui/core";
 import { createMockMouse } from "@opentui/core/testing";
-import { ListPicker } from "../../src/views/overlays/ListPicker.tsx";
-import { PickerRow } from "../../src/views/overlays/PickerRow.tsx";
-import { overlayBg, selectionBg } from "../../src/theme/surfaces.ts";
-import { tokens } from "../../src/theme/tokens.ts";
+import { ListPicker } from "#src/views/overlays/ListPicker.tsx";
+import { PickerRow } from "#src/views/overlays/PickerRow.tsx";
+import { overlayBg, selectionBg } from "#src/theme/surfaces.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
-import { registerScrollKeys } from "../../src/ui/patterns/list-navigation.ts";
+import { registerScrollKeys } from "#src/ui/patterns/list-navigation.ts";
 import { createSignal } from "solid-js";
 
 const fakeKeymap = createFakeKeymap;

@@ -38,11 +38,11 @@ import {
   createWorkflowStore,
   type WorkflowRecord,
   type WorkflowStore,
-} from "../../src/index.ts";
-import { createMemoryConfigStore } from "../../src/config.ts";
+} from "#src/index.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 import { recordingLogger } from "../helpers/logger.ts";
-import { createWorkflowsService } from "../../src/workflows/workflows-service.ts";
+import { createWorkflowsService } from "#src/workflows/workflows-service.ts";
 import {
   WORKFLOW_MAX_EDGES,
   WORKFLOW_MAX_ERROR_BYTES,
@@ -50,7 +50,7 @@ import {
   WORKFLOW_MAX_TASK_BYTES,
   WORKFLOW_RECORD_MAX_BYTES,
   WORKFLOW_TRUNCATION_MARKER,
-} from "../../src/workflows/workflow-store.ts";
+} from "#src/workflows/workflow-store.ts";
 
 const PROVIDERS = [{ name: "anthropic", kind: "anthropic" }];
 

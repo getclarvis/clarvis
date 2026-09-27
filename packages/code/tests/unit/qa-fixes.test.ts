@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import { padColumn, truncateEnd, truncateStart } from "../../src/views/truncate.ts";
-import { createTranscriptStore } from "../../src/adapters/store.ts";
-import { runOutcomeLabel } from "../../src/features/run/status-presenter.ts";
-import { mapProviderIssues } from "../../src/features/issues.ts";
+import { padColumn, truncateEnd, truncateStart } from "#src/views/truncate.ts";
+import { createTranscriptStore } from "#src/adapters/store.ts";
+import { runOutcomeLabel } from "#src/features/run/status-presenter.ts";
+import { mapProviderIssues } from "#src/features/issues.ts";
 
 test("padColumn always leaves a gap, so a label cannot run into its description", () => {
   // `sessions > Export transcriptWrite the transcript to a file`, at full width.

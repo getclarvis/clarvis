@@ -2,11 +2,11 @@ import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
 import type { RunEvent } from "@clarvis/protocol";
-import { createTranscriptStore, type TranscriptNode } from "../../src/adapters/store.ts";
+import { createTranscriptStore, type TranscriptNode } from "#src/adapters/store.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import { resolveToolRenderer } from "../../src/views/tools/registry.tsx";
-import type { BlockOverride } from "../../src/views/block-focus.ts";
+import { BlockView } from "#src/views/blocks.tsx";
+import { resolveToolRenderer } from "#src/views/tools/registry.tsx";
+import type { BlockOverride } from "#src/views/block-focus.ts";
 
 const ev = runEvent;
 

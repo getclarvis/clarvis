@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
-import type { TranscriptNode, TranscriptStore } from "../../src/adapters/store.ts";
-import { createTranscriptProjection } from "../../src/adapters/transcript-projection.ts";
-import { createTranscriptState, type TranscriptState } from "../../src/views/transcript-state.ts";
+import type { TranscriptNode, TranscriptStore } from "#src/adapters/store.ts";
+import { createTranscriptProjection } from "#src/adapters/transcript-projection.ts";
+import { createTranscriptState, type TranscriptState } from "#src/views/transcript-state.ts";
 
 function node(partial: Partial<TranscriptNode> & { key: string }): TranscriptNode {
   return { kind: "tool_call", status: "ok", text: "", ...partial };

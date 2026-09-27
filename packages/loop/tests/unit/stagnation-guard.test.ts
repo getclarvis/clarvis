@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { createStagnationGuard, hashResult } from "../../src/runtime/guards/index.ts";
+import { createStagnationGuard, hashResult } from "#src/runtime/guards/index.ts";
 
 describe("createStagnationGuard", () => {
   it("does not accumulate identical verification results across intervening activity", () => {

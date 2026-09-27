@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createCapabilityRegistry, ValidationError } from "@clarvis/capability";
 import { z } from "zod";
-import { validateBody } from "../../src/validation/request-schema.ts";
+import { validateBody } from "#src/validation/request-schema.ts";
 import { REQUEST_ENV, VALID_REQUEST } from "../helpers/request.ts";
 
 describe("request-schema facade", () => {

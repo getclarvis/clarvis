@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { ContinuationUnavailableError } from "@clarvis/loop";
-import { KernelException, toKernelError } from "../../src/core/errors.ts";
+import { KernelException, toKernelError } from "#src/core/errors.ts";
 
 describe("toKernelError", () => {
   it("honors ContinuationUnavailableError's own code so recovery survives the hop", () => {

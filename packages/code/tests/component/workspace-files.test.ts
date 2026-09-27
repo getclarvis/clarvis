@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { WorkspaceEntry, WorkspaceService } from "@clarvis/protocol";
-import { createImageLoader, createWorkspaceFiles } from "../../src/adapters/workspace-files.ts";
+import { createImageLoader, createWorkspaceFiles } from "#src/adapters/workspace-files.ts";
 
 function fakeFiles(
   files: string[],

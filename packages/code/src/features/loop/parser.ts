@@ -3,7 +3,7 @@ import {
   loopInterval,
   loopTimezone,
   type LoopSchedule,
-} from "../../core/loop-schedule.ts";
+} from "#src/core/loop-schedule.ts";
 
 /** Maximum retained UTF-8 prompt payload per job; registration never starts a model call. */
 export const LOOP_PROMPT_MAX_BYTES = 64 * 1024;

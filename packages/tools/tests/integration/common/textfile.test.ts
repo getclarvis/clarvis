@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { makeWorkspace, cleanup, write, writeBinary } from "../../helpers/fixtures.ts";
-import { readTextBuffer } from "../../../src/lib/textfile.ts";
+import { readTextBuffer } from "#src/lib/textfile.ts";
 
 describe("readTextBuffer", () => {
   let root: string;

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { createRecoveryCoordinator } from "../../src/file-store/recovery.ts";
-import { digestBody } from "../../src/revisions.ts";
-import { MemoryStorageLimitError } from "../../src/storage-limits.ts";
-import type { MemoryJournalRecord } from "../../src/journal.ts";
+import { createRecoveryCoordinator } from "#src/file-store/recovery.ts";
+import { digestBody } from "#src/revisions.ts";
+import { MemoryStorageLimitError } from "#src/storage-limits.ts";
+import type { MemoryJournalRecord } from "#src/journal.ts";
 
 const limitError = (identifier: string) =>
   new MemoryStorageLimitError({ kind: "metadata", identifier, actual: 2, maximum: 1 });

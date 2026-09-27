@@ -16,7 +16,7 @@ import {
   MAX_HOOK_MATCH_PATTERNS,
   MAX_HOOK_PATTERN_CHARS,
   MAX_HOOK_TIMEOUT_MS,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 const base = { command: "echo hi" };
 

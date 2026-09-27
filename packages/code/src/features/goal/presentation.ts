@@ -1,5 +1,5 @@
 import type { GoalRecord } from "@clarvis/protocol";
-import { detailStatusColor } from "../../ui/patterns/detail-view.tsx";
+import { detailStatusColor } from "#src/ui/patterns/detail-view.tsx";
 
 /** Compact Steward state; technical audit identities stay out of the sidebar. */
 export function stewardStatusLabel(goal: GoalRecord): string | undefined {

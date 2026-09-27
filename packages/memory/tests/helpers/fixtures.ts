@@ -1,7 +1,7 @@
 /** Pure data fixtures shared by memory tests. */
 import type { ExecutionRecord } from "@clarvis/capability";
 
-import type { RunSnapshot, ToolCallEvent } from "../../src/types.ts";
+import type { RunSnapshot, ToolCallEvent } from "#src/types.ts";
 
 let clock = 1_700_000_000_000;
 function tick(): number {

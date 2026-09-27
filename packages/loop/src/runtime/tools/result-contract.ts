@@ -1,7 +1,7 @@
 import type { ValidateFunction } from "ajv";
 import type { NamespacedTool } from "@clarvis/capability";
 import { ValidationError } from "@clarvis/capability";
-import { createStrictAjv } from "../../validation/ajv.ts";
+import { createStrictAjv } from "#src/validation/ajv.ts";
 import { buildSubmitResultTool } from "./submit-result-tool.ts";
 
 /**

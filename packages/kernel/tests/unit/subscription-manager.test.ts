@@ -1,18 +1,18 @@
 import { describe, expect, it, vi } from "bun:test";
 import type { CatalogProvider, SubscriptionScheme } from "@clarvis/protocol";
 
-import { SubscriptionManager } from "../../src/subscriptions/manager.ts";
-import { subscriptionRegistration } from "../../src/subscriptions/registrations.ts";
-import { SubscriptionHttpError, SubscriptionTransportError } from "../../src/subscriptions/http.ts";
-import { SubscriptionError, subscriptionDiagnostic } from "../../src/subscriptions/redaction.ts";
-import { createUnavailableProviderAuthService } from "../../src/subscriptions/unavailable.ts";
-import type { SubscriptionStore } from "../../src/subscriptions/store.ts";
+import { SubscriptionManager } from "#src/subscriptions/manager.ts";
+import { subscriptionRegistration } from "#src/subscriptions/registrations.ts";
+import { SubscriptionHttpError, SubscriptionTransportError } from "#src/subscriptions/http.ts";
+import { SubscriptionError, subscriptionDiagnostic } from "#src/subscriptions/redaction.ts";
+import { createUnavailableProviderAuthService } from "#src/subscriptions/unavailable.ts";
+import type { SubscriptionStore } from "#src/subscriptions/store.ts";
 import type {
   SubscriptionAccountRecord,
   SubscriptionFileV1,
   SubscriptionSchemeAdapter,
   SubscriptionSchemeRegistration,
-} from "../../src/subscriptions/types.ts";
+} from "#src/subscriptions/types.ts";
 
 describe("production subscription registrations", () => {
   it.each(["openai-codex", "xai-grok"] as const)(

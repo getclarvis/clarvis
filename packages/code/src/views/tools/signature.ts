@@ -1,4 +1,4 @@
-import { toolIdentity } from "../../adapters/tool-identity.ts";
+import { toolIdentity } from "#src/adapters/tool-identity.ts";
 import { truncateEnd, truncateStart } from "../truncate.ts";
 
 const VALUE_MAX = 56;

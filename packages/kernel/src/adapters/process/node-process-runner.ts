@@ -4,7 +4,7 @@ import type {
   ProcessRunner,
   ProcessRunRequest,
   ProcessRunResult,
-} from "../../ports/process-runner.ts";
+} from "#src/ports/process-runner.ts";
 
 /**
  * Report a child process that did not exit cleanly.

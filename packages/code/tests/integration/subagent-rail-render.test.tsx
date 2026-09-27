@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import { BlockView } from "#src/views/blocks.tsx";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 
 async function frame(node: TranscriptNode): Promise<string[]> {
   const t = await openRender(() => <BlockView node={node} forceExpand={() => true} />, {

@@ -1,5 +1,5 @@
 import { loadEnv, NOOP_LOGGER } from "@clarvis/capability";
-import { serveRemoteFileKernelOverStdio } from "../../src/bootstrap.ts";
+import { serveRemoteFileKernelOverStdio } from "#src/bootstrap.ts";
 
 const [workspaceRoot, globalDir] = process.argv.slice(2);
 if (workspaceRoot === undefined || globalDir === undefined) process.exit(64);

@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDebugSessionController } from "../../src/adapters/debug-session.ts";
-import { createDiagnosticSession } from "../../src/adapters/diagnostic-session.ts";
+import { createDebugSessionController } from "#src/adapters/debug-session.ts";
+import { createDiagnosticSession } from "#src/adapters/diagnostic-session.ts";
 import {
   activeDiagnosticLogger,
   activeDiagnosticSession,
@@ -11,7 +11,7 @@ import {
   diagnosticEvent,
   installDiagnosticSession,
   isDiagnosticLevel,
-} from "../../src/core/diagnostic-events.ts";
+} from "#src/core/diagnostic-events.ts";
 
 const made: string[] = [];
 let cleanup: (() => void) | undefined;

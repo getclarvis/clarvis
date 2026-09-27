@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { checkWrite } from "../../src/policy.ts";
-import type { DocFrontmatter } from "../../src/types.ts";
+import { checkWrite } from "#src/policy.ts";
+import type { DocFrontmatter } from "#src/types.ts";
 
 describe("write policy", () => {
   const pinned: DocFrontmatter = { description: "d", tags: [], pinned: true };

@@ -26,7 +26,7 @@ import { createMemory } from "@clarvis/memory";
 import { MEMORY_CAPABILITY_NAME, type MemoryFactory } from "@clarvis/memory/capability";
 import { createInMemoryMemoryStore } from "@clarvis/memory/testing";
 import type { ExecuteRunDeps } from "@clarvis/loop";
-import { composeIndexPassDeps } from "../../src/memory/pass-deps.ts";
+import { composeIndexPassDeps } from "#src/memory/pass-deps.ts";
 import { createPlansCapability } from "@clarvis/plan/capability";
 
 const named = (name: string): Capability => ({ name, forRun: () => null });

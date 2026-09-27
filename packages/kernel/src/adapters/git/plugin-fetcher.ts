@@ -11,15 +11,15 @@ import {
   statSync,
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { kernelError } from "../../core/errors.ts";
+import { kernelError } from "#src/core/errors.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
-import type { ProcessRunner } from "../../ports/process-runner.ts";
+import type { ProcessRunner } from "#src/ports/process-runner.ts";
 import type {
   InstalledPlugin,
   PluginFetcher,
   PreparedPlugin,
-} from "../../ports/plugin-repository.ts";
+} from "#src/ports/plugin-repository.ts";
 
 const GIT_TIMEOUT_MS = 120_000;
 const NPM_TIMEOUT_MS = 120_000;

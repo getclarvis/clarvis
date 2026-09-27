@@ -1,8 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import {
-  nonnegativeIntField,
-  positiveIntField,
-} from "../../src/validation/request/numeric-schemas.ts";
+import { nonnegativeIntField, positiveIntField } from "#src/validation/request/numeric-schemas.ts";
 
 describe("request numeric schemas", () => {
   it.each([

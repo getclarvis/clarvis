@@ -1,10 +1,7 @@
 import { describe, expect, it } from "../bun-test.ts";
 import type { LiveMessage } from "@clarvis/capability";
-import { createLiveContext, type CompactionConfig } from "../../src/runtime/context/index.ts";
-import {
-  createLiveEntryStore,
-  type LiveEntry,
-} from "../../src/runtime/context/live-entry-store.ts";
+import { createLiveContext, type CompactionConfig } from "#src/runtime/context/index.ts";
+import { createLiveEntryStore, type LiveEntry } from "#src/runtime/context/live-entry-store.ts";
 import { recordingLogger } from "../helpers/logging.ts";
 
 const durable = (content: string): LiveEntry => ({

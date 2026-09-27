@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { SerializedPrefixWatch } from "../../src/ai-sdk/request-prefix.ts";
+import { SerializedPrefixWatch } from "#src/ai-sdk/request-prefix.ts";
 
 const transport = Object.assign(async () => new Response("{}"), { preconnect: fetch.preconnect });
 

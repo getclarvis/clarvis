@@ -1,8 +1,8 @@
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tone } from "../../theme/tone.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tone } from "#src/theme/tone.ts";
 import { SelectableRow } from "./selectable-row.tsx";
 
 /** The fixed column width labels are padded to across field, status and detail rows. */

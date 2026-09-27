@@ -9,17 +9,17 @@ import {
   type Accessor,
 } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { tokens } from "../../theme/tokens.ts";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
-import type { Interaction } from "../../keys/interaction.ts";
-import type { CommandEntryView } from "../../keys/commands.ts";
-import { commandKeyLabel, compactKey, compactSequence } from "../../keys/keyspec.ts";
-import { registerScrollKeys } from "../../ui/patterns/list-navigation.ts";
-import { projectCommandActions } from "../../ui/patterns/active-actions.ts";
-import { effectiveClientPlatform } from "../../keys/keyboard-profile.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { scrollbarOptions } from "#src/theme/surfaces.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { CommandEntryView } from "#src/keys/commands.ts";
+import { commandKeyLabel, compactKey, compactSequence } from "#src/keys/keyspec.ts";
+import { registerScrollKeys } from "#src/ui/patterns/list-navigation.ts";
+import { projectCommandActions } from "#src/ui/patterns/active-actions.ts";
+import { effectiveClientPlatform } from "#src/keys/keyboard-profile.ts";
 import { PageFrame } from "../PageFrame.tsx";
 import { padColumn } from "../truncate.ts";
-import { glyph } from "../../theme/glyphs.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 
 /** The width the label column is padded to before the description begins. */
 const LABEL_COLUMN = 22;

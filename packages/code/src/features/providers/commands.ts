@@ -1,11 +1,11 @@
-import type { CommandScope, ViewHost } from "../../keys/commands.ts";
-import type { SettingsAdapter } from "../../adapters/settings.ts";
-import type { KeysAdapter } from "../../adapters/provider-secrets.ts";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
-import type { ModelsCatalog } from "../../adapters/models-catalog.ts";
+import type { CommandScope, ViewHost } from "#src/keys/commands.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { KeysAdapter } from "#src/adapters/provider-secrets.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { ModelsCatalog } from "#src/adapters/models-catalog.ts";
 import type { ModelCatalogService, ProviderAuthService } from "@clarvis/protocol";
-import type { HintTone } from "../../views/hint.ts";
-import { lazyView } from "../../views/config/lazy-view.tsx";
+import type { HintTone } from "#src/views/hint.ts";
+import { lazyView } from "#src/views/config/lazy-view.tsx";
 
 /** Dependencies {@link registerProvidersCommands} wires into the Providers view. */
 export interface ProvidersCommandDeps {
@@ -28,7 +28,7 @@ export function registerProvidersCommands(
 ): void {
   const view = lazyView(async () => {
     const [{ ProvidersPanel }] = await Promise.all([
-      import("../../views/cold-surfaces.ts"),
+      import("#src/views/cold-surfaces.ts"),
       deps.loadCatalog?.() ?? Promise.resolve(),
     ]);
     return (host: ViewHost) => {

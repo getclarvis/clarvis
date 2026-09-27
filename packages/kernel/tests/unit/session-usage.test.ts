@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RunUsage, SessionTotals } from "@clarvis/protocol";
-import { addRunUsage } from "../../src/sessions/usage.ts";
+import { addRunUsage } from "#src/sessions/usage.ts";
 
 test("session usage prices fresh input, cache reads and cache writes once across agents", () => {
   const totals: SessionTotals = { input: 10, output: 4, cached: 2 };

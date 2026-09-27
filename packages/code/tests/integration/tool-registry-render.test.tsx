@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
+import { BlockView } from "#src/views/blocks.tsx";
 import {
   hiddenBodyLines,
   renderToolPreview,
   resolveErrorRenderer,
-} from "../../src/views/tools/registry.tsx";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+} from "#src/views/tools/registry.tsx";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 import type { FoldFixtureToolNode } from "../helpers/transcript-fixtures.ts";
 
 let seq = 0;

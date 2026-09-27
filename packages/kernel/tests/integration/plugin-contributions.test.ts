@@ -7,8 +7,8 @@ import { agentsPluginsDirs } from "@clarvis/paths";
 import {
   createPluginContributions,
   PLUGIN_SKILL_RESOURCE_LIMITS,
-} from "../../src/plugins/plugin-contributions.ts";
-import { snapshotPluginExecutables } from "../../src/plugins/plugin-executable-snapshot.ts";
+} from "#src/plugins/plugin-contributions.ts";
+import { snapshotPluginExecutables } from "#src/plugins/plugin-executable-snapshot.ts";
 import { PLUGIN_RESOURCE_LIMITS, type PluginManifest } from "@clarvis/loop/host";
 import { MAX_SKILL_FILE_CHARS } from "@clarvis/skills";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";

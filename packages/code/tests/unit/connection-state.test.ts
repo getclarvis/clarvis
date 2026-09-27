@@ -3,7 +3,7 @@ import {
   connectionLabel,
   connectionProbe,
   createConnectionState,
-} from "../../src/adapters/connection-state.ts";
+} from "#src/adapters/connection-state.ts";
 
 test("a fresh connection is connecting; set() replaces the whole state", () => {
   const conn = createConnectionState();

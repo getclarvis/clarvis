@@ -1,11 +1,7 @@
-import { cacheModeOf, parseModelRef } from "../../adapters/model-policy.ts";
-import type {
-  CatalogModel,
-  CatalogProvider,
-  ModelsCatalog,
-} from "../../adapters/models-catalog.ts";
-import { fuzzyFilter } from "../../core/fuzzy.ts";
-import { glyph } from "../../theme/glyphs.ts";
+import { cacheModeOf, parseModelRef } from "#src/adapters/model-policy.ts";
+import type { CatalogModel, CatalogProvider, ModelsCatalog } from "#src/adapters/models-catalog.ts";
+import { fuzzyFilter } from "#src/core/fuzzy.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 import { fmtCount } from "../truncate.ts";
 
 interface CatalogRowColumn {

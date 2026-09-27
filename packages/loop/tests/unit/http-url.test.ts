@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { isWellFormedHttpUrl } from "../../src/http-url.ts";
+import { isWellFormedHttpUrl } from "#src/http-url.ts";
 
 describe("isWellFormedHttpUrl", () => {
   it("accepts http/https and rejects the rest", () => {

@@ -2,13 +2,13 @@ import type { JSX } from "solid-js";
 import { createSignal, For, onMount, Show } from "solid-js";
 import type { ResolvedExtensionProfile } from "@clarvis/protocol";
 
-import type { WorkspaceTrustState } from "../../adapters/settings.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { tone } from "../../theme/tone.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import type { WorkspaceTrustState } from "#src/adapters/settings.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { tone } from "#src/theme/tone.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { formatElapsed, spinnerChar, tickNow, useSpinnerClock } from "../spinner.ts";
 import { bindLevelKeys, SectionHeader, ViewFrame } from "./view-host.tsx";
 

@@ -6,7 +6,7 @@ import { createLogger } from "@clarvis/kernel/logger";
 import {
   codeHostEnvironment,
   createCodeHostKernelOptions,
-} from "../../src/adapters/host-kernel-options.ts";
+} from "#src/adapters/host-kernel-options.ts";
 
 describe("code host kernel options", () => {
   it("uses one tool ceiling default for launcher identity and host construction", () => {

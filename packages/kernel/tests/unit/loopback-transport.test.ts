@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { createLoopbackTransport } from "../../src/transport/loopback.ts";
-import type { KernelServer } from "../../src/transport/server.ts";
+import { createLoopbackTransport } from "#src/transport/loopback.ts";
+import type { KernelServer } from "#src/transport/server.ts";
 
 describe("loopback transport notifications", () => {
   it("dispatches fire-and-forget notifications with wire-equivalent value isolation", async () => {

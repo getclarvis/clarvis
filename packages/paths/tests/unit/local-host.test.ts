@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { localHostPaths, type LocalHostPathOptions } from "../../src/index.ts";
+import { localHostPaths, type LocalHostPathOptions } from "#src/index.ts";
 
 const base: LocalHostPathOptions = {
   workspaceRoot: resolve("/work/repository"),

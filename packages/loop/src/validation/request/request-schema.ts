@@ -5,12 +5,12 @@ import type {
   ProviderConfig,
   RunRequest,
 } from "@clarvis/capability";
-import { capabilityRequestParamFields } from "../../runtime/capabilities/settings-specs.ts";
+import { capabilityRequestParamFields } from "#src/runtime/capabilities/settings-specs.ts";
 import {
   EXECUTION_ID_MAX,
   EXECUTION_ID_MIN,
   EXECUTION_ID_PATTERN,
-} from "../../types/execution-id.ts";
+} from "#src/types/execution-id.ts";
 import { messagesField } from "./message-schemas.ts";
 import { nonnegativeIntField } from "./numeric-schemas.ts";
 import { INPUT_LIMITS } from "../input-limits.ts";

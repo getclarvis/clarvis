@@ -1,7 +1,7 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { loadEnv, type AgentProfile } from "@clarvis/capability";
-import { agentProfileSchema } from "../../src/validation/request/profile-schemas.ts";
-import { enforcePerProfileRules } from "../../src/validation/request/profile-rules.ts";
+import { agentProfileSchema } from "#src/validation/request/profile-schemas.ts";
+import { enforcePerProfileRules } from "#src/validation/request/profile-rules.ts";
 import { parsedRequest, validationCode, VALID_REQUEST } from "../helpers/request.ts";
 
 describe("request profile schema", () => {

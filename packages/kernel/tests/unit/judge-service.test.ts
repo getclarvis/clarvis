@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RunCapabilityContext } from "@clarvis/capability";
-import { createRunJudge, runAuthorizationEvidence } from "../../src/execution/judge-service.ts";
+import { createRunJudge, runAuthorizationEvidence } from "#src/execution/judge-service.ts";
 
 test("the run judge resolves only a model declared for the current execution", () => {
   const ctx = {

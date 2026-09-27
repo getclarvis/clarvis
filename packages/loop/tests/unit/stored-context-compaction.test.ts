@@ -1,11 +1,11 @@
 import { expect, test } from "../bun-test.ts";
 import { loadEnv, type ContextSnapshotEntry, type RunRequest } from "@clarvis/capability";
-import { MockLLM } from "../../src/testing/mock-llm.ts";
+import { MockLLM } from "#src/testing/mock-llm.ts";
 import {
   compactStoredContext,
   estimateStoredContextTokens,
   fitStoredContextToWindow,
-} from "../../src/runtime/context/stored-context-compaction.ts";
+} from "#src/runtime/context/stored-context-compaction.ts";
 
 const REQUEST = {
   messages: [{ role: "user", content: "continue" }],

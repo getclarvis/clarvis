@@ -11,12 +11,9 @@ import {
   type ActivitySummaryFact,
   type ActivitySummaryInput,
   type ActivitySummaryTone,
-} from "../../src/views/activity-summary.ts";
-import type { PlanActivity, PlanTaskActivity } from "../../src/adapters/activity-store.ts";
-import type {
-  WorkflowActivity,
-  WorkflowNodeActivity,
-} from "../../src/adapters/workflow-projection.ts";
+} from "#src/views/activity-summary.ts";
+import type { PlanActivity, PlanTaskActivity } from "#src/adapters/activity-store.ts";
+import type { WorkflowActivity, WorkflowNodeActivity } from "#src/adapters/workflow-projection.ts";
 
 function task(status: string, id = `t${status}`): PlanTaskActivity {
   return { id, title: `Task ${id}`, status };

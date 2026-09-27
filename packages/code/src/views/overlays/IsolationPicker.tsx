@@ -1,14 +1,14 @@
 import { createEffect, createSignal, on, Show, type Accessor, type JSX } from "solid-js";
 import type { IsolationStatus } from "@clarvis/protocol";
-import type { SettingsAdapter } from "../../adapters/settings.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
 import {
   saveIsolationChoice,
   type IsolationChoice,
   type IsolationModeStore,
-} from "../../adapters/isolation-mode.ts";
-import type { Interaction } from "../../keys/interaction.ts";
-import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
-import { tokens } from "../../theme/tokens.ts";
+} from "#src/adapters/isolation-mode.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { glyph, glyphColWidth } from "#src/theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import { ListPicker } from "./ListPicker.tsx";
 
 type Pane = "mode" | "workspace" | "network" | "host-confirm";

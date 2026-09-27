@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { Splash } from "../../src/views/Splash.tsx";
-import { Footer } from "../../src/views/Footer.tsx";
-import { applyAsciiMode } from "../../src/theme/glyphs.ts";
+import { Splash } from "#src/views/Splash.tsx";
+import { Footer } from "#src/views/Footer.tsx";
+import { applyAsciiMode } from "#src/theme/glyphs.ts";
 
 afterEach(() => applyAsciiMode(false));
 

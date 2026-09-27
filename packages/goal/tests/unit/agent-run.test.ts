@@ -14,7 +14,7 @@ import {
   runGoalAgent,
   type GoalAgentRunInput,
   type GoalAgentRuntime,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 import { goalFormulationCorpus } from "../fixtures/formulation-corpus.ts";
 
 const input: GoalAgentRunInput = {

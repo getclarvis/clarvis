@@ -4,7 +4,7 @@ import {
   pluginSettingsFragment,
   suspectedManifestTypos,
   unknownManifestKeys,
-} from "../../src/settings/plugin-schema.ts";
+} from "#src/settings/plugin-schema.ts";
 
 const happy = {
   name: "demo",

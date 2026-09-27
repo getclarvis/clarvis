@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import type { FieldEditor, PickItem } from "../../src/views/config/view-host.tsx";
+import type { FieldEditor, PickItem } from "#src/views/config/view-host.tsx";
 import {
   editGoalCriterion,
   type GoalCriterionEditorDeps,
-} from "../../src/features/goal/criterion-editor.ts";
-import type { GoalDraft } from "../../src/features/goal/draft.ts";
+} from "#src/features/goal/criterion-editor.ts";
+import type { GoalDraft } from "#src/features/goal/draft.ts";
 
 interface TextRequest {
   label: string;

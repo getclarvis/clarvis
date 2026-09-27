@@ -13,9 +13,9 @@ import {
   SettingRow,
   StatusRow,
   ToggleRow,
-} from "../../src/views/config/view-host.tsx";
-import { tokens } from "../../src/theme/tokens.ts";
-import { EntityRow } from "../../src/ui/primitives/entity-row.tsx";
+} from "#src/views/config/view-host.tsx";
+import { tokens } from "#src/theme/tokens.ts";
+import { EntityRow } from "#src/ui/primitives/entity-row.tsx";
 
 async function lines(ui: () => unknown, width = 80, height = 24): Promise<string[]> {
   const t = await openRender(ui as never, { width, height });

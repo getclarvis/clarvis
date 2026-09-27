@@ -9,8 +9,8 @@ import {
   ELICIT_RESPONSE_FIELD,
   WINDOW_ELAPSED_GUIDANCE,
   type Elicit,
-} from "../../src/runtime/tools/index.ts";
-import { createComputeClock, type ComputeClock } from "../../src/runtime/support/index.ts";
+} from "#src/runtime/tools/index.ts";
+import { createComputeClock, type ComputeClock } from "#src/runtime/support/index.ts";
 
 describe("ask-user-tool helpers", () => {
   it("buildElicitParams: free-text one-field schema by default", () => {

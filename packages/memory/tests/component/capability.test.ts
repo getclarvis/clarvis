@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "bun:test";
 
-import { SEED_OPEN_TAG, type Memory, type MemoryToolDef } from "../../src/index.ts";
+import { SEED_OPEN_TAG, type Memory, type MemoryToolDef } from "#src/index.ts";
 
 import { loadEnv } from "@clarvis/capability";
 import {
@@ -11,7 +11,7 @@ import {
   prepareMemoryRuntime,
   type MemoryFactory,
   type MemoryIngestNotice,
-} from "../../src/capability.ts";
+} from "#src/capability.ts";
 import { fakeAgentBuildContext, fakeRunCapabilityContext } from "../helpers/capability.ts";
 import { makeExecutionRecord } from "../helpers/fixtures.ts";
 import type { AgentBuildContext, CapabilityEvent, RunCapabilityContext } from "@clarvis/capability";
@@ -19,7 +19,7 @@ import {
   MEMORY_TOOL_CONTRACTS,
   memoryToolParameters,
   type MemoryToolName,
-} from "../../src/tool-contract.ts";
+} from "#src/tool-contract.ts";
 
 function memTool(name: string): MemoryToolDef {
   const canonical = MEMORY_TOOL_CONTRACTS[name as MemoryToolName];

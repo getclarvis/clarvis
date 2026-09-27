@@ -9,12 +9,12 @@ import type {
   ExtensionProfileService,
   ResolvedExtensionProfile,
 } from "@clarvis/protocol";
-import type { MarketplaceListing, MarketplaceSource } from "../../src/adapters/marketplace.ts";
-import type { PluginView } from "../../src/adapters/plugins.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { spinnerChar } from "../../src/views/spinner.ts";
-import { ExtensionsHub, type ExtensionsHubDeps } from "../../src/views/config/ExtensionsHub.tsx";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
+import type { MarketplaceListing, MarketplaceSource } from "#src/adapters/marketplace.ts";
+import type { PluginView } from "#src/adapters/plugins.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { spinnerChar } from "#src/views/spinner.ts";
+import { ExtensionsHub, type ExtensionsHubDeps } from "#src/views/config/ExtensionsHub.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 

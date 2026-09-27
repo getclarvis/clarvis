@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { budgetSchema, runRequestSchema } from "../../src/validation/request/request-schema.ts";
+import { budgetSchema, runRequestSchema } from "#src/validation/request/request-schema.ts";
 import { VALID_REQUEST } from "../helpers/request.ts";
 
 describe("run request schema", () => {

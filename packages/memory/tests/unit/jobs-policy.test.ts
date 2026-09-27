@@ -10,7 +10,7 @@ import {
   retryDelayMs,
   type MemoryIndexJob,
   type MemoryRetryPolicy,
-} from "../../src/jobs.ts";
+} from "#src/jobs.ts";
 import { run, toolCall } from "../helpers/fixtures.ts";
 
 /** No jitter, so the schedule is exact. */

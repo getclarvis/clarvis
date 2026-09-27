@@ -3,15 +3,15 @@ import type { LLMToolCall, RunRequest, Usage } from "@clarvis/capability";
 import { createCapabilityServices } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry, type AgentsLimits } from "@clarvis/supervision";
-import { createWorkflowsCapability } from "../../src/capability.ts";
-import { beginDispatch, type DispatchDeps, type DispatchUnit } from "../../src/dispatch.ts";
-import { createElicitMux } from "../../src/elicit-mux.ts";
-import { createWorkflowLedger } from "../../src/ledger.ts";
-import { runLeader } from "../../src/run-leader.ts";
-import { createRoundCoordinator, startRounds, type RoundCall } from "../../src/run-round.ts";
-import { RUN_WORK_ITEMS_TOOL_NAME } from "../../src/work-items.ts";
-import { RUN_LEADER_TOOL_NAME } from "../../src/tool.ts";
-import type { WorkflowCtx } from "../../src/types.ts";
+import { createWorkflowsCapability } from "#src/capability.ts";
+import { beginDispatch, type DispatchDeps, type DispatchUnit } from "#src/dispatch.ts";
+import { createElicitMux } from "#src/elicit-mux.ts";
+import { createWorkflowLedger } from "#src/ledger.ts";
+import { runLeader } from "#src/run-leader.ts";
+import { createRoundCoordinator, startRounds, type RoundCall } from "#src/run-round.ts";
+import { RUN_WORK_ITEMS_TOOL_NAME } from "#src/work-items.ts";
+import { RUN_LEADER_TOOL_NAME } from "#src/tool.ts";
+import type { WorkflowCtx } from "#src/types.ts";
 import { recordingLogger, type RecordingLogger } from "../helpers/recording-logger.ts";
 import {
   makeCtx,

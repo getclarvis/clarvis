@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { createViewHost, type ViewHostControls } from "../../src/views/config/view-host.tsx";
-import type { ViewHost } from "../../src/keys/commands.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
+import { createViewHost, type ViewHostControls } from "#src/views/config/view-host.tsx";
+import type { ViewHost } from "#src/keys/commands.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const fakeKeymap = createFakeKeymap;

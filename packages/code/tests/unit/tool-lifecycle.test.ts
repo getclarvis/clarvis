@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { reduceToolLifecycle } from "../../src/core/transcript/tool-lifecycle.ts";
+import { reduceToolLifecycle } from "#src/core/transcript/tool-lifecycle.ts";
 
 test("input is cumulative and pending survives duplicate announcement or delayed fragments", () => {
   const composing = reduceToolLifecycle({}, { type: "announce" });

@@ -5,7 +5,7 @@ import {
   projectAgentEvent,
   waitAgeSeconds,
   type ProjectionState,
-} from "../../src/projection.ts";
+} from "#src/projection.ts";
 import type { TraceEntry } from "@clarvis/capability";
 import type { TraceEvent } from "@clarvis/capability";
 

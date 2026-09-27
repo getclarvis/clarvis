@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { buildSystemSections } from "../../src/runtime/subagents/build-subagent-input.ts";
+import { buildSystemSections } from "#src/runtime/subagents/build-subagent-input.ts";
 
 describe("the environment system-prompt section", () => {
   it("names the workspace root, the platform and the shell", () => {

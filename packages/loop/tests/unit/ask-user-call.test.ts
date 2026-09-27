@@ -1,10 +1,10 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { createTrace } from "@clarvis/trace";
-import { handleAskUserCall, type AskUser } from "../../src/runtime/tools/index.ts";
+import { handleAskUserCall, type AskUser } from "#src/runtime/tools/index.ts";
 import type { LLMToolCall } from "@clarvis/capability";
-import { createToolArgValidator } from "../../src/runtime/tools/tool-arg-validator.ts";
-import { askUserAgentCapability } from "../../src/runtime/capabilities/ask-user.ts";
-import { fakeAgentBuildContext } from "../../src/runtime/capabilities/testing.ts";
+import { createToolArgValidator } from "#src/runtime/tools/tool-arg-validator.ts";
+import { askUserAgentCapability } from "#src/runtime/capabilities/ask-user.ts";
+import { fakeAgentBuildContext } from "#src/runtime/capabilities/testing.ts";
 
 const validateArgs = createToolArgValidator().validate;
 

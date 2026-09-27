@@ -1,14 +1,14 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { loadEnv } from "@clarvis/capability";
-import { runOrchestrator, type OrchestratorDeps } from "../../src/runtime/orchestrator.ts";
-import { compileResultContract } from "../../src/runtime/tools/result-contract.ts";
+import { runOrchestrator, type OrchestratorDeps } from "#src/runtime/orchestrator.ts";
+import { compileResultContract } from "#src/runtime/tools/result-contract.ts";
 import { ProviderError } from "@clarvis/capability";
 import { MockLLM, mockConnections, mockMCPFactory } from "./_fixtures.ts";
-import { createAgentToolsCapability } from "../../src/runtime/capabilities/tools.ts";
-import { createAskUserCapability } from "../../src/runtime/capabilities/ask-user.ts";
+import { createAgentToolsCapability } from "#src/runtime/capabilities/tools.ts";
+import { createAskUserCapability } from "#src/runtime/capabilities/ask-user.ts";
 import { createSkillsCapability } from "@clarvis/skills/capability";
 import type { RunRequest } from "@clarvis/capability";
-import type { Elicit, ElicitRawResult } from "../../src/runtime/tools/ask-user-tool.ts";
+import type { Elicit, ElicitRawResult } from "#src/runtime/tools/ask-user-tool.ts";
 import type { ElicitationRelay, MCPClientFactory, MCPClientHandle } from "@clarvis/mcp-client";
 import type { McpServerConfig } from "@clarvis/capability";
 

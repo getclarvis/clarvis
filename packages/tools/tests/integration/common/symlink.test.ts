@@ -11,7 +11,7 @@ import {
   makeSymlink,
   canSymlink,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 
 describe.skipIf(!canSymlink)("symlink write semantics (BUG-10 / TEST-05)", () => {
   let root: string;

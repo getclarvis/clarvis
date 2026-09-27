@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "../bun-test.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
-import type { PluginBootstrapSkill } from "../../src/runtime/capabilities/skills-settings.ts";
+import type { PluginBootstrapSkill } from "#src/runtime/capabilities/skills-settings.ts";
 import type { LiveMessage } from "@clarvis/capability";
 import type { SkillContent, SkillInfo } from "@clarvis/skills";
 

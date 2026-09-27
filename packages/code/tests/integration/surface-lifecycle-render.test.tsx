@@ -10,8 +10,8 @@ import {
   useSurfaceActivationGuard,
   useSurfaceFocus,
   useSurfaceLifecycle,
-} from "../../src/ui/patterns/surface-lifecycle.tsx";
-import { FloatFrame } from "../../src/views/overlays/FloatFrame.tsx";
+} from "#src/ui/patterns/surface-lifecycle.tsx";
+import { FloatFrame } from "#src/views/overlays/FloatFrame.tsx";
 
 function lifecycleProbe(events: string[]): () => JSX.Element {
   return function Probe(): JSX.Element {

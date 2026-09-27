@@ -8,9 +8,9 @@ import { createMemoryTraceStore } from "@clarvis/trace/testing";
 import { MockLLM } from "@clarvis/loop/testing";
 import type { SkillsProvider } from "@clarvis/loop";
 import type { RunEvent } from "@clarvis/protocol";
-import { createInProcessKernel } from "../../src/kernel.ts";
-import { createMemoryConfigStore } from "../../src/config.ts";
-import { snapshotRunConfiguration } from "../../src/runs/configuration-snapshot.ts";
+import { createInProcessKernel } from "#src/kernel.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
+import { snapshotRunConfiguration } from "#src/runs/configuration-snapshot.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];

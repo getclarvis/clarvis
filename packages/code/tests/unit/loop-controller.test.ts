@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createLoopController, type LoopController } from "../../src/features/loop/controller.ts";
-import { parseLoopCommand } from "../../src/features/loop/parser.ts";
+import { createLoopController, type LoopController } from "#src/features/loop/controller.ts";
+import { parseLoopCommand } from "#src/features/loop/parser.ts";
 import type {
   LoopBinding,
   LoopTurnCompletion,
   ScheduledTurnRequest,
-} from "../../src/core/loop-schedule.ts";
+} from "#src/core/loop-schedule.ts";
 
 import { TestLoopClock } from "../helpers/loop-clock.ts";
 

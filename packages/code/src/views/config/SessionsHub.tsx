@@ -1,15 +1,11 @@
 import type { JSX } from "solid-js";
-import { detachObserved } from "../../core/tasks.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import { createSignal, onMount } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import {
-  sessionTurnCount,
-  type SessionId,
-  type SessionMeta,
-} from "../../adapters/session-store.ts";
-import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { sessionTurnCount, type SessionId, type SessionMeta } from "#src/adapters/session-store.ts";
+import { clampListIndex } from "#src/ui/patterns/list-navigation.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { bindLevelKeys, SelectableList, SelectableRow, ViewFrame } from "./view-host.tsx";
 import {
   COST_COL_WIDTH,

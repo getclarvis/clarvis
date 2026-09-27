@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { PENDING_TASKS_NOTE, planReviewUnplannedBlock } from "../../src/capability/messages.ts";
+import { PENDING_TASKS_NOTE, planReviewUnplannedBlock } from "#src/capability/messages.ts";
 
 describe("planReviewUnplannedBlock", () => {
   it("names the refused tool and points at create_plan and the read-only tools", () => {

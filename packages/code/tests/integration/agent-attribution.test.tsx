@@ -2,10 +2,10 @@ import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
 import type { RunEvent } from "@clarvis/protocol";
-import { createTranscriptStore, type TranscriptNode } from "../../src/adapters/store.ts";
+import { createTranscriptStore, type TranscriptNode } from "#src/adapters/store.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
-import { BlockView, railColor } from "../../src/views/blocks.tsx";
-import { tokens } from "../../src/theme/tokens.ts";
+import { BlockView, railColor } from "#src/views/blocks.tsx";
+import { tokens } from "#src/theme/tokens.ts";
 import type { FoldFixtureNode } from "../helpers/transcript-fixtures.ts";
 
 const ev = runEvent;

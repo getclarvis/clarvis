@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import { createHintState } from "../../src/views/hint.ts";
+import { createHintState } from "#src/views/hint.ts";
 
 type TimerCall = { fn: () => void; ms: number; id: number };
 

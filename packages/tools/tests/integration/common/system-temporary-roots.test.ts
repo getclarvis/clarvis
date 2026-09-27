@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it } from "bun:test";
 import { existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { systemTemporaryRoots } from "../../../src/lib/system-temporary-roots.ts";
+import { systemTemporaryRoots } from "#src/lib/system-temporary-roots.ts";
 import { cleanup, makeWorkspace, write } from "../../helpers/fixtures.ts";
 
 let root: string;

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
-import { bindLevelKeys, type FieldEditState } from "../../src/views/config/view-host.tsx";
+import { bindLevelKeys, type FieldEditState } from "#src/views/config/view-host.tsx";
 
 function harness(): {
   log: string[];

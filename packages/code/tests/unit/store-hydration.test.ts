@@ -5,9 +5,9 @@ import {
   createTranscriptStore,
   type LocalBashDisplay,
   type TranscriptToolNode,
-} from "../../src/adapters/store.ts";
-import { formatToolCall } from "../../src/views/tools/signature.ts";
-import { mutationStats } from "../../src/views/tools/mutation-gate.ts";
+} from "#src/adapters/store.ts";
+import { formatToolCall } from "#src/views/tools/signature.ts";
+import { mutationStats } from "#src/views/tools/mutation-gate.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 

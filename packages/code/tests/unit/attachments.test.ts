@@ -17,9 +17,9 @@ import {
   nextAttachmentId,
   parseMentions,
   type Attachment,
-} from "../../src/core/attachments.ts";
-import { createAttachmentStore } from "../../src/views/input/attachments.ts";
-import { detectTrigger } from "../../src/views/input/autocomplete.ts";
+} from "#src/core/attachments.ts";
+import { createAttachmentStore } from "#src/views/input/attachments.ts";
+import { detectTrigger } from "#src/views/input/autocomplete.ts";
 
 function imageAttachment(id: string, data = "b64", mediaType = "image/png", size = 10): Attachment {
   return { id, kind: "image", label: "shot.png", size, data, mediaType };

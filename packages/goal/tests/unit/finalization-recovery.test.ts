@@ -3,7 +3,7 @@ import {
   GOAL_RECOVERY_TRACE_KIND,
   goalRecoveryNote,
   type GoalRecoveryCause,
-} from "../../src/finalization-recovery.ts";
+} from "#src/finalization-recovery.ts";
 
 /**
  * The one orientation every Goal finalize gate gives a premature final.

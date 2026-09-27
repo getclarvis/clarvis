@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createCapabilityRegistry } from "@clarvis/capability";
 import { z } from "zod";
-import { parseRunRequest } from "../../src/validation/request/parsing.ts";
+import { parseRunRequest } from "#src/validation/request/parsing.ts";
 import { VALID_REQUEST, validationCode } from "../helpers/request.ts";
 
 describe("request parsing", () => {

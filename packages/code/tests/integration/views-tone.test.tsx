@@ -1,13 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex, type RGBA } from "@opentui/core";
-import { Footer, HintToast, type FooterStatusTone } from "../../src/views/Footer.tsx";
-import { agentGlyph, taskTone } from "../../src/views/blocks.tsx";
-import { spinnerChar } from "../../src/views/spinner.ts";
-import { tone } from "../../src/theme/tone.ts";
-import { tokens } from "../../src/theme/tokens.ts";
-import { applyAsciiMode, glyph } from "../../src/theme/glyphs.ts";
-import type { HintTone } from "../../src/views/hint.ts";
+import { Footer, HintToast, type FooterStatusTone } from "#src/views/Footer.tsx";
+import { agentGlyph, taskTone } from "#src/views/blocks.tsx";
+import { spinnerChar } from "#src/views/spinner.ts";
+import { tone } from "#src/theme/tone.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { applyAsciiMode, glyph } from "#src/theme/glyphs.ts";
+import type { HintTone } from "#src/views/hint.ts";
 
 afterEach(() => applyAsciiMode(false));
 

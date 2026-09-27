@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { withPromptCacheDefaults } from "../../src/prompt-cache-provider.ts";
+import { withPromptCacheDefaults } from "#src/prompt-cache-provider.ts";
 import type { LLMCallParams, LLMCallResult, LLMProvider } from "@clarvis/capability";
 
 function captureProvider(): { provider: LLMProvider; seen: LLMCallParams[] } {

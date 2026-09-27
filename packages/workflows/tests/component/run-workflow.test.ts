@@ -10,11 +10,11 @@ import type {
 import { createComputeClock, ElicitTimeoutError } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry } from "@clarvis/supervision";
-import type { WorkflowDefinition } from "../../src/artifact.ts";
-import { createWorkflowsCapability } from "../../src/capability.ts";
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
-import { RUN_WORKFLOW_TOOL_NAME } from "../../src/run-workflow.ts";
-import type { LeaderSpec, WorkflowCtx, WorkflowRunDeps } from "../../src/types.ts";
+import type { WorkflowDefinition } from "#src/artifact.ts";
+import { createWorkflowsCapability } from "#src/capability.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
+import { RUN_WORKFLOW_TOOL_NAME } from "#src/run-workflow.ts";
+import type { LeaderSpec, WorkflowCtx, WorkflowRunDeps } from "#src/types.ts";
 import { WORKFLOW_DEFINITIONS } from "../helpers/definitions.ts";
 import { recordingLogger, type RecordingLogger } from "../helpers/recording-logger.ts";
 import {

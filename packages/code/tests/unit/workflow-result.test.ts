@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   formatStructuredWorkflowResult,
   parseStructuredWorkflowResult,
-} from "../../src/views/config/workflow-result.ts";
+} from "#src/views/config/workflow-result.ts";
 
 test("JSON workflow strings become scannable Markdown without dropping nested fields", () => {
   const parsed = parseStructuredWorkflowResult(

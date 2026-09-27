@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
 import { For } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { tone } from "../../theme/tone.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { tone } from "#src/theme/tone.ts";
 
 /** Renders an error message with the error tone, plus optional indented detail lines. */
 export function ErrorBanner(props: { text: string; detail?: string[] }): JSX.Element {

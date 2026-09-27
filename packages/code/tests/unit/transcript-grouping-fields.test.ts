@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 import { createRoot } from "solid-js";
-import type { TranscriptStore } from "../../src/adapters/store.ts";
-import { createTranscriptProjection } from "../../src/adapters/transcript-projection.ts";
+import type { TranscriptStore } from "#src/adapters/store.ts";
+import { createTranscriptProjection } from "#src/adapters/transcript-projection.ts";
 
 /**
  * Fields whose value changes on the streaming hot path — a `text_delta` per

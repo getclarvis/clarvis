@@ -4,11 +4,8 @@ import { createInterface } from "node:readline";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { resolveConfig } from "../../../src/config.ts";
-import {
-  WORKER_PROTOCOL_VERSION,
-  type WorkerConfigDto,
-} from "../../../src/execution/worker-protocol.ts";
+import { resolveConfig } from "#src/config.ts";
+import { WORKER_PROTOCOL_VERSION, type WorkerConfigDto } from "#src/execution/worker-protocol.ts";
 
 test("worker protocol admits only versioned, schema-valid file operations", async () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-worker-contract-"));

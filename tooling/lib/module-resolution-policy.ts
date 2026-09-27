@@ -5,7 +5,7 @@ import ts from "typescript";
 interface WorkspaceSurface {
   name: string;
   dir: string;
-  manifest: { exports?: Record<string, unknown> | string };
+  manifest: { exports?: Record<string, unknown> | string; imports?: Record<string, unknown> };
   sourceEdges?: readonly { file: string; specifier: string }[];
 }
 
@@ -26,6 +26,129 @@ const diskAccess: ConfigAccess = {
   directoryExists: (path) => ts.sys.directoryExists(path),
   realpath: (path) => realpathSync(path),
 };
+
+const PRIVATE_SOURCE = /^#src\/(.+)\.(ts|tsx)$/;
+
+function pathIdentity(path: string, access: ConfigAccess): string {
+  return access.fileExists(path) ? access.realpath(path) : resolve(path);
+}
+
+/** Resolve a package-owned private source import and reject mappings outside its src tree. */
+export function privateImportTarget(
+  root: string,
+  pkg: WorkspaceSurface,
+  importer: string,
+  specifier: string,
+  access: ConfigAccess = diskAccess,
+): { target?: string; errors: string[] } {
+  if (!specifier.startsWith("#src/")) return { errors: [] };
+  const manifest = join(pkg.dir, "package.json");
+  const label = `${displayed(root, manifest)}: ${displayed(root, importer)}: ${specifier}`;
+  const match = PRIVATE_SOURCE.exec(specifier);
+  if (!match || match[1].split("/").some((part) => part === "." || part === ".." || part === ""))
+    return { errors: [`${label}: expected #src/path/module.ts or .tsx inside this package`] };
+  const imports = pkg.manifest.imports;
+  const library = imports?.["#src/*.ts"];
+  const application = imports?.["#src/*"];
+  const mapping = library ?? application;
+  if (mapping === undefined)
+    return { errors: [`${label}: package must declare its own #src/ mapping`] };
+  const errors: string[] = [];
+  const expectedSource = resolve(pkg.dir, "src", `${match[1]}.${match[2]}`);
+  const realPackage = access.realpath(pkg.dir);
+  const realImporter = pathIdentity(importer, access);
+  if (!realImporter.startsWith(realPackage + sep))
+    errors.push(`${label}: importer is outside the owning package`);
+  if (library !== undefined) {
+    const conditions =
+      library !== null && typeof library === "object" && !Array.isArray(library)
+        ? (library as Record<string, unknown>)
+        : {};
+    if (
+      match[2] !== "ts" ||
+      Object.keys(conditions).join(",") !== "bun,types,default" ||
+      conditions.bun !== "./src/*.ts" ||
+      conditions.types !== "./dist/*.d.ts" ||
+      conditions.default !== "./dist/*.js" ||
+      application !== undefined
+    )
+      errors.push(
+        `${label}: library mapping must be #src/*.ts with ordered bun, types, default source and output targets`,
+      );
+  } else if (
+    application !== "./src/*" ||
+    Object.keys(imports ?? {}).filter((key) => key.startsWith("#src/")).length !== 1
+  ) {
+    errors.push(`${label}: application mapping must be #src/* -> ./src/*`);
+  }
+  if (errors.length > 0) return { errors };
+  if (!access.fileExists(expectedSource))
+    return { errors: [`${label}: source does not exist: ${displayed(root, expectedSource)}`] };
+  const realSource = pathIdentity(expectedSource, access);
+  const realSrc = access.realpath(join(pkg.dir, "src"));
+  if (!realSource.startsWith(realSrc + sep))
+    return { errors: [`${label}: source escapes package src: ${displayed(root, expectedSource)}`] };
+  const configFile = join(pkg.dir, "tsconfig.json");
+  const config = access.fileExists(configFile)
+    ? ts.getParsedCommandLineOfConfigFile(
+        configFile,
+        {},
+        {
+          ...access,
+          useCaseSensitiveFileNames: true,
+          onUnRecoverableConfigFileDiagnostic: () => {},
+        },
+      )
+    : undefined;
+  const resolved = ts.resolveModuleName(
+    specifier,
+    importer,
+    config?.options ?? {
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      customConditions: ["bun"],
+    },
+    access,
+  ).resolvedModule?.resolvedFileName;
+  if (resolved === undefined || pathIdentity(resolved, access) !== realSource)
+    return { errors: [`${label}: TypeScript must resolve to ${displayed(root, expectedSource)}`] };
+  return { target: expectedSource, errors: [] };
+}
+
+function privateMappingErrors(root: string, pkg: WorkspaceSurface, access: ConfigAccess): string[] {
+  const imports = pkg.manifest.imports;
+  if (imports === undefined) return [];
+  const label = displayed(root, join(pkg.dir, "package.json"));
+  const entries = Object.entries(imports).filter(([key]) => key.startsWith("#src/"));
+  if (entries.length === 0) return [];
+  if (entries.length !== 1) return [`${label}: declare exactly one #src/ mapping`];
+  const [key, value] = entries[0];
+  if (
+    key === "#src/*" &&
+    value === "./src/*" &&
+    !access.fileExists(join(pkg.dir, "tsconfig.build.json"))
+  )
+    return [];
+  if (
+    key === "#src/*.ts" &&
+    access.fileExists(join(pkg.dir, "tsconfig.build.json")) &&
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  ) {
+    const conditions = value as Record<string, unknown>;
+    if (
+      Object.keys(conditions).join(",") === "bun,types,default" &&
+      conditions.bun === "./src/*.ts" &&
+      conditions.types === "./dist/*.d.ts" &&
+      conditions.default === "./dist/*.js"
+    )
+      return [];
+  }
+  return [
+    `${label}: invalid #src/ mapping; expected application source or ordered library bun, types, default targets`,
+  ];
+}
 
 function displayed(root: string, path: string): string {
   return relative(root, path).split(sep).join("/");
@@ -147,6 +270,14 @@ export function moduleResolutionPolicyErrors(
 ): string[] {
   const byName = new Map(packages.map((pkg) => [pkg.name, pkg]));
   const errors: string[] = [];
+  for (const pkg of packages) {
+    errors.push(...privateMappingErrors(root, pkg, access));
+    for (const edge of pkg.sourceEdges ?? []) {
+      if (!edge.specifier.startsWith("#src/")) continue;
+      const importer = resolve(root, edge.file);
+      errors.push(...privateImportTarget(root, pkg, importer, edge.specifier, access).errors);
+    }
+  }
   const configs: Array<{
     consumer?: WorkspaceSurface;
     profile: "development" | "build" | "tooling";
@@ -202,9 +333,9 @@ export function moduleResolutionPolicyErrors(
     if (options.paths !== undefined) {
       const origin = configOrigin(file, access) ?? file;
       for (const specifier of Object.keys(options.paths)) {
-        if (specifier.startsWith("@clarvis/"))
+        if (specifier.startsWith("@clarvis/") || specifier.startsWith("#src/"))
           errors.push(
-            `${displayed(root, origin)} (${profile} ${specifier}): workspace paths alias is forbidden`,
+            `${displayed(root, origin)} (${profile} ${specifier}): ${specifier.startsWith("#src/") ? "private" : "workspace"} paths alias is forbidden`,
           );
       }
     }

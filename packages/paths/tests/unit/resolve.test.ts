@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { isAbsolute, join, resolve } from "node:path";
 
-import { expandHome, resolveAgainst, resolveWorkspaceDir } from "../../src/index.ts";
+import { expandHome, resolveAgainst, resolveWorkspaceDir } from "#src/index.ts";
 
 const HOME = resolve("/home/clarvis-user");
 

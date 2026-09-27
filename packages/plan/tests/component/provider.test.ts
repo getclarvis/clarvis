@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { PlanProviderUnavailableError, createPlanFactory } from "../../src/index.ts";
+import { PlanProviderUnavailableError, createPlanFactory } from "#src/index.ts";
 import { markdownStore } from "../helpers/provider.ts";
 
 describe("PlanFactory", () => {

@@ -1,10 +1,10 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { runAgent, type RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
+import { runAgent, type RunAgentInput } from "#src/runtime/loop/run-agent.ts";
 import { createTrace } from "@clarvis/trace";
-import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import { compileResultContract } from "../../src/runtime/tools/index.ts";
-import { DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
+import { createTokenLedger, createIterationCounter } from "#src/runtime/budget/index.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import { compileResultContract } from "#src/runtime/tools/index.ts";
+import { DISABLED_COMPACTION } from "#src/runtime/context/index.ts";
 import { mapEntry } from "@clarvis/trace";
 import type { LLMProvider, LLMCallParams, LLMCallResult } from "@clarvis/capability";
 import type { TraceEntry } from "@clarvis/capability";

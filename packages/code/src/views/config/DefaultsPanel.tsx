@@ -1,13 +1,13 @@
 import type { JSX } from "solid-js";
 import { createSignal } from "solid-js";
-import type { ViewHost } from "../../keys/commands.ts";
-import type { SettingsAdapter, SettingsFile } from "../../adapters/settings.ts";
-import type { EnvView } from "../../adapters/agent-files.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import type { SettingsAdapter, SettingsFile } from "#src/adapters/settings.ts";
+import type { EnvView } from "#src/adapters/agent-files.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { bindLevelKeys, createFieldEditor, LevelHost, StatusRow } from "./view-host.tsx";
 import type { HintTone } from "../hint.ts";
-import type { SettingPresentation } from "../../ui/presentation.ts";
-import { DetailColumn, DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
+import type { SettingPresentation } from "#src/ui/presentation.ts";
+import { DetailColumn, DetailSettingRow, SettingDetail } from "#src/ui/patterns/detail-view.tsx";
 
 /** Data and actions {@link DefaultsPanel} needs from its host. */
 export interface DefaultsDeps {

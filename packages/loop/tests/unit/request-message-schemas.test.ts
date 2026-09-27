@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { messageSchema, messagesField } from "../../src/validation/request/message-schemas.ts";
+import { messageSchema, messagesField } from "#src/validation/request/message-schemas.ts";
 
 describe("request message schemas", () => {
   it.each([

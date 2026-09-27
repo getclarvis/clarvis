@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parsePlan, planFilename, renderPlan, transitionTask } from "../../src/index.ts";
+import { parsePlan, planFilename, renderPlan, transitionTask } from "#src/index.ts";
 import { createMemoryPlanStore } from "../helpers/store.ts";
 
 describe("plan format", () => {

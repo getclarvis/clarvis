@@ -3,7 +3,7 @@ import {
   marketplaceSchema,
   type Marketplace,
   type MarketplaceEntry,
-} from "../../src/settings/marketplace-schema.ts";
+} from "#src/settings/marketplace-schema.ts";
 
 /** The two strings the reader supplies when a document authors neither. */
 const DEFAULT_MARKETPLACE_NAME = "unnamed marketplace";

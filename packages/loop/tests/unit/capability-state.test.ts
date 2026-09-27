@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { collectCapabilityState } from "../../src/runtime/execute-run.ts";
+import { collectCapabilityState } from "#src/runtime/execute-run.ts";
 import type { RunCapability } from "@clarvis/capability";
 
 /** A capability that files `value` under `name`, or throws when told to. */

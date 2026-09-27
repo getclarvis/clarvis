@@ -3,7 +3,7 @@ import {
   composePersistedTraceProjectors,
   createPersistedTraceProjectorRegistry,
   type PersistedTraceProjector,
-} from "../../src/trace-projectors.ts";
+} from "#src/trace-projectors.ts";
 
 const projector = (kind: string): PersistedTraceProjector => ({
   kind,

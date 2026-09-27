@@ -1,8 +1,8 @@
 import type { JSX } from "solid-js";
 import { Index } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
-import { overlayBg, selectionBg } from "../../theme/surfaces.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph, glyphColWidth } from "#src/theme/glyphs.ts";
+import { overlayBg, selectionBg } from "#src/theme/surfaces.ts";
 
 const CHEVRON_COL_WIDTH = glyphColWidth("chevronRight");
 

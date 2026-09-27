@@ -5,7 +5,7 @@ import {
   runHookCommand,
   type SubprocessDeps,
   type SubprocessRequest,
-} from "../../src/subprocess.ts";
+} from "#src/subprocess.ts";
 import { FakeChild, fakeClock, fakeSpawn, tick, type SpawnCall } from "../helpers/fake-child.ts";
 
 const POSIX_SHELL = { flavor: "posix", file: "sh" } as const;

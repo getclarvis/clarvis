@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { ITEMS, SettingsHub } from "../../src/views/config/SettingsHub.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { ITEMS, SettingsHub } from "#src/views/config/SettingsHub.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const fakeKeymap = createFakeKeymap;

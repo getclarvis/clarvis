@@ -9,7 +9,7 @@ import {
   synthSampleArgs,
   type LivePrompt,
   type LiveTool,
-} from "../../src/adapters/mcp-capabilities.ts";
+} from "#src/adapters/mcp-capabilities.ts";
 
 test("mcpServerSettingsSchema: stdio needs a command, forbids url/headers", () => {
   expect(mcpServerSettingsSchema.safeParse({ type: "stdio", command: "git-mcp" }).success).toBe(

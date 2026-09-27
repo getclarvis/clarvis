@@ -1,10 +1,10 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { validateSpawnArgs } from "../../src/runtime/subagents/spawn-subagent.ts";
-import { resolveSubagentProfiles } from "../../src/runtime/subagents/subagent-profiles.ts";
+import { validateSpawnArgs } from "#src/runtime/subagents/spawn-subagent.ts";
+import { resolveSubagentProfiles } from "#src/runtime/subagents/subagent-profiles.ts";
 import {
   buildRunSubagentInput,
   type SubagentRunContext,
-} from "../../src/runtime/subagents/spawn-subagent.ts";
+} from "#src/runtime/subagents/spawn-subagent.ts";
 import { TASK_BRIEF_MAX_CHARS, loadEnv } from "@clarvis/capability";
 
 const env = loadEnv({});

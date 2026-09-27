@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { Show } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex } from "@opentui/core";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createFieldEditor, type FieldEditor } from "../../src/views/config/view-host.tsx";
-import { overlayBg, selectionBg } from "../../src/theme/surfaces.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createFieldEditor, type FieldEditor } from "#src/views/config/view-host.tsx";
+import { overlayBg, selectionBg } from "#src/theme/surfaces.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const fakeKeymap = createFakeKeymap;

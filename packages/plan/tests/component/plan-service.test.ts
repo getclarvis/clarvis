@@ -7,7 +7,7 @@ import {
   PlanService,
   createPlanStore,
   type PlanStore,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 import { createEditablePlanRepository, type EditablePlanRepository } from "../helpers/store.ts";
 
 function fixture(): {

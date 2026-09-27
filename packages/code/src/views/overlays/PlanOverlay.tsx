@@ -1,28 +1,28 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
-import { detachObserved } from "../../core/tasks.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import type { Accessor, JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { PlanDocumentDto, PlansService } from "@clarvis/protocol";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import type { Interaction } from "../../keys/interaction.ts";
-import type { PlanActivity, PlanTaskActivity } from "../../adapters/activity-store.ts";
-import { followSelection } from "../../ui/patterns/list-navigation.ts";
-import { LAYER, registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import type { ToneStyle } from "../../theme/tone.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { PlanActivity, PlanTaskActivity } from "#src/adapters/activity-store.ts";
+import { followSelection } from "#src/ui/patterns/list-navigation.ts";
+import { LAYER, registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
+import type { ToneStyle } from "#src/theme/tone.ts";
 import { taskTone } from "../blocks.tsx";
 import { PageFrame } from "../PageFrame.tsx";
 import { Prose } from "../Prose.tsx";
 import { EmptyHint, LoadingHint } from "../config/view-host.tsx";
-import { scrollbarOptions, selectionBg, SCROLLBOX_TABLE_GUTTER } from "../../theme/surfaces.ts";
-import { lifecycleLabel, uiLifecycle } from "../../ui/presentation.ts";
+import { scrollbarOptions, selectionBg, SCROLLBOX_TABLE_GUTTER } from "#src/theme/surfaces.ts";
+import { lifecycleLabel, uiLifecycle } from "#src/ui/presentation.ts";
 import {
   detailCloseActions,
   DetailColumn,
   DetailTitle,
   DetailHeading,
   detailStatusColor,
-} from "../../ui/patterns/detail-view.tsx";
+} from "#src/ui/patterns/detail-view.tsx";
 
 /** Surface pending approval without exposing persistence revisions or routine review metadata. */
 function approvalLine(doc: PlanDocumentDto): string | undefined {

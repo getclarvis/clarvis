@@ -4,7 +4,7 @@ import {
   rejectDuplicateServerNames,
   requireEntryShape,
   requireKnownSpawnTargets,
-} from "../../src/validation/request/identity-rules.ts";
+} from "#src/validation/request/identity-rules.ts";
 import { parsedRequest, validationCode, VALID_REQUEST } from "../helpers/request.ts";
 
 describe("request identity and topology rules", () => {

@@ -7,17 +7,17 @@ import {
   type Usage,
 } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
-import { createWorkflowsCapability, workflowContextOf } from "../../src/capability.ts";
-import { createWorkflowLedger } from "../../src/ledger.ts";
-import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
+import { createWorkflowsCapability, workflowContextOf } from "#src/capability.ts";
+import { createWorkflowLedger } from "#src/ledger.ts";
+import { createWorkflowLeaderCount } from "#src/leader-count.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
 import {
   createLeaderOutputBudgetCapability,
   runLeader,
   workflowOutputBudgetOf,
-} from "../../src/run-leader.ts";
-import type { LeaderSpec } from "../../src/types.ts";
-import { LEADER_TITLE_MAX } from "../../src/tool.ts";
+} from "#src/run-leader.ts";
+import type { LeaderSpec } from "#src/types.ts";
+import { LEADER_TITLE_MAX } from "#src/tool.ts";
 import {
   makeCtx,
   recordingBc,

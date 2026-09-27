@@ -5,11 +5,11 @@ import { dirname, join } from "node:path";
 import { realpathSync } from "node:fs";
 import { globalPaths } from "@clarvis/paths";
 import type { ActionAuthorizationRequest } from "@clarvis/capability";
-import { createMemoryConfigStore } from "../../src/config/memory-config-store.ts";
+import { createMemoryConfigStore } from "#src/config/memory-config-store.ts";
 import {
   createIsolationService,
   executeWithIsolationBinding,
-} from "../../src/execution/isolation-service.ts";
+} from "#src/execution/isolation-service.ts";
 import { createAgentTools, dispatch } from "@clarvis/tools";
 
 test("run bindings retain global preference and separate owners", async () => {

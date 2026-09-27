@@ -1,6 +1,6 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { getEventListeners } from "node:events";
-import { OPERATOR_INTERRUPTED_TOOL } from "../../src/runtime/tools/tool-interrupt.ts";
+import { OPERATOR_INTERRUPTED_TOOL } from "#src/runtime/tools/tool-interrupt.ts";
 import type { NamespacedTool } from "@clarvis/capability";
 import {
   createAgentToolsetWithAdapter,
@@ -8,7 +8,7 @@ import {
   type AgentToolset,
   type AgentToolsetOptions,
   type AgentToolResult,
-} from "../../src/runtime/tools/builtin/toolset.ts";
+} from "#src/runtime/tools/builtin/toolset.ts";
 
 const TOOL_NAMES = ["read_file", "write_file", "shell", "shell_session"] as const;
 

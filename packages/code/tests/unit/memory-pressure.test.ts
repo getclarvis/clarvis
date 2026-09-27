@@ -13,7 +13,7 @@ import {
   tuiRssLimitBytes,
   type MemoryMaintenanceReport,
   type ProcessMemorySample,
-} from "../../src/adapters/memory-pressure.ts";
+} from "#src/adapters/memory-pressure.ts";
 
 const memory = (rss: number): ProcessMemorySample => ({
   rss,

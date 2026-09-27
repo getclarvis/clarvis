@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import { MarkdownRenderable, type Renderable } from "@opentui/core";
 import { createSignal } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
-import { FINAL_MARKDOWN_CAP, TAIL_PLAIN_CAP } from "../../src/core/transcript/segment.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import type { NodeStatus, TranscriptNode } from "../../src/adapters/store.ts";
-import { glyph } from "../../src/theme/glyphs.ts";
-import { StableMarkdown } from "../../src/ui/patterns/stable-syntax.tsx";
-import { SPINNER_FRAMES } from "../../src/views/spinner.ts";
+import { FINAL_MARKDOWN_CAP, TAIL_PLAIN_CAP } from "#src/core/transcript/segment.ts";
+import { BlockView } from "#src/views/blocks.tsx";
+import type { NodeStatus, TranscriptNode } from "#src/adapters/store.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { StableMarkdown } from "#src/ui/patterns/stable-syntax.tsx";
+import { SPINNER_FRAMES } from "#src/views/spinner.ts";
 
 type Harness = Awaited<ReturnType<typeof openRender>>;
 

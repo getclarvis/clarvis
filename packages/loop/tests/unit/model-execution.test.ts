@@ -1,10 +1,10 @@
 import { expect, test } from "../bun-test.ts";
 import { loadEnv, type ModelExecutionInfo, type ModelExecutionResolver } from "@clarvis/capability";
-import { validateBody } from "../../src/validation/request-schema.ts";
-import { resolveSubagentProfiles } from "../../src/runtime/subagents/subagent-profiles.ts";
-import { toLlmTarget } from "../../src/runtime/loop/loop-shared.ts";
-import { summarizeContext } from "../../src/runtime/context/llm-compaction.ts";
-import { MockLLM } from "../../src/testing/mock-llm.ts";
+import { validateBody } from "#src/validation/request-schema.ts";
+import { resolveSubagentProfiles } from "#src/runtime/subagents/subagent-profiles.ts";
+import { toLlmTarget } from "#src/runtime/loop/loop-shared.ts";
+import { summarizeContext } from "#src/runtime/context/llm-compaction.ts";
+import { MockLLM } from "#src/testing/mock-llm.ts";
 import { VALID_REQUEST } from "../helpers/request.ts";
 
 const env = loadEnv({});

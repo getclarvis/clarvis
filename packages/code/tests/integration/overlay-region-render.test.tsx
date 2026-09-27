@@ -4,16 +4,16 @@ import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
 import { createMutable } from "solid-js/store";
 import type { KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
-import { OverlayRegion } from "../../src/views/app/OverlayRegion.tsx";
-import { createOverlayHost, type OverlayHost } from "../../src/views/overlay-host.ts";
-import type { OverlayKind, Interaction } from "../../src/keys/interaction.ts";
-import type { ViewHost } from "../../src/keys/commands.ts";
-import type { ActivityStore } from "../../src/adapters/activity-store.ts";
+import { OverlayRegion } from "#src/views/app/OverlayRegion.tsx";
+import { createOverlayHost, type OverlayHost } from "#src/views/overlay-host.ts";
+import type { OverlayKind, Interaction } from "#src/keys/interaction.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import type { ActivityStore } from "#src/adapters/activity-store.ts";
 import type { WorkspaceChangeEntry, WorkspaceChangesService } from "@clarvis/protocol";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
-import { createFieldEditor, type FieldEditor } from "../../src/views/config/view-host.tsx";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { WorkflowsHub } from "../../src/views/config/WorkflowsHub.tsx";
+import { createFieldEditor, type FieldEditor } from "#src/views/config/view-host.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { WorkflowsHub } from "#src/views/config/WorkflowsHub.tsx";
 
 function fakeInteraction(): Interaction {
   const keymap = {

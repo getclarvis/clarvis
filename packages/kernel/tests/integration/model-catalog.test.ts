@@ -24,7 +24,7 @@ import {
   refreshModelsCatalog,
   type ProviderConfig,
   type CatalogData,
-} from "../../src/config.ts";
+} from "#src/config.ts";
 
 function tmpConfigDir(): string {
   return ownedTempDirSync(join(tmpdir(), "clarvis-model-catalog-"));

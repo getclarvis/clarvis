@@ -3,12 +3,12 @@ import {
   planCanonicalState,
   planCasHeader,
   planSpecBlock,
-} from "../../src/capability/canonical-state.ts";
-import { MAX_PLAN_TASKS, MAX_PLAN_TITLE_CHARS } from "../../src/limits.ts";
-import { planDocumentSchema, type PlanTaskStatus } from "../../src/schemas.ts";
-import { PlanSession } from "../../src/capability/session.ts";
-import { createPlanStore } from "../../src/index.ts";
-import { createInMemoryPlanRepository } from "../../src/testing.ts";
+} from "#src/capability/canonical-state.ts";
+import { MAX_PLAN_TASKS, MAX_PLAN_TITLE_CHARS } from "#src/limits.ts";
+import { planDocumentSchema, type PlanTaskStatus } from "#src/schemas.ts";
+import { PlanSession } from "#src/capability/session.ts";
+import { createPlanStore } from "#src/index.ts";
+import { createInMemoryPlanRepository } from "#src/testing.ts";
 
 async function planned(taskCount = 2): Promise<PlanSession> {
   const session = new PlanSession({

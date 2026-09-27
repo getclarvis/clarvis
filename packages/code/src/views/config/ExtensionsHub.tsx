@@ -16,17 +16,17 @@ import type {
   ResolvedExtensionProfile,
   ResolvedExtensionProfilePlugin,
 } from "@clarvis/protocol";
-import type { MarketplaceListing, MarketplaceSource } from "../../adapters/marketplace.ts";
-import type { PluginView } from "../../adapters/plugins.ts";
-import { errorText } from "../../adapters/errors.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import { uiCommand } from "../../keys/actions.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { tone } from "../../theme/tone.ts";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
-import { LAYER, registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import type { MarketplaceListing, MarketplaceSource } from "#src/adapters/marketplace.ts";
+import type { PluginView } from "#src/adapters/plugins.ts";
+import { errorText } from "#src/adapters/errors.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import { uiCommand } from "#src/keys/actions.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { tone } from "#src/theme/tone.ts";
+import { scrollbarOptions } from "#src/theme/surfaces.ts";
+import { LAYER, registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { BrandBanner, firstRunSplashFits } from "../Splash.tsx";
 import { formatElapsed, spinnerChar, tickNow, useSpinnerClock } from "../spinner.ts";
 import type { CatalogRow } from "./catalog-pick.ts";

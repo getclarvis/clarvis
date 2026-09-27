@@ -1,9 +1,9 @@
 import { expect, it } from "bun:test";
 import type { AgentBuildContext, AgentResult, RunCapabilityContext } from "@clarvis/capability";
-import { createStewardResultGate } from "../../src/goals/steward-result-gate.ts";
+import { createStewardResultGate } from "#src/goals/steward-result-gate.ts";
 import { loadEnv } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
-import { createStewardExecutionRuntime } from "../../src/goals/steward-runtime.ts";
+import { createStewardExecutionRuntime } from "#src/goals/steward-runtime.ts";
 
 it("excludes Judge and workspace tools while retaining only its result gate", async () => {
   let executions = 0;

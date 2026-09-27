@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createAttention, type AttentionRenderer } from "../../src/core/attention.ts";
+import { createAttention, type AttentionRenderer } from "#src/core/attention.ts";
 
 function fakeRenderer(capabilities: AttentionRenderer["capabilities"]): {
   renderer: AttentionRenderer;

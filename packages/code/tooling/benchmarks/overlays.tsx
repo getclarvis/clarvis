@@ -11,30 +11,30 @@ import type {
   ExtensionProfileService,
   ResolvedExtensionProfile,
 } from "@clarvis/protocol";
-import { FloatFrame } from "../../src/views/overlays/FloatFrame.tsx";
-import { AutocompletePopup } from "../../src/views/input/AutocompletePopup.tsx";
-import { PageFrame } from "../../src/views/PageFrame.tsx";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { ActivityDetail } from "../../src/views/overlays/ActivityDetail.tsx";
-import { WorktreeExitPrompt } from "../../src/views/overlays/WorktreeExitPrompt.tsx";
-import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
-import { CatalogPicker } from "../../src/views/config/CatalogPicker.tsx";
-import { HintToast } from "../../src/views/Footer.tsx";
-import { Sidebar } from "../../src/views/Sidebar.tsx";
-import { Splash } from "../../src/views/Splash.tsx";
-import type { ActivityStore } from "../../src/adapters/activity-store.ts";
-import type { AgentProfileView } from "../../src/adapters/agents.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { WorkflowsHub } from "../../src/views/config/WorkflowsHub.tsx";
-import { ExtensionsHub } from "../../src/views/config/ExtensionsHub.tsx";
-import { MarketplaceBrowser } from "../../src/views/config/MarketplaceBrowser.tsx";
-import type { MarketplaceListing, MarketplaceSource } from "../../src/adapters/marketplace.ts";
-import type { PluginView } from "../../src/adapters/plugins.ts";
+import { FloatFrame } from "#src/views/overlays/FloatFrame.tsx";
+import { AutocompletePopup } from "#src/views/input/AutocompletePopup.tsx";
+import { PageFrame } from "#src/views/PageFrame.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { ActivityDetail } from "#src/views/overlays/ActivityDetail.tsx";
+import { WorktreeExitPrompt } from "#src/views/overlays/WorktreeExitPrompt.tsx";
+import { AgentProfilePicker } from "#src/views/overlays/AgentProfilePicker.tsx";
+import { CatalogPicker } from "#src/views/config/CatalogPicker.tsx";
+import { HintToast } from "#src/views/Footer.tsx";
+import { Sidebar } from "#src/views/Sidebar.tsx";
+import { Splash } from "#src/views/Splash.tsx";
+import type { ActivityStore } from "#src/adapters/activity-store.ts";
+import type { AgentProfileView } from "#src/adapters/agents.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { WorkflowsHub } from "#src/views/config/WorkflowsHub.tsx";
+import { ExtensionsHub } from "#src/views/config/ExtensionsHub.tsx";
+import { MarketplaceBrowser } from "#src/views/config/MarketplaceBrowser.tsx";
+import type { MarketplaceListing, MarketplaceSource } from "#src/adapters/marketplace.ts";
+import type { PluginView } from "#src/adapters/plugins.ts";
 import {
   SurfaceBoundary,
   SurfacePortal,
   SurfaceRegion,
-} from "../../src/ui/patterns/surface-lifecycle.tsx";
+} from "#src/ui/patterns/surface-lifecycle.tsx";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cycles = positiveInteger(process.env.OVERLAY_SOAK_CYCLES, 100);

@@ -5,15 +5,12 @@ import { tmpdir } from "node:os";
 import { globalPaths } from "@clarvis/paths";
 import { isAlive, killTree } from "@clarvis/tools/shell";
 
-import {
-  connectOrLaunchLocalKernel,
-  requestLocalHostReplacement,
-} from "../../src/hosting/launcher.ts";
+import { connectOrLaunchLocalKernel, requestLocalHostReplacement } from "#src/hosting/launcher.ts";
 import {
   localHostEndpointRootCandidates,
   readLocalHostConnection,
   resolveLocalHostIdentity,
-} from "../../src/hosting/local-state.ts";
+} from "#src/hosting/local-state.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

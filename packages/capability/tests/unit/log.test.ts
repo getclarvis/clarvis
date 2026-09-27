@@ -14,8 +14,8 @@ import {
   levelFor,
   parseLogScopes,
   type LogLevel,
-} from "../../src/log.ts";
-import type { LogFn, Logger } from "../../src/ports.ts";
+} from "#src/log.ts";
+import type { LogFn, Logger } from "#src/ports.ts";
 
 function sink(level?: string): { logger: Logger; records: { obj: unknown; msg?: string }[] } {
   const records: { obj: unknown; msg?: string }[] = [];

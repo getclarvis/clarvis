@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { isBinary, isUtf16Bom } from "../../src/lib/binary.ts";
+import { isBinary, isUtf16Bom } from "#src/lib/binary.ts";
 
 describe("isBinary (NUL-byte detection)", () => {
   it("detects a NUL near the start of a small buffer", () => {

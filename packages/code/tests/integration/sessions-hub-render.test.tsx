@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { SessionMeta } from "../../src/adapters/session-store.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { SessionsHub } from "../../src/views/config/SessionsHub.tsx";
-import type { SessionCatalogItem } from "../../src/views/config/SessionsHub.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { SessionMeta } from "#src/adapters/session-store.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { SessionsHub } from "#src/views/config/SessionsHub.tsx";
+import type { SessionCatalogItem } from "#src/views/config/SessionsHub.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const fakeKeymap = createFakeKeymap;

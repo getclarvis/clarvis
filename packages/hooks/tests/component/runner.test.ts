@@ -4,8 +4,8 @@ import {
   HOOK_BLOCKING_EXIT_CODE,
   HOOK_PROTOCOL_VERSION,
   MAX_STDIN_BYTES,
-} from "../../src/runner.ts";
-import type { HookInvocation, HookLogger, HookSpec } from "../../src/types.ts";
+} from "#src/runner.ts";
+import type { HookInvocation, HookLogger, HookSpec } from "#src/types.ts";
 import { FakeChild, fakeClock, fakeSpawn, tick, type SpawnCall } from "../helpers/fake-child.ts";
 
 const POSIX_SHELL = { flavor: "posix", file: "sh" } as const;

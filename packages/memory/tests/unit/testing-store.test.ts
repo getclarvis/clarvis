@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
 
 describe("in-memory testing store edge behavior", () => {
   test("continues serializing exclusive work after a rejected operation", async () => {

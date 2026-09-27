@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
+import { BlockView } from "#src/views/blocks.tsx";
 import type { FoldFixtureNode } from "../helpers/transcript-fixtures.ts";
 
 const collapsed: FoldFixtureNode = {

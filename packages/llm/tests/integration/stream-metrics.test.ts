@@ -2,7 +2,7 @@ import { expect, test } from "../helpers/bun-test.ts";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createStreamMetrics } from "../../src/stream-metrics.ts";
+import { createStreamMetrics } from "#src/stream-metrics.ts";
 
 test("file-backed metrics and the environment selector flush on a real child exit", () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-llm-metrics-"));

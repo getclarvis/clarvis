@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
 import { For } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph, glyphColWidth } from "#src/theme/glyphs.ts";
 import { PickerRow } from "./PickerRow.tsx";
 
 const ACTIVE_COL_WIDTH = glyphColWidth("radioOn");

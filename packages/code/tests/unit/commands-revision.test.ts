@@ -7,8 +7,8 @@ import {
   type CommandEffects,
   type Commands,
   type CommandUi,
-} from "../../src/keys/commands.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
+} from "#src/keys/commands.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
 
 function harness(): Commands {
   const effects: CommandEffects = {

@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import type { TranscriptToolNode } from "../../adapters/store.ts";
+import type { TranscriptToolNode } from "#src/adapters/store.ts";
 import { BlockView } from "../blocks.tsx";
 import type { ActivityDetail } from "../activity-detail.ts";
 import type { TranscriptState } from "../transcript-state.ts";

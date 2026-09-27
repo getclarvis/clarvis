@@ -3,10 +3,10 @@ import { For } from "solid-js";
 import { createStore } from "solid-js/store";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex, TextRenderable, type Renderable } from "@opentui/core";
-import { BlockView } from "../../src/views/blocks.tsx";
-import type { BlockOverride } from "../../src/views/block-focus.ts";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
-import { focusBg, selectionBg } from "../../src/theme/surfaces.ts";
+import { BlockView } from "#src/views/blocks.tsx";
+import type { BlockOverride } from "#src/views/block-focus.ts";
+import type { TranscriptNode } from "#src/adapters/store.ts";
+import { focusBg, selectionBg } from "#src/theme/surfaces.ts";
 import type { FoldFixtureNode } from "../helpers/transcript-fixtures.ts";
 
 let seq = 0;

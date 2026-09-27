@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createCapabilityServices } from "@clarvis/capability";
-import { AGENT_REGISTRY_PORT } from "../../src/agent-registry-port.ts";
-import { createAgentRegistry } from "../../src/registry.ts";
+import { AGENT_REGISTRY_PORT } from "#src/agent-registry-port.ts";
+import { createAgentRegistry } from "#src/registry.ts";
 
 describe("AGENT_REGISTRY_PORT", () => {
   it("publishes the full supervision registry through capability services", () => {

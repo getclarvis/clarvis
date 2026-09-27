@@ -5,13 +5,13 @@ import {
   MEMORY_READ_TOOL_NAMES,
   MEMORY_WRITE_TOOL_NAMES,
   type MemoryProvider,
-} from "../../src/provider.ts";
+} from "#src/provider.ts";
 import {
   MEMORY_TOOL_CONTRACTS,
   memoryToolParameters,
   type MemoryToolName,
-} from "../../src/tool-contract.ts";
-import type { MemoryToolDef } from "../../src/types.ts";
+} from "#src/tool-contract.ts";
+import type { MemoryToolDef } from "#src/types.ts";
 
 function memTool(name: string): MemoryToolDef {
   const canonical = MEMORY_TOOL_CONTRACTS[name as MemoryToolName];

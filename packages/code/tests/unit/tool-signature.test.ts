@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { formatToolCall, resolveToolCallSignature } from "../../src/views/tools/signature.ts";
+import { formatToolCall, resolveToolCallSignature } from "#src/views/tools/signature.ts";
 
 const sig = (name: string, args: Record<string, unknown>) => formatToolCall(name, "", args);
 

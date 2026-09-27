@@ -5,12 +5,9 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { globalPaths } from "@clarvis/paths";
-import {
-  serveRemoteFileKernelOverStdio,
-  type ServeRemoteStdioOptions,
-} from "../../src/bootstrap.ts";
-import { connectKernelClient } from "../../src/transport/client.ts";
-import { createStdioTransport } from "../../src/transport/stdio.ts";
+import { serveRemoteFileKernelOverStdio, type ServeRemoteStdioOptions } from "#src/bootstrap.ts";
+import { connectKernelClient } from "#src/transport/client.ts";
+import { createStdioTransport } from "#src/transport/stdio.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { Scope, SettingsAdapter } from "../../src/adapters/settings.ts";
-import { seedBlockOnce } from "../../src/onboarding/seed-block-once.ts";
+import type { Scope, SettingsAdapter } from "#src/adapters/settings.ts";
+import { seedBlockOnce } from "#src/onboarding/seed-block-once.ts";
 
 function fakeSettings(opts: {
   files?: Partial<Record<Scope, Record<string, unknown>>>;

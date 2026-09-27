@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import { BlockView } from "#src/views/blocks.tsx";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 import type { FoldFixtureToolNode } from "../helpers/transcript-fixtures.ts";
 
 function toolNode(

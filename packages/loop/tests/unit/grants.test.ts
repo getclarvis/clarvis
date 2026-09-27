@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { agentToolCaps } from "../../src/runtime/tools/builtin/grants.ts";
+import { agentToolCaps } from "#src/runtime/tools/builtin/grants.ts";
 
 describe("agentToolCaps", () => {
   it("attaches nothing without a workspace grant", () => {

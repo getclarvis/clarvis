@@ -7,11 +7,11 @@ import {
   createPlanStore,
   type PlanCas,
   type PlanStore,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 import { DEFAULT_PENDING_TASK_NUDGES } from "@clarvis/capability";
-import { PLANS_DEFAULTS } from "../../src/settings.ts";
-import { PlanSession } from "../../src/capability/session.ts";
+import { PLANS_DEFAULTS } from "#src/settings.ts";
+import { PlanSession } from "#src/capability/session.ts";
 import { createEditablePlanRepository, type EditablePlanRepository } from "../helpers/store.ts";
 
 function planStoreFor(repository: EditablePlanRepository): PlanStore {

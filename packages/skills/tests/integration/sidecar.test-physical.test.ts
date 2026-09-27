@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { readSkillSidecar } from "../../src/sidecar.ts";
-import { MAX_SKILL_SHORT_DESCRIPTION_CHARS } from "../../src/limits.ts";
+import { readSkillSidecar } from "#src/sidecar.ts";
+import { MAX_SKILL_SHORT_DESCRIPTION_CHARS } from "#src/limits.ts";
 import { captureWarnings } from "../helpers/fixtures.ts";
 
 describe("readSkillSidecar", () => {

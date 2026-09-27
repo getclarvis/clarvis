@@ -1,14 +1,14 @@
 import type { JSX } from "solid-js";
 import { createMemo, Index, Show } from "solid-js";
 import { useTerminalDimensions } from "@opentui/solid";
-import { tokens } from "../../theme/tokens.ts";
-import { borderChars } from "../../theme/glyphs.ts";
-import { overlayBg } from "../../theme/surfaces.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { borderChars } from "#src/theme/glyphs.ts";
+import { overlayBg } from "#src/theme/surfaces.ts";
 import { PickerRow } from "../overlays/PickerRow.tsx";
 import type { CompleteItem } from "./autocomplete.ts";
-import { labelRuns, matchRuns, type HighlightRun, type ItemMatch } from "../../core/fuzzy.ts";
+import { labelRuns, matchRuns, type HighlightRun, type ItemMatch } from "#src/core/fuzzy.ts";
 import { CommandGroupHeader } from "./CommandGroupHeader.tsx";
-import { StableWindowedList } from "../../ui/patterns/windowed-list.tsx";
+import { StableWindowedList } from "#src/ui/patterns/windowed-list.tsx";
 
 const MAX_ROWS_CAP = 10;
 const MIN_ROWS = 1;

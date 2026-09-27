@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { workspacePaths, workspaceStatePaths } from "@clarvis/paths";
 
-import { createToolSpill } from "../../src/runtime/context/tool-spill.ts";
+import { createToolSpill } from "#src/runtime/context/tool-spill.ts";
 import type { Logger } from "@clarvis/capability";
 
 const modeBitsEnforced = process.getuid?.() !== 0;

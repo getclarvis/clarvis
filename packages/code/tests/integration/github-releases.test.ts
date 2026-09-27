@@ -8,7 +8,7 @@ import {
   downloadReleaseAsset,
   fetchReleaseIndex,
   fetchReleaseRecords,
-} from "../../src/update/github-releases.ts";
+} from "#src/update/github-releases.ts";
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {

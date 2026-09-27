@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { RunEvent } from "@clarvis/protocol";
-import { applyEvent, createTranscriptStore } from "../../src/adapters/store.ts";
-import { TranscriptRows, isExplorationTool } from "../../src/core/transcript/rows.ts";
-import { TranscriptWindow } from "../../src/core/transcript/window.ts";
+import { applyEvent, createTranscriptStore } from "#src/adapters/store.ts";
+import { TranscriptRows, isExplorationTool } from "#src/core/transcript/rows.ts";
+import { TranscriptWindow } from "#src/core/transcript/window.ts";
 import { transcriptToolEvents } from "../helpers/transcript-fixtures.ts";
 
 describe("transcript records and first admission", () => {

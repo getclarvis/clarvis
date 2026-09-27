@@ -5,7 +5,7 @@ import {
   TRANSCRIPT_PROSE_MAX_CHARS,
   TRANSCRIPT_PROSE_RELEASED_NOTICE,
   TRANSCRIPT_PROSE_TRUNCATED_NOTICE,
-} from "../../src/adapters/store.ts";
+} from "#src/adapters/store.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
 
 const ev = runEvent;

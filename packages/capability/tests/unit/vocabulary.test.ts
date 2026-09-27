@@ -1,7 +1,7 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
 
-import { EXECUTION_STATUSES } from "../../src/execution-status.ts";
-import { ProviderError } from "../../src/llm-port.ts";
+import { EXECUTION_STATUSES } from "#src/execution-status.ts";
+import { ProviderError } from "#src/llm-port.ts";
 
 describe("EXECUTION_STATUSES", () => {
   it("lists every terminal status exactly once", () => {

@@ -7,9 +7,9 @@ import {
   scrollbarOptions,
   selectionBg,
   userBandBg,
-} from "../../src/theme/surfaces.ts";
-import { createTheme } from "../../src/theme/theme.ts";
-import { applyResolvedTokens, tokens } from "../../src/theme/tokens.ts";
+} from "#src/theme/surfaces.ts";
+import { createTheme } from "#src/theme/theme.ts";
+import { applyResolvedTokens, tokens } from "#src/theme/tokens.ts";
 import {
   mixHex,
   parseColor,
@@ -17,7 +17,7 @@ import {
   setThemedMixBase,
   TERMINAL_BG,
   type ThemeConfig,
-} from "../../src/theme/model.ts";
+} from "#src/theme/model.ts";
 
 afterAll(() => {
   applyResolvedTokens(resolveTokens(undefined, "dark"));

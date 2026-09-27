@@ -12,7 +12,7 @@ import {
   canSymlink,
   lines,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 
 describe("Host file tools use OS filesystem authority", () => {
   let root: string;

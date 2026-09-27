@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "bun:test";
 
-import { MEMORY_READ_TOOL_NAMES, MEMORY_WRITE_TOOL_NAMES } from "../../src/provider.ts";
-import { wikiMemoryProvider, WIKI_PROVIDER_KIND } from "../../src/wiki-provider.ts";
-import type { MemoryToolDef } from "../../src/types.ts";
-import type { Memory } from "../../src/memory-contract.ts";
+import { MEMORY_READ_TOOL_NAMES, MEMORY_WRITE_TOOL_NAMES } from "#src/provider.ts";
+import { wikiMemoryProvider, WIKI_PROVIDER_KIND } from "#src/wiki-provider.ts";
+import type { MemoryToolDef } from "#src/types.ts";
+import type { Memory } from "#src/memory-contract.ts";
 import {
   MEMORY_TOOL_CONTRACTS,
   memoryToolParameters,
   type MemoryToolName,
-} from "../../src/tool-contract.ts";
+} from "#src/tool-contract.ts";
 
 function memTool(name: string): MemoryToolDef {
   const canonical = MEMORY_TOOL_CONTRACTS[name as MemoryToolName];

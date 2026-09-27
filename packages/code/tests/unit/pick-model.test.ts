@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import type { SettingsAdapter } from "../../src/adapters/settings.ts";
-import type { FieldEditor } from "../../src/views/config/view-host.tsx";
-import { configuredModelRows } from "../../src/views/config/catalog-pick.ts";
-import { modelPickerSpec } from "../../src/views/config/pick-model.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { FieldEditor } from "#src/views/config/view-host.tsx";
+import { configuredModelRows } from "#src/views/config/catalog-pick.ts";
+import { modelPickerSpec } from "#src/views/config/pick-model.ts";
 
 const PROVIDERS = [
   {

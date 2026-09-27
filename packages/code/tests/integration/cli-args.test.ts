@@ -8,7 +8,7 @@ import {
   resolveDebugRequest,
   usageText,
   versionText,
-} from "../../src/cli-args.ts";
+} from "#src/cli-args.ts";
 
 const product = JSON.parse(
   readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),

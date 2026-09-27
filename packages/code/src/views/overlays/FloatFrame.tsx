@@ -1,15 +1,15 @@
 import type { JSX } from "solid-js";
 import { children, createSignal, onMount, Show } from "solid-js";
 import { useTimeline } from "@opentui/solid";
-import { tokens } from "../../theme/tokens.ts";
-import { borderChars } from "../../theme/glyphs.ts";
-import { mixHex } from "../../theme/model.ts";
-import { overlayBg, scrimColor } from "../../theme/surfaces.ts";
-import { useTerminalSize } from "../../ui/patterns/terminal-size.tsx";
+import { tokens } from "#src/theme/tokens.ts";
+import { borderChars } from "#src/theme/glyphs.ts";
+import { mixHex } from "#src/theme/model.ts";
+import { overlayBg, scrimColor } from "#src/theme/surfaces.ts";
+import { useTerminalSize } from "#src/ui/patterns/terminal-size.tsx";
 import {
   onSurfaceActivate,
   useOptionalSurfaceLifecycle,
-} from "../../ui/patterns/surface-lifecycle.tsx";
+} from "#src/ui/patterns/surface-lifecycle.tsx";
 
 const OPEN_MS = 170;
 

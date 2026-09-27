@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { parsePlan } from "../../src/format.ts";
-import { boundedPlanReason, MAX_PLAN_LOG_REASON_CHARS } from "../../src/log.ts";
+import { parsePlan } from "#src/format.ts";
+import { boundedPlanReason, MAX_PLAN_LOG_REASON_CHARS } from "#src/log.ts";
 
 describe("boundedPlanReason", () => {
   it("collapses a parser's quoted excerpt onto one line", () => {

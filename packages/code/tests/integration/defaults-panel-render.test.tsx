@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex } from "@opentui/core";
-import { selectionBg } from "../../src/theme/surfaces.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { DefaultsPanel } from "../../src/views/config/DefaultsPanel.tsx";
-import type { SettingsAdapter } from "../../src/adapters/settings.ts";
-import type { EnvView } from "../../src/adapters/agent-files.ts";
-import { configuredModelRows } from "../../src/views/config/catalog-pick.ts";
-import type { HintTone } from "../../src/views/hint.ts";
+import { selectionBg } from "#src/theme/surfaces.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { DefaultsPanel } from "#src/views/config/DefaultsPanel.tsx";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { EnvView } from "#src/adapters/agent-files.ts";
+import { configuredModelRows } from "#src/views/config/catalog-pick.ts";
+import type { HintTone } from "#src/views/hint.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
-import { SettingDetail } from "../../src/ui/patterns/detail-view.tsx";
+import { SettingDetail } from "#src/ui/patterns/detail-view.tsx";
 
 const fakeKeymap = createFakeKeymap;
 

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { NOOP_LOGGER } from "@clarvis/capability";
-import { kernelError } from "../../src/core/errors.ts";
+import { kernelError } from "#src/core/errors.ts";
 import {
   recoverHostedSettlement,
   type HostedSettlementRecovery,
-} from "../../src/hosting/settlement-recovery.ts";
+} from "#src/hosting/settlement-recovery.ts";
 
 test("retries a lost checkpoint acknowledgement before allowing the next phase", async () => {
   let reconciles = 0;

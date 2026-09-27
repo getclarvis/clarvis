@@ -10,7 +10,7 @@ import {
   type ReleaseAsset,
   type ReleaseRecord,
   type ReleaseTarget,
-} from "../../src/update-contract.ts";
+} from "#src/update-contract.ts";
 
 function asset(
   version: string,

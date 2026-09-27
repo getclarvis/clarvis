@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { GoalError } from "@clarvis/goal";
 import { z } from "zod";
-import { kernelError } from "../../src/core/errors.ts";
-import { toGoalKernelError } from "../../src/goals/errors.ts";
+import { kernelError } from "#src/core/errors.ts";
+import { toGoalKernelError } from "#src/goals/errors.ts";
 
 describe("goal error projection", () => {
   it.each([

@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginManifest } from "@clarvis/loop/host";
-import { snapshotPluginExecutables } from "../../src/plugins/plugin-executable-snapshot.ts";
+import { snapshotPluginExecutables } from "#src/plugins/plugin-executable-snapshot.ts";
 
 describe("plugin executable snapshot", () => {
   let root: string;

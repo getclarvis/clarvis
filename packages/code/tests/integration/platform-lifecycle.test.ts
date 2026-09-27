@@ -5,14 +5,14 @@ import type { CliRenderer } from "@opentui/core";
 import type {
   ClipboardProcessRequest,
   ClipboardProcessResult,
-} from "../../src/adapters/clipboard-process.ts";
+} from "#src/adapters/clipboard-process.ts";
 import {
   assertInteractiveTTY,
   buildRendererConfig,
   createPlatform as createRuntimePlatform,
   readClipboardImage,
   type PlatformOptions,
-} from "../../src/adapters/platform.ts";
+} from "#src/adapters/platform.ts";
 
 process.setMaxListeners(0);
 

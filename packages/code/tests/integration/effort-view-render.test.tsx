@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import type { ModelCatalog } from "@clarvis/protocol";
-import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
-import type { SettingsAdapter, SettingsFile } from "../../src/adapters/settings.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { EffortView } from "../../src/views/config/EffortView.tsx";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
+import { createModelsCatalog } from "#src/adapters/models-catalog.ts";
+import type { SettingsAdapter, SettingsFile } from "#src/adapters/settings.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { EffortView } from "#src/views/config/EffortView.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 

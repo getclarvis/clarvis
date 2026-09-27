@@ -5,9 +5,9 @@
  */
 import { describe, test } from "bun:test";
 
-import { createFileMemoryStore } from "../../../src/file-store.ts";
-import { createInMemoryMemoryStore, memoryStoreConformance } from "../../../src/testing.ts";
-import type { MemoryStoreHarness } from "../../../src/testing.ts";
+import { createFileMemoryStore } from "#src/file-store.ts";
+import { createInMemoryMemoryStore, memoryStoreConformance } from "#src/testing.ts";
+import type { MemoryStoreHarness } from "#src/testing.ts";
 import { makeRoot, seedFile } from "../../helpers/fs.ts";
 
 /** The file-backed adapter over a fresh temp root; `poke` hand-edits a file. */

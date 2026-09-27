@@ -6,7 +6,7 @@ import {
   isBuiltinTraceKind,
   type BuiltinTraceEntry,
   type TraceEntry,
-} from "../../src/trace.ts";
+} from "#src/trace.ts";
 
 describe("BUILTIN_TRACE_KINDS", () => {
   it("has no duplicates", () => {

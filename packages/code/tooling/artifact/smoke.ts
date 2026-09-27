@@ -34,12 +34,12 @@ import {
   assertLazySurfaceArtifact,
 } from "./contract.ts";
 import { APP_READY_MARKER } from "./markers.ts";
-import { RELEASE_REPOSITORY, releaseTarget } from "../../src/update-contract.ts";
+import { RELEASE_REPOSITORY, releaseTarget } from "#src/update-contract.ts";
 import {
   CLARVIS_DOCS_PUBLISHER_FILE,
   CLARVIS_DOCS_RELEASE_FILES,
   releaseRequiresClarvisDocs,
-} from "../../src/update/release-manifest.ts";
+} from "#src/update/release-manifest.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const artifact = join(packageRoot, "dist/index.js");

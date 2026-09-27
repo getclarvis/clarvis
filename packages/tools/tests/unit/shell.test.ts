@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { resolveShell, shellArgs } from "../../src/shell.ts";
+import { resolveShell, shellArgs } from "#src/shell.ts";
 
 describe("host shell", () => {
   it("resolves sh with a stable identity", () => {

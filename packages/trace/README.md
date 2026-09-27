@@ -249,3 +249,13 @@ deletion can race the rewrite and resurrect stale context.
 
 The script definitions are in [`package.json`](package.json); test levels and resource ownership are
 defined in [test architecture](../../specs/cross-cutting/test-architecture.md).
+
+## Private source imports
+
+This package owns the `#src/*.ts` mapping in [`package.json`](package.json). Long imports within its
+`src`, and package tests or tooling that access its implementation, use `#src/...ts`. Nearby
+relatives keep their actual source extension; other workspaces use public `@clarvis/trace`
+exports. Bun tests and the development typecheck select source without a prior build. The build profile
+clears the `bun` condition and emits its own JavaScript and declarations under `dist`.
+See [package architecture](../../specs/cross-cutting/package-architecture.md) for ownership and
+[build and CI](../../specs/cross-cutting/build-and-ci.md) for resolution and emit checks.

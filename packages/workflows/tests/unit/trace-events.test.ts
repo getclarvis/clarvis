@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { TraceEntry, TraceEvent } from "@clarvis/capability";
-import { createWorkflowsCapability } from "../../src/capability.ts";
+import { createWorkflowsCapability } from "#src/capability.ts";
 import {
   isWorkflowPersistedTraceEvent,
   WORKFLOW_PERSISTED_TRACE_PROJECTORS,
@@ -8,7 +8,7 @@ import {
   WORKFLOW_RUN_FAILED_TRACE_KIND,
   WORKFLOW_RUN_STARTED_TRACE_KIND,
   type WorkflowPersistedTraceEvent,
-} from "../../src/trace-events.ts";
+} from "#src/trace-events.ts";
 import { makeCtx } from "../helpers/workflow.ts";
 
 const ANCHOR = 1_700_000_000_000;

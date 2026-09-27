@@ -8,11 +8,11 @@ import * as path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
-import { createFileMemoryStore } from "../../src/file-store.ts";
-import { createTreeLock, DEFAULT_LOCK_WARN_MS } from "../../src/file-store/lock.ts";
-import { encodeRunId } from "../../src/file-store/jobs.ts";
-import type { MemoryJournalRecord } from "../../src/journal.ts";
-import { digestBody } from "../../src/revisions.ts";
+import { createFileMemoryStore } from "#src/file-store.ts";
+import { createTreeLock, DEFAULT_LOCK_WARN_MS } from "#src/file-store/lock.ts";
+import { encodeRunId } from "#src/file-store/jobs.ts";
+import type { MemoryJournalRecord } from "#src/journal.ts";
+import { digestBody } from "#src/revisions.ts";
 import { run } from "../helpers/fixtures.ts";
 import { makeRoot } from "../helpers/fs.ts";
 import { recordingLogger } from "../helpers/recording-logger.ts";

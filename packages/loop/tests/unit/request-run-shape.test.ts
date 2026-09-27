@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { deriveRunShape } from "../../src/validation/request/run-shape.ts";
+import { deriveRunShape } from "#src/validation/request/run-shape.ts";
 import { VALID_REQUEST } from "../helpers/request.ts";
 
 describe("deriveRunShape", () => {

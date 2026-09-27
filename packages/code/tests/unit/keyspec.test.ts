@@ -10,8 +10,8 @@ import {
   registerLevel,
   verb,
   type LevelSpec,
-} from "../../src/ui/patterns/level-keys.ts";
-import { glyph } from "../../src/theme/glyphs.ts";
+} from "#src/ui/patterns/level-keys.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 
 function recordingKeymap(): {
   keymap: Keymap<Renderable, KeyEvent>;

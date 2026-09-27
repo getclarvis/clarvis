@@ -17,7 +17,7 @@ import {
   createAgentTools,
   dispatch,
   SandboxToolExecutor,
-} from "../../../src/index.ts";
+} from "#src/index.ts";
 
 function workerTree(pid: number): number[] {
   const listing = spawnSync("ps", ["-e", "-o", "pid=,ppid="], { encoding: "utf8" });

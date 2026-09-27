@@ -1,6 +1,6 @@
 import { loadEnv, ValidationError, type EnvConfig, type RunRequest } from "@clarvis/capability";
-import { parseRunRequest } from "../../src/validation/request/parsing.ts";
-import type { ParsedRunRequest } from "../../src/validation/request/request-schema.ts";
+import { parseRunRequest } from "#src/validation/request/parsing.ts";
+import type { ParsedRunRequest } from "#src/validation/request/request-schema.ts";
 
 export const REQUEST_ENV: EnvConfig = loadEnv({});
 

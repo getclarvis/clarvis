@@ -3,7 +3,7 @@ import { makeHarness, type TestHarness } from "./_helpers.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { GateLLM } from "./_gate-llm.ts";
 import type { MCPClientFactory } from "@clarvis/mcp-client";
-import type { Elicit } from "../../src/runtime/tools/ask-user-tool.ts";
+import type { Elicit } from "#src/runtime/tools/ask-user-tool.ts";
 import type { Logger } from "@clarvis/capability";
 
 let harness: TestHarness | null = null;

@@ -1,9 +1,9 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { createTrace } from "@clarvis/trace";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import { createConvergenceGuards } from "../../src/runtime/guards/convergence-guards.ts";
-import { executeMcpToolCall, createToolArgValidator } from "../../src/runtime/tools/index.ts";
-import { buildMcpHandler } from "../../src/runtime/loop/mcp-handler.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import { createConvergenceGuards } from "#src/runtime/guards/convergence-guards.ts";
+import { executeMcpToolCall, createToolArgValidator } from "#src/runtime/tools/index.ts";
+import { buildMcpHandler } from "#src/runtime/loop/mcp-handler.ts";
 import type { LLMToolCall } from "@clarvis/capability";
 import type { NamespacedRegistry, MCPConnection, ToolResult } from "@clarvis/capability";
 

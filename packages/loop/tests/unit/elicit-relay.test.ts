@@ -1,11 +1,11 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { buildElicitRelay } from "../../src/runtime/elicit-relay.ts";
+import { buildElicitRelay } from "#src/runtime/elicit-relay.ts";
 import {
   ElicitTimeoutError,
   type Elicit,
   type ElicitParams,
   type ElicitRawResult,
-} from "../../src/runtime/tools/ask-user-tool.ts";
+} from "#src/runtime/tools/ask-user-tool.ts";
 import { createTrace } from "@clarvis/trace";
 import type { ClockHolder } from "@clarvis/capability";
 import type { TraceEntry } from "@clarvis/capability";

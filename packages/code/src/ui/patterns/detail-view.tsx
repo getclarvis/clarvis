@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import { settingSummary, type SettingPresentation } from "../presentation.ts";
 import { SelectableRow } from "../primitives/selectable-row.tsx";
 import type { LevelSpec } from "./level-keys.ts";

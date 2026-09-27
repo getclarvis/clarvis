@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { discoverSkills, resolveConfig } from "@clarvis/skills";
 import { renderSkillCatalog } from "@clarvis/skills/catalog";
 import { handleLoadSkillCall, renderSkillsSection } from "@clarvis/skills/capability";
-import type { SkillInfo, SkillRegistry } from "../../src/types.ts";
+import type { SkillInfo, SkillRegistry } from "#src/types.ts";
 import { makeTrace } from "../helpers/capability-fakes.ts";
 import { call, validateArgs } from "../helpers/call-fixtures.ts";
 import { captureWarnings, cleanup, makeWorkspace } from "../helpers/fixtures.ts";

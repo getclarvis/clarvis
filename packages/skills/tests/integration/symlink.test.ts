@@ -2,7 +2,7 @@ import { mkdirSync, symlinkSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createAgentSkills, discoverSkills, resolveConfig } from "@clarvis/skills";
-import { enumerateResources } from "../../src/scan.ts";
+import { enumerateResources } from "#src/scan.ts";
 import {
   captureWarnings,
   clarvisRoots,

@@ -1,18 +1,18 @@
 import { createEffect, createSignal, on, onCleanup, Show, type Accessor, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { HostedRunRef } from "@clarvis/protocol";
-import type { ViewHost } from "../../keys/commands.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import { tokens } from "../../theme/tokens.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import {
   bindLevelKeys,
   SelectableList,
   SelectableRow,
   ViewFrame,
-} from "../../views/config/view-host.tsx";
-import { registerLevel } from "../../ui/patterns/level-keys.ts";
-import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
-import type { HintTone } from "../../views/hint.ts";
+} from "#src/views/config/view-host.tsx";
+import { registerLevel } from "#src/ui/patterns/level-keys.ts";
+import { clampListIndex } from "#src/ui/patterns/list-navigation.ts";
+import type { HintTone } from "#src/views/hint.ts";
 import { createBackgroundListController, type BackgroundController } from "./controller.ts";
 
 /** Live workspace discovery with explicit control takeover and a separate new-conversation choice. */

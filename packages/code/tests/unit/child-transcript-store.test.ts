@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createMemo, createRoot } from "solid-js";
 import type { RunDetail, RunEvent } from "@clarvis/protocol";
-import { applyEvent, createTranscriptStore } from "../../src/adapters/store.ts";
-import { createChildTranscriptStore } from "../../src/adapters/child-transcript-store.ts";
+import { applyEvent, createTranscriptStore } from "#src/adapters/store.ts";
+import { createChildTranscriptStore } from "#src/adapters/child-transcript-store.ts";
 
 const executionId = "exec-child-cache";
 

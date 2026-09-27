@@ -15,8 +15,8 @@ import { describe, expect, it } from "bun:test";
 
 import type { StoredExecution } from "@clarvis/loop";
 
-import { composeMemoryPolicy, MEMORY_POLICY_MAX_CHARS } from "../../src/recording-policy.ts";
-import { buildIndexerContinuationRequest, buildIndexerRequest } from "../../src/indexer/request.ts";
+import { composeMemoryPolicy, MEMORY_POLICY_MAX_CHARS } from "#src/recording-policy.ts";
+import { buildIndexerContinuationRequest, buildIndexerRequest } from "#src/indexer/request.ts";
 
 /** Providers as the factory resolves them from live settings. */
 const LIVE_PROVIDERS = [{ name: "anthropic", kind: "anthropic" as const }];

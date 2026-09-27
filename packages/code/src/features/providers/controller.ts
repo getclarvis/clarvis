@@ -1,5 +1,5 @@
 import { createMemo, createSignal, type Accessor } from "solid-js";
-import { derivePromptCacheMode } from "../../adapters/model-policy.ts";
+import { derivePromptCacheMode } from "#src/adapters/model-policy.ts";
 import type {
   EnvKeyStatus,
   FieldIssue,
@@ -7,16 +7,12 @@ import type {
   ProviderKind,
   SettingsAdapter,
   SettingsFile,
-} from "../../adapters/settings.ts";
-import { mergeProviders } from "../../adapters/settings.ts";
-import type { KeysAdapter, KeySource } from "../../adapters/provider-secrets.ts";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
-import type {
-  CatalogModel,
-  CatalogProvider,
-  ModelsCatalog,
-} from "../../adapters/models-catalog.ts";
-import type { Scope } from "../../keys/commands.ts";
+} from "#src/adapters/settings.ts";
+import { mergeProviders } from "#src/adapters/settings.ts";
+import type { KeysAdapter, KeySource } from "#src/adapters/provider-secrets.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { CatalogModel, CatalogProvider, ModelsCatalog } from "#src/adapters/models-catalog.ts";
+import type { Scope } from "#src/keys/commands.ts";
 import { createDisposeGuard } from "../dispose-guard.ts";
 import type { ProvidersEvent } from "./events.ts";
 

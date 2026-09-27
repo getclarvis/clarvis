@@ -6,7 +6,7 @@ import {
   withModelCallAdmission,
 } from "@clarvis/llm";
 import type { LLMCallParams, LLMCallResult, LLMProvider } from "@clarvis/capability";
-import { modelCallTimeoutBridgeOf } from "../../src/model-call-timeout-bridge.ts";
+import { modelCallTimeoutBridgeOf } from "#src/model-call-timeout-bridge.ts";
 
 function deferred<T>(): {
   promise: Promise<T>;

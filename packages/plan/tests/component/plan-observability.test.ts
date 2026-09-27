@@ -14,20 +14,15 @@ import {
   type RunCapability,
 } from "@clarvis/capability";
 
-import {
-  createPlanStore,
-  type PlanDocument,
-  type PlanRef,
-  type PlanStore,
-} from "../../src/index.ts";
-import { createInMemoryPlanRepository } from "../../src/testing.ts";
-import { PlanSession } from "../../src/capability/session.ts";
-import { createPlansCapability, PLAN_SPAWN_PORT } from "../../src/capability/index.ts";
+import { createPlanStore, type PlanDocument, type PlanRef, type PlanStore } from "#src/index.ts";
+import { createInMemoryPlanRepository } from "#src/testing.ts";
+import { PlanSession } from "#src/capability/session.ts";
+import { createPlansCapability, PLAN_SPAWN_PORT } from "#src/capability/index.ts";
 import {
   CREATE_PLAN_TOOL_NAME,
   LIST_PLANS_TOOL_NAME,
   handlePlanRuntimeCall,
-} from "../../src/capability/runtime-tools.ts";
+} from "#src/capability/runtime-tools.ts";
 import {
   fakeAgentBuildContext,
   fakeExecutionRecord,

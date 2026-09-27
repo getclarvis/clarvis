@@ -1,9 +1,6 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { createCapabilityRegistry } from "@clarvis/capability";
-import {
-  BUILTIN_GRANT_NAMES,
-  requireKnownGrants,
-} from "../../src/validation/request/grant-registry.ts";
+import { BUILTIN_GRANT_NAMES, requireKnownGrants } from "#src/validation/request/grant-registry.ts";
 import { parsedRequest, validationCode, VALID_REQUEST } from "../helpers/request.ts";
 
 describe("request grant registry", () => {

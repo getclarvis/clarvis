@@ -10,11 +10,11 @@ import {
   createTokenLedger,
   createIterationCounter,
   type IterationCounter,
-} from "../../src/runtime/budget/index.ts";
-import { DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
-import { runAgent, type RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import { compileResultContract } from "../../src/runtime/tools/index.ts";
+} from "#src/runtime/budget/index.ts";
+import { DISABLED_COMPACTION } from "#src/runtime/context/index.ts";
+import { runAgent, type RunAgentInput } from "#src/runtime/loop/run-agent.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import { compileResultContract } from "#src/runtime/tools/index.ts";
 import { MockLLM } from "../helpers/fixtures.ts";
 
 const RESULT_SCHEMA = {

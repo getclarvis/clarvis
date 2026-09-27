@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { TASK_BRIEF_MAX_CHARS, parseTaskBrief } from "../../src/task-brief.ts";
+import { TASK_BRIEF_MAX_CHARS, parseTaskBrief } from "#src/task-brief.ts";
 
 describe("parseTaskBrief", () => {
   it("preserves a non-empty brief exactly", () => {

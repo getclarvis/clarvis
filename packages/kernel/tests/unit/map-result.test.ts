@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import type { StoredExecution } from "@clarvis/loop";
 import type { PlanRef } from "@clarvis/protocol";
-import { engineResultToProto, storedToDetail } from "../../src/runs/map-result.ts";
+import { engineResultToProto, storedToDetail } from "#src/runs/map-result.ts";
 
 const validPlanRef: PlanRef = {
   id: "p1",

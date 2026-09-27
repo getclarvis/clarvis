@@ -4,6 +4,13 @@
   "description": "Persistent conversation objectives, bounded continuation policy and checkpoint capability.",
   "license": "MIT",
   "type": "module",
+  "imports": {
+    "#src/*.ts": {
+      "bun": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

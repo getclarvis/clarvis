@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { mapTrace, mapEntry, RESULT_MAX } from "@clarvis/trace";
 import { TASK_BRIEF_MAX_CHARS, type TraceEntry, type TraceEvent } from "@clarvis/capability";
-import { capDetail, ARGS_MAX } from "../../src/cap-detail.ts";
+import { capDetail, ARGS_MAX } from "#src/cap-detail.ts";
 
 const ANCHOR = 1_700_000_000_000;
 

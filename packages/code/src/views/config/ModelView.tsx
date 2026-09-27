@@ -1,20 +1,20 @@
 import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, on } from "solid-js";
-import { resolveContextWindow, type SettingsAdapter } from "../../adapters/settings.ts";
+import { resolveContextWindow, type SettingsAdapter } from "#src/adapters/settings.ts";
 import {
   recommendedReasoningEffort,
   supportedReasoningEfforts,
-} from "../../adapters/effort-levels.ts";
-import type { ModelsCatalog } from "../../adapters/models-catalog.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import { errorText } from "../../adapters/errors.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
+} from "#src/adapters/effort-levels.ts";
+import type { ModelsCatalog } from "#src/adapters/models-catalog.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import { errorText } from "#src/adapters/errors.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 import type { HintTone } from "../hint.ts";
 import { configuredModelRows } from "./catalog-pick.ts";
-import type { RunHost } from "../../run-host.ts";
+import type { RunHost } from "#src/run-host.ts";
 import {
   bindLevelKeys,
   LevelHost,

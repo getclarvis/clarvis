@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalRoot as resolveGlobalRoot } from "@clarvis/paths";
-import { createExecutionPolicy, InvalidExecutionPolicy } from "../../../src/index.ts";
+import { createExecutionPolicy, InvalidExecutionPolicy } from "#src/index.ts";
 
 describe("execution policy", () => {
   test("constructs broad-read policy without implicit home denies", () => {

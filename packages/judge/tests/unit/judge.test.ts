@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import type { LLMProvider, ModelExecutionInfo } from "@clarvis/capability";
-import { createJudgeService, DenialCircuitBreaker, parseAssessment } from "../../src/index.ts";
-import { reviewPayload } from "../../src/prompt.ts";
-import type { ReviewInput } from "../../src/types.ts";
+import { createJudgeService, DenialCircuitBreaker, parseAssessment } from "#src/index.ts";
+import { reviewPayload } from "#src/prompt.ts";
+import type { ReviewInput } from "#src/types.ts";
 
 const input: ReviewInput = {
   action: {

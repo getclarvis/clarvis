@@ -11,7 +11,7 @@ import {
   parsePlan,
   revisePlanInputSchema,
   transitionTask,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 describe("task transitions", () => {
   test("enforces the transition matrix and required outcomes", () => {

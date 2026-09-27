@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SecretService } from "@clarvis/protocol";
-import { createKeysAdapter, keyOrigin } from "../../src/adapters/provider-secrets.ts";
+import { createKeysAdapter, keyOrigin } from "#src/adapters/provider-secrets.ts";
 
 function fakeSecrets(seed: string[] = []): SecretService & { values: Map<string, string> } {
   const values = new Map<string, string>(seed.map((n) => [n, "seed"]));

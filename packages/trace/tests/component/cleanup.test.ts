@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "bun:test";
 import { TraceCleanup, type TraceCleanupCounters, type TraceStore } from "@clarvis/trace";
 import type { Logger } from "@clarvis/capability";
-import { createMemoryTraceStore } from "../../src/testing.ts";
+import { createMemoryTraceStore } from "#src/testing.ts";
 import { makeExecutionRecord } from "../helpers/execution-record.ts";
 
 const DAY = 86_400_000;

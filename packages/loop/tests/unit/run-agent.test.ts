@@ -3,19 +3,19 @@ import {
   runAgent,
   type AgentBuildContext,
   type RunAgentInput,
-} from "../../src/runtime/loop/run-agent.ts";
-import type { EngineHandlerVerdict, HandlerVerdict } from "../../src/runtime/loop/loop-contract.ts";
-import type { LiveContext } from "../../src/runtime/context/context-compaction.ts";
+} from "#src/runtime/loop/run-agent.ts";
+import type { EngineHandlerVerdict, HandlerVerdict } from "#src/runtime/loop/loop-contract.ts";
+import type { LiveContext } from "#src/runtime/context/context-compaction.ts";
 import type { AgentCapability, AgentLoopContribution, Logger } from "@clarvis/capability";
 import { contentToText } from "@clarvis/capability";
-import { askUserAgentCapability } from "../../src/runtime/capabilities/ask-user.ts";
-import type { AskUser } from "../../src/runtime/tools/ask-user-tool.ts";
+import { askUserAgentCapability } from "#src/runtime/capabilities/ask-user.ts";
+import type { AskUser } from "#src/runtime/tools/ask-user-tool.ts";
 import type { LifecycleHook } from "@clarvis/capability";
 import { createTrace, type TraceHandle } from "@clarvis/trace";
-import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import { compileResultContract } from "../../src/runtime/tools/index.ts";
-import { DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
+import { createTokenLedger, createIterationCounter } from "#src/runtime/budget/index.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import { compileResultContract } from "#src/runtime/tools/index.ts";
+import { DISABLED_COMPACTION } from "#src/runtime/context/index.ts";
 import { MockLLM } from "../helpers/fixtures.ts";
 
 const SCHEMA = {

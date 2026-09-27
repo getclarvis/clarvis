@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { renderNumberedSlice } from "../../src/lib/render-lines.ts";
+import { renderNumberedSlice } from "#src/lib/render-lines.ts";
 
 describe("renderNumberedSlice", () => {
   it("numbers lines from their 1-indexed source position with cat -n prefixes", () => {

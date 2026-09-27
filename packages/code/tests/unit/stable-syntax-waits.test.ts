@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Renderable } from "@opentui/core";
-import { waitForSyntaxFrame } from "../../src/ui/patterns/stable-syntax.tsx";
+import { waitForSyntaxFrame } from "#src/ui/patterns/stable-syntax.tsx";
 
 interface FrameRenderer {
   isDestroyed: boolean;

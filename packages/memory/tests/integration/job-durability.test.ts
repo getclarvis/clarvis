@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { createFileMemoryStore } from "../../src/file-store.ts";
-import { createMemory } from "../../src/index.ts";
+import { createFileMemoryStore } from "#src/file-store.ts";
+import { createMemory } from "#src/index.ts";
 import { run } from "../helpers/fixtures.ts";
 import { makeRoot } from "../helpers/fs.ts";
 

@@ -4,7 +4,7 @@ import {
   resolveStringMap,
   resolveStringMapWith,
   MissingEnvVarsError,
-} from "../../src/env-interpolate.ts";
+} from "#src/env-interpolate.ts";
 
 /** An env-shaped lookup, so the substring cases read as they did before. */
 const from =

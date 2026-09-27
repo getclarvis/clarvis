@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { createSteerQueue } from "../../src/steer-queue.ts";
+import { createSteerQueue } from "#src/steer-queue.ts";
 
 describe("per-child steer queue", () => {
   it("drains what was pushed, in order, exactly once", () => {

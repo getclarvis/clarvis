@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { createAgentRegistry, type AgentRegistry, type AgentsLimits } from "../../src/registry.ts";
+import { createAgentRegistry, type AgentRegistry, type AgentsLimits } from "#src/registry.ts";
 import type { AgentHandle, AgentRegistration, Logger, TraceEntry } from "@clarvis/capability";
 
 const LIMITS: AgentsLimits = {

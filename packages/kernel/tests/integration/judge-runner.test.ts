@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createJudgeRunner } from "../../src/execution/judge-runner.ts";
+import { createJudgeRunner } from "#src/execution/judge-runner.ts";
 import { globalPaths } from "@clarvis/paths";
 
 test("inspection reads but cannot change workspace data", async () => {

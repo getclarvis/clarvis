@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { Splash } from "../../src/views/Splash.tsx";
+import { Splash } from "#src/views/Splash.tsx";
 
 /**
  * A minimal reproduction of {@link import("../../src/views/PageFrame.tsx").PageFrame}'s

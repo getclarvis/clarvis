@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "bun:test";
-import { resolveMemoryProvider } from "../../src/provider-registry.ts";
-import { MEMORY_READ_TOOL_NAMES, MEMORY_WRITE_TOOL_NAMES } from "../../src/provider.ts";
-import { memoryProviderSchema } from "../../src/schemas.ts";
+import { resolveMemoryProvider } from "#src/provider-registry.ts";
+import { MEMORY_READ_TOOL_NAMES, MEMORY_WRITE_TOOL_NAMES } from "#src/provider.ts";
+import { memoryProviderSchema } from "#src/schemas.ts";
 import {
   MEMORY_TOOL_CONTRACTS,
   memoryToolParameters,
   type MemoryToolName,
-} from "../../src/tool-contract.ts";
-import type { MemoryToolDef } from "../../src/types.ts";
-import type { Memory } from "../../src/memory-contract.ts";
+} from "#src/tool-contract.ts";
+import type { MemoryToolDef } from "#src/types.ts";
+import type { Memory } from "#src/memory-contract.ts";
 
 function tool(name: string): MemoryToolDef {
   const canonical = MEMORY_TOOL_CONTRACTS[name as MemoryToolName];

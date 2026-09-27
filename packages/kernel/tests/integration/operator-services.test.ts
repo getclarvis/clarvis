@@ -6,11 +6,11 @@ import { globalPaths, workspacePaths } from "@clarvis/paths";
 import * as mcp from "@clarvis/mcp-client";
 import * as memory from "@clarvis/memory";
 import * as plans from "@clarvis/plan";
-import * as plugins from "../../src/plugins/plugin-contributions.ts";
-import * as pluginService from "../../src/plugins/plugin-service.ts";
-import { SubscriptionManager } from "../../src/subscriptions/manager.ts";
-import { createFileSubscriptionStore } from "../../src/subscriptions/store.ts";
-import { createOperatorServices } from "../../src/config/operator-services.ts";
+import * as plugins from "#src/plugins/plugin-contributions.ts";
+import * as pluginService from "#src/plugins/plugin-service.ts";
+import { SubscriptionManager } from "#src/subscriptions/manager.ts";
+import { createFileSubscriptionStore } from "#src/subscriptions/store.ts";
+import { createOperatorServices } from "#src/config/operator-services.ts";
 
 const roots: string[] = [];
 afterEach(() => {

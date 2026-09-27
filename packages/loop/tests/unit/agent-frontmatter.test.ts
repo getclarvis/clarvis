@@ -4,7 +4,7 @@ import {
   agentPromptOf,
   normalizeTools,
   splitAgentFrontmatter,
-} from "../../src/settings/agent-frontmatter.ts";
+} from "#src/settings/agent-frontmatter.ts";
 
 describe("splitAgentFrontmatter", () => {
   const DOC = "---\nmodel: prov/m\n---\n\nBody text.\n";

@@ -2,14 +2,14 @@ import { expect, test } from "bun:test";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { useRenderer } from "@opentui/solid";
 import { openRender } from "../helpers/tracked-render.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { createOverlayHost } from "../../src/views/overlay-host.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { createOverlayHost } from "#src/views/overlay-host.ts";
 import { Show } from "solid-js";
-import { ProvidersPanel } from "../../src/views/config/ProvidersPanel.tsx";
-import { registerUiActionFields } from "../../src/keys/actions.ts";
-import type { ProviderConfig, Scope, SettingsAdapter } from "../../src/adapters/settings.ts";
-import type { KeysAdapter } from "../../src/adapters/provider-secrets.ts";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
+import { ProvidersPanel } from "#src/views/config/ProvidersPanel.tsx";
+import { registerUiActionFields } from "#src/keys/actions.ts";
+import type { ProviderConfig, Scope, SettingsAdapter } from "#src/adapters/settings.ts";
+import type { KeysAdapter } from "#src/adapters/provider-secrets.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
 
 process.setMaxListeners(50);
 

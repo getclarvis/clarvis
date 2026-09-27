@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ensureWorkspaceLocalDir, workspaceStatePaths } from "@clarvis/paths";
-import { resolveConfig, StartupError } from "../../../src/config.ts";
+import { resolveConfig, StartupError } from "#src/config.ts";
 import { callTool, cleanup, makeWorkspace } from "../../helpers/fixtures.ts";
 
 describe("explicit machinery namespace", () => {

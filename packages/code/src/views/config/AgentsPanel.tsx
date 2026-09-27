@@ -1,25 +1,25 @@
 import type { JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { detachObserved } from "../../core/tasks.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { Scope, SharedPromptView } from "@clarvis/protocol";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tone } from "../../theme/tone.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import type { SettingsAdapter } from "../../adapters/settings.ts";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
-import type { GrantId } from "../../adapters/agents.ts";
-import type { AgentsStore } from "../../adapters/agents-store.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tone } from "#src/theme/tone.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { GrantId } from "#src/adapters/agents.ts";
+import type { AgentsStore } from "#src/adapters/agents-store.ts";
 import {
   agentReadiness,
   isShippedAgent,
   type AgentFile,
   type AgentFrontmatter,
   type EnvView,
-} from "../../adapters/agent-files.ts";
-import { supportedReasoningEfforts } from "../../adapters/effort-levels.ts";
-import type { ModelsCatalog } from "../../adapters/models-catalog.ts";
+} from "#src/adapters/agent-files.ts";
+import { supportedReasoningEfforts } from "#src/adapters/effort-levels.ts";
+import type { ModelsCatalog } from "#src/adapters/models-catalog.ts";
 import {
   ALL_GRANTS,
   CODING_GRANTS,
@@ -29,10 +29,10 @@ import {
   sanitizeAgentName,
   TIER_GRANTS,
   type AgentsController,
-} from "../../features/agents/controller.ts";
-import { presentAgentsEvent } from "../../features/agents/events.ts";
+} from "#src/features/agents/controller.ts";
+import { presentAgentsEvent } from "#src/features/agents/events.ts";
 import type { HintTone } from "../hint.ts";
-import { registerLevel, verb, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import { registerLevel, verb, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import {
   bindLevelKeys,
   createFieldEditor,
@@ -50,10 +50,10 @@ import {
 import { modelPickerSpec } from "./pick-model.ts";
 import { truncateEnd } from "../truncate.ts";
 import { PickerRow } from "../overlays/PickerRow.tsx";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
-import { DetailColumn, DetailHeading, DetailTitle } from "../../ui/patterns/detail-view.tsx";
-import type { SettingPresentation } from "../../ui/presentation.ts";
-import { followSelection } from "../../ui/patterns/list-navigation.ts";
+import { scrollbarOptions } from "#src/theme/surfaces.ts";
+import { DetailColumn, DetailHeading, DetailTitle } from "#src/ui/patterns/detail-view.tsx";
+import type { SettingPresentation } from "#src/ui/presentation.ts";
+import { followSelection } from "#src/ui/patterns/list-navigation.ts";
 
 /** Data and actions {@link AgentsPanel} needs from its host. */
 export interface AgentsDeps {

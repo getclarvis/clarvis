@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import { thinkingPreview } from "../../src/views/truncate.ts";
+import { BlockView } from "#src/views/blocks.tsx";
+import { thinkingPreview } from "#src/views/truncate.ts";
 import type { FoldFixtureNode } from "../helpers/transcript-fixtures.ts";
 
 function reasoning(text: string, collapsed: boolean): FoldFixtureNode {

@@ -2,11 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parsePluginManifest, readPluginAgentFiles } from "../../src/settings/plugin-agents.ts";
-import {
-  PLUGIN_RESOURCE_LIMITS,
-  readBoundedPluginText,
-} from "../../src/settings/plugin-resources.ts";
+import { parsePluginManifest, readPluginAgentFiles } from "#src/settings/plugin-agents.ts";
+import { PLUGIN_RESOURCE_LIMITS, readBoundedPluginText } from "#src/settings/plugin-resources.ts";
 
 const roots: string[] = [];
 afterEach(() => {

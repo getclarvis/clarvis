@@ -1,5 +1,5 @@
 import type { ConfigChange, ConfigChangeKind } from "@clarvis/protocol";
-import type { KernelServices } from "../../src/transport/operations.ts";
+import type { KernelServices } from "#src/transport/operations.ts";
 
 /** Error identity used to stop an operation immediately after recording dispatch. */
 export const RECORDED_OPERATION = new Error("recorded kernel operation");

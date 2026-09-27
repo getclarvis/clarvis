@@ -5,7 +5,7 @@ import {
   detachObserved,
   suppressSecondaryRejection,
   type TaskFailure,
-} from "../../src/tasks.ts";
+} from "#src/tasks.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve!: () => void;

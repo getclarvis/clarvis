@@ -9,7 +9,7 @@ import {
   ModelCallInactivityError,
   ProviderError,
   ValidationError,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 test("model inactivity shares the provider error contract and preserves known usage", () => {
   const usage = { input_tokens: 10, output_tokens: 2, cached_tokens: 0, cache_write_tokens: 0 };

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import type { StorageCleanupResult, StorageSnapshot } from "@clarvis/protocol";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { StorageView } from "../../src/views/config/StorageView.tsx";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { StorageView } from "#src/views/config/StorageView.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 

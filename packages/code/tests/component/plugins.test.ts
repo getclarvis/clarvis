@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import type { PluginService, PluginView as ProtoPluginView } from "@clarvis/protocol";
-import { createPluginsStore, loadPlugins, toPluginView } from "../../src/adapters/plugins.ts";
+import { createPluginsStore, loadPlugins, toPluginView } from "#src/adapters/plugins.ts";
 
 function protoView(over: Partial<ProtoPluginView> = {}): ProtoPluginView {
   return {

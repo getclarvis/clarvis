@@ -1,6 +1,6 @@
 import { createMemo, untrack, type JSX } from "solid-js";
-import type { TranscriptProjection } from "../../adapters/transcript-projection.ts";
-import type { TranscriptNode, TranscriptStore, TranscriptToolNode } from "../../adapters/store.ts";
+import type { TranscriptProjection } from "#src/adapters/transcript-projection.ts";
+import type { TranscriptNode, TranscriptStore, TranscriptToolNode } from "#src/adapters/store.ts";
 import type { TranscriptState } from "../transcript-state.ts";
 import type { ActivityDetail } from "../activity-detail.ts";
 import { BlockView } from "../blocks.tsx";

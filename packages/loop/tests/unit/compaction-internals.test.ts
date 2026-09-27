@@ -1,11 +1,8 @@
 import { describe, expect, it } from "../bun-test.ts";
 import type { LiveMessage } from "@clarvis/capability";
-import { createCompactionSelector } from "../../src/runtime/context/compaction-selection.ts";
-import {
-  rebuildDroppingTools,
-  type RewriteEntry,
-} from "../../src/runtime/context/context-rewrite.ts";
-import { createLiveEntryStore } from "../../src/runtime/context/live-entry-store.ts";
+import { createCompactionSelector } from "#src/runtime/context/compaction-selection.ts";
+import { rebuildDroppingTools, type RewriteEntry } from "#src/runtime/context/context-rewrite.ts";
+import { createLiveEntryStore } from "#src/runtime/context/live-entry-store.ts";
 
 describe("live entry store", () => {
   it("appends after runtime observations and snapshots their identity", () => {

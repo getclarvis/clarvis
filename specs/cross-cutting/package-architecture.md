@@ -168,6 +168,18 @@ before the build
 (`tooling/lib/module-resolution-policy.ts`, `moduleResolutionPolicyErrors`;
 `tooling/lib/package-graph.ts`, `analyzePackageGraph`).
 
+Each package with eligible private source imports declares its own `#src/` mapping in
+`package.json#imports`. Code's direct `#src/*` mapping selects application source; a buildable
+library uses ordered `bun`, `types`,
+`default` targets under `#src/*.ts`. The manifest owner and real source path must remain within
+that package. The graph resolves private imports through TypeScript, includes value imports in
+module cycles, and applies the existing own-entrypoint rule to private imports, including type-only
+edges. All current workspaces with eligible imports have adopted their package-owned mapping;
+development resolves sources without prior `dist` (`packages/code/package.json`, `imports`;
+`packages/kernel/package.json`, `imports`; `tooling/lib/module-resolution-policy.ts`,
+`privateImportTarget`, `moduleResolutionPolicyErrors`; `tooling/lib/package-graph.ts`,
+`localModuleTarget`, `analyzePackageGraph`).
+
 A package root exports only symbols it owns. Re-exporting lower packages to make all consumers
 depend on one facade is prohibited. Kernel's current six-entry surface and no-generic-barrel rule
 are pinned by `packages/kernel/tests/architecture/public-surface.test.ts` (`kernel public surface`).
@@ -292,6 +304,19 @@ Test: `tooling/tests/architecture/module-resolution-policy.test.ts` (`moduleReso
 `tooling/tests/architecture/package-graph.test.ts` (`includes stale TypeScript aliases in graph violations`);
 `tooling/tests/architecture/module-resolution-contract.test.ts` (dist-hidden source resolution);
 `tooling/tests/integration/module-resolution.test.ts` (declaration and runtime canary).
+
+**INV-PA3b. A private `#src/` import resolves inside the importing package's own source tree.**
+The package manifest is its only mapping; buildable libraries select source for Bun and emitted
+declarations and JavaScript for output consumers. Missing, reordered or escaping targets fail.
+
+Production: `tooling/lib/module-resolution-policy.ts` (`privateImportTarget`,
+`moduleResolutionPolicyErrors`); `tooling/lib/package-graph.ts` (`localModuleTarget`,
+`analyzePackageGraph`).
+
+Test: `tooling/tests/architecture/module-resolution-policy.test.ts` (owner, mapping and symlink
+cases); `tooling/tests/architecture/package-graph.test.ts` (private cycles and entrypoint);
+`tooling/tests/architecture/module-resolution-contract.test.ts` (all real aliases with `dist`
+hidden); `tooling/tests/integration/module-resolution.test.ts` (source, emit and output consumers).
 
 **INV-PA4. Code depends on no Clarvis implementation package below Kernel; its only Clarvis package
 dependencies are Kernel and Protocol.**

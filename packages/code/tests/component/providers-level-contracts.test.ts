@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
-import type { ProviderConfig } from "../../src/adapters/settings.ts";
-import type { ProvidersViewContext } from "../../src/views/config/providers/context.ts";
-import type { CatalogPickerSpec } from "../../src/views/config/CatalogPicker.tsx";
-import { createProviderListLevel } from "../../src/views/config/providers/list-level.tsx";
+import type { ProviderConfig } from "#src/adapters/settings.ts";
+import type { ProvidersViewContext } from "#src/views/config/providers/context.ts";
+import type { CatalogPickerSpec } from "#src/views/config/CatalogPicker.tsx";
+import { createProviderListLevel } from "#src/views/config/providers/list-level.tsx";
 import {
   createProviderDetailLevel,
   PROVIDER_DETAIL_FIELDS,
   PROVIDER_ISSUE_DETAIL_FIELD,
-} from "../../src/views/config/providers/detail-level.tsx";
+} from "#src/views/config/providers/detail-level.tsx";
 import {
   createProviderModelLevel,
   MODEL_FIELDS,
-} from "../../src/views/config/providers/model-level.tsx";
+} from "#src/views/config/providers/model-level.tsx";
 
 function contextWith(providers: ProviderConfig[]): ProvidersViewContext {
   const [providerList] = createSignal(providers);

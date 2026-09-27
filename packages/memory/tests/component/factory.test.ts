@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "bun:test";
 
-import type { RunSnapshot } from "../../src/index.ts";
+import type { RunSnapshot } from "#src/index.ts";
 
-import type { MemoryIngestNotice } from "../../src/ingest.ts";
-import { createMemoryFactory as createProductionMemoryFactory } from "../../src/factory.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
+import type { MemoryIngestNotice } from "#src/ingest.ts";
+import { createMemoryFactory as createProductionMemoryFactory } from "#src/factory.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
 import { ScriptedLLM as MockLLM } from "../helpers/capability.ts";
 import { fakeIndexerRuntime } from "../helpers/indexer-runtime.ts";
 import type { LLMProvider, Logger } from "@clarvis/capability";

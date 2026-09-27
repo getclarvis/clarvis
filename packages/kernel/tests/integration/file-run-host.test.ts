@@ -8,11 +8,11 @@ import { executeRun } from "@clarvis/loop";
 import { MockLLM, type MockLLMScriptStep } from "@clarvis/loop/testing";
 import { globalPaths, localHostPaths, writeFileDurableSync } from "@clarvis/paths";
 import type { ElicitationRequest, HostedRunRef, StartHostedTurnParams } from "@clarvis/protocol";
-import { createFileRunHost, type FileRunHostOptions } from "../../src/bootstrap.ts";
-import { openHostedProjection } from "../../src/hosting/projection.ts";
-import { connectKernelClient } from "../../src/transport/client.ts";
-import { connectLocalKernelTransport, listenLocalKernel } from "../../src/transport/local.ts";
-import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
+import { createFileRunHost, type FileRunHostOptions } from "#src/bootstrap.ts";
+import { openHostedProjection } from "#src/hosting/projection.ts";
+import { connectKernelClient } from "#src/transport/client.ts";
+import { connectLocalKernelTransport, listenLocalKernel } from "#src/transport/local.ts";
+import { decodeHostedRegistryState } from "#src/hosting/state.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

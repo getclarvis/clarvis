@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { parseGoalCommand } from "../../src/features/goal/parser.ts";
-import { goalDraftAction } from "../../src/features/goal/draft.ts";
+import { parseGoalCommand } from "#src/features/goal/parser.ts";
+import { goalDraftAction } from "#src/features/goal/draft.ts";
 
 describe("goal command grammar", () => {
   it("distinguishes controls from literal objectives without shell expansion", () => {

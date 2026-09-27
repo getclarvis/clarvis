@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { TranscriptWindow } from "../../src/core/transcript/window.ts";
+import { TranscriptWindow } from "#src/core/transcript/window.ts";
 
 for (const count of [0, 1, 40, 79, 80, 81, 120, 1001]) {
   test(`native residence stays bounded at ${count} rows`, () => {

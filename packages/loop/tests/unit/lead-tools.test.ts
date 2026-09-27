@@ -1,8 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import {
-  buildSpawnSubagentTool,
-  spawnSubagentTool,
-} from "../../src/runtime/subagents/lead-tools.ts";
+import { buildSpawnSubagentTool, spawnSubagentTool } from "#src/runtime/subagents/lead-tools.ts";
 import { TASK_BRIEF_MAX_CHARS } from "@clarvis/capability";
 
 describe("child-spawn tool schemas", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { imageBytesAreValid, sniffImageMime } from "../../src/lib/image.ts";
+import { imageBytesAreValid, sniffImageMime } from "#src/lib/image.ts";
 
 describe("sniffImageMime", () => {
   it("detects PNG", () => {

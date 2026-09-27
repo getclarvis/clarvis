@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import { detachObserved } from "../../core/tasks.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
@@ -18,20 +18,20 @@ import {
   DetailTitle,
   DetailHeading,
   detailStatusColor,
-} from "../../ui/patterns/detail-view.tsx";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { scrollbarOptions, SCROLLBOX_TABLE_GUTTER } from "../../theme/surfaces.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+} from "#src/ui/patterns/detail-view.tsx";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { scrollbarOptions, SCROLLBOX_TABLE_GUTTER } from "#src/theme/surfaces.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { clampListIndex } from "#src/ui/patterns/list-navigation.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { bindLevelKeys, SelectableList, SelectableRow, ViewFrame } from "./view-host.tsx";
 import { Prose } from "../Prose.tsx";
 import { relTime } from "../session-row.ts";
-import { lifecycleLabel, scopedUsageText, uiLifecycle } from "../../ui/presentation.ts";
+import { lifecycleLabel, scopedUsageText, uiLifecycle } from "#src/ui/presentation.ts";
 import { PickerRow } from "../overlays/PickerRow.tsx";
-import type { WorkflowActivity } from "../../adapters/workflow-projection.ts";
-import { diagnosticAsync, diagnosticCount } from "../../core/diagnostic-events.ts";
+import type { WorkflowActivity } from "#src/adapters/workflow-projection.ts";
+import { diagnosticAsync, diagnosticCount } from "#src/core/diagnostic-events.ts";
 import {
   formatStructuredWorkflowResult,
   parseStructuredWorkflowResult,

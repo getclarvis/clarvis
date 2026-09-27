@@ -7,7 +7,7 @@ import {
   listSkillDirs,
   validateSkillDocument,
   createAgentSkills,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {

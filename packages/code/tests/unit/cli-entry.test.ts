@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { privateEntry, productRootForEntry } from "../../src/cli-entry.ts";
+import { privateEntry, productRootForEntry } from "#src/cli-entry.ts";
 
 test("product root follows the source launcher in a checkout or portable release", () => {
   const root = join(process.cwd(), "fixture-root");

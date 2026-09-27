@@ -21,6 +21,13 @@
     "google"
   ],
   "type": "module",
+  "imports": {
+    "#src/*.ts": {
+      "bun": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
   "main": "dist/lib.js",
   "module": "dist/lib.js",
   "types": "dist/lib.d.ts",

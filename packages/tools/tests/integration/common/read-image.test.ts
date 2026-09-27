@@ -9,7 +9,7 @@ import {
   write,
   writePng,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 
 describe("read_image", () => {
   let root: string;

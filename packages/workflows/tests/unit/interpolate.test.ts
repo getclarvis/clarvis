@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { interpolate, placeholders } from "../../src/interpolate.ts";
+import { interpolate, placeholders } from "#src/interpolate.ts";
 
 describe("interpolate", () => {
   test("substitutes args, item fields and earlier round state", () => {

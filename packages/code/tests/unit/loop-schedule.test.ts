@@ -4,8 +4,8 @@ import {
   loopInterval,
   loopScheduleLabel,
   loopTimezone,
-} from "../../src/core/loop-schedule.ts";
-import { parseLoopCommand } from "../../src/features/loop/parser.ts";
+} from "#src/core/loop-schedule.ts";
+import { parseLoopCommand } from "#src/features/loop/parser.ts";
 
 const at = (iso: string): number => Date.parse(iso);
 const iso = (time: number | null): string | null =>

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { expect, mock, test } from "bun:test";
-import { runClipboardProcess, type ClipboardChild } from "../../src/adapters/clipboard-process.ts";
+import { runClipboardProcess, type ClipboardChild } from "#src/adapters/clipboard-process.ts";
 
 type FakeChild = ClipboardChild &
   EventEmitter & {

@@ -15,7 +15,7 @@ import {
   createExecutionPolicy,
   prepareLaunch,
   SeatbeltBackend,
-} from "../../../src/index.ts";
+} from "#src/index.ts";
 
 test.skipIf(!["linux", "darwin"].includes(process.platform))(
   "native explicit write grants preserve scratch confinement and mandatory read-only paths",

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
-import { discoverGitWorkspace } from "../../src/git-workspace.ts";
+import { discoverGitWorkspace } from "#src/git-workspace.ts";
 
 const roots: string[] = [];
 

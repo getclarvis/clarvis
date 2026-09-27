@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { ActivityDetail as ActivityDetailValue } from "../../src/views/activity-detail.ts";
-import { SurfaceBoundary } from "../../src/ui/patterns/surface-lifecycle.tsx";
-import { ActivityDetail } from "../../src/views/overlays/ActivityDetail.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { ActivityDetail as ActivityDetailValue } from "#src/views/activity-detail.ts";
+import { SurfaceBoundary } from "#src/ui/patterns/surface-lifecycle.tsx";
+import { ActivityDetail } from "#src/views/overlays/ActivityDetail.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 

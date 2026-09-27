@@ -11,7 +11,7 @@ import {
   createFileConfigStore,
   createMemoryConfigStore,
   kernelSettingsSchema,
-} from "../../src/config.ts";
+} from "#src/config.ts";
 
 // `workflows` is contributed by @clarvis/workflows through the kernel's capability
 // registry rather than spread into the engine's static schema, so the bare

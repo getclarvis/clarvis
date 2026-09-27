@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { KeyEvent, type CliRenderer } from "@opentui/core";
 import { openCoreRenderer } from "../helpers/tracked-core-render.ts";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import { registerUiActionFields, uiCommand } from "../../src/keys/actions.ts";
-import { LAYER, registerLevel } from "../../src/ui/patterns/level-keys.ts";
+import { registerUiActionFields, uiCommand } from "#src/keys/actions.ts";
+import { LAYER, registerLevel } from "#src/ui/patterns/level-keys.ts";
 
 process.setMaxListeners(50);
 

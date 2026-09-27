@@ -1,4 +1,4 @@
-import type { WorkflowDefinition } from "../../src/artifact.ts";
+import type { WorkflowDefinition } from "#src/artifact.ts";
 
 /** Minimal authored definitions for component tests. The real templates have a
  * single owner in `tests/integration/artifact.test.ts`. */

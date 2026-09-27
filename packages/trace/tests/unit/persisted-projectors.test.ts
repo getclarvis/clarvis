@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createPersistedTraceProjectorRegistry, type TraceEntry } from "@clarvis/capability";
-import { mapEntry, mapTrace } from "../../src/trace-mapper.ts";
+import { mapEntry, mapTrace } from "#src/trace-mapper.ts";
 
 const ANCHOR = 1_700_000_000_000;
 const ENTRY: TraceEntry = {

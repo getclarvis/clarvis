@@ -1,11 +1,11 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
-import { detachObserved } from "../../src/core/tasks.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import {
   installDiagnosticSession,
   type DiagnosticDetails,
   type DiagnosticLevel,
   type DiagnosticSession,
-} from "../../src/core/diagnostic-events.ts";
+} from "#src/core/diagnostic-events.ts";
 
 interface Recorded {
   event: string;

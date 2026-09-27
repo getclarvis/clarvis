@@ -5,9 +5,9 @@ import {
   createMcpCapabilities,
   type McpClientCaps,
   type McpEffects,
-} from "../../src/adapters/mcp-capabilities-bridge.ts";
-import type { LivePrompt, LiveTool, McpServerDecl } from "../../src/adapters/mcp-capabilities.ts";
-import type { Commands } from "../../src/keys/commands.ts";
+} from "#src/adapters/mcp-capabilities-bridge.ts";
+import type { LivePrompt, LiveTool, McpServerDecl } from "#src/adapters/mcp-capabilities.ts";
+import type { Commands } from "#src/keys/commands.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 
 function fakeClient(over: Partial<McpClientCaps> & { status?: MCPStatus } = {}): McpClientCaps {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { makeWorkspace, cleanup, makeConfig, callTool, write } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 
 describe("statelessness", () => {
   let root: string;

@@ -4,10 +4,10 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
-import { createConfigService } from "../../src/config/config-service.ts";
-import { createFileConfigStore } from "../../src/config/file-config-store.ts";
-import { resolveIsolationSettings } from "../../src/config/isolation-settings.ts";
-import { snapshotRunConfiguration } from "../../src/runs/configuration-snapshot.ts";
+import { createConfigService } from "#src/config/config-service.ts";
+import { createFileConfigStore } from "#src/config/file-config-store.ts";
+import { resolveIsolationSettings } from "#src/config/isolation-settings.ts";
+import { snapshotRunConfiguration } from "#src/runs/configuration-snapshot.ts";
 
 describe("global isolation settings", () => {
   it("ignores workspace content and writes while retaining global siblings", async () => {

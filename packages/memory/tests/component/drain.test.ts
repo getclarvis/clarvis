@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { DEFAULT_BUDGETS } from "../../src/config.ts";
-import type { MemoryClock } from "../../src/clock.ts";
-import { drainIndexJobs } from "../../src/drain.ts";
-import { createInMemoryMemoryStore, createTestClock } from "../../src/testing.ts";
-import type { IndexerRuntime, MemoryStore } from "../../src/types.ts";
+import { DEFAULT_BUDGETS } from "#src/config.ts";
+import type { MemoryClock } from "#src/clock.ts";
+import { drainIndexJobs } from "#src/drain.ts";
+import { createInMemoryMemoryStore, createTestClock } from "#src/testing.ts";
+import type { IndexerRuntime, MemoryStore } from "#src/types.ts";
 import { doc, run } from "../helpers/fixtures.ts";
 import { fakeIndexerRuntime, writeStep } from "../helpers/indexer-runtime.ts";
 

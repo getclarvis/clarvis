@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { createDoomLoopGuard } from "../../src/runtime/guards/index.ts";
+import { createDoomLoopGuard } from "#src/runtime/guards/index.ts";
 
 describe("createDoomLoopGuard", () => {
   it("trips when the identical call fails the threshold times in a row (default 3)", () => {

@@ -4,9 +4,9 @@ import {
   createHostedRegistry,
   type HostedRegistryState,
   type HostedRegistryOptions,
-} from "../../src/hosting/registry.ts";
-import { kernelError } from "../../src/core/errors.ts";
-import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
+} from "#src/hosting/registry.ts";
+import { kernelError } from "#src/core/errors.ts";
+import { decodeHostedRegistryState } from "#src/hosting/state.ts";
 
 function ref(id: string, state: HostedRunRef["execution_state"]): HostedRunRef {
   return {

@@ -7,7 +7,7 @@ import {
   AGENTS_REQUEST_PARAMS,
   AGENTS_SETTINGS_FIELDS,
   agentsSettingsSpec,
-} from "../../src/settings.ts";
+} from "#src/settings.ts";
 
 describe("the agents settings block", () => {
   it("fills every field from the defaults when the block is empty", () => {

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   createWorkspaceCallbackTarget,
   isActiveWorkspaceCallbackTarget,
-} from "../../src/app/workspace-runtime.ts";
+} from "#src/app/workspace-runtime.ts";
 
 test("workspace callbacks stop when their single runtime retires", () => {
   const target = createWorkspaceCallbackTarget<{ events: string[] }>();

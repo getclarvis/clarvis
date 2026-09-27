@@ -5,18 +5,18 @@ import { openRender } from "../helpers/tracked-render.ts";
 import { KeyEvent, type TextareaRenderable } from "@opentui/core";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import type { MessageContent } from "@clarvis/protocol";
-import { InputDock, type SlashOutcome } from "../../src/views/InputDock.tsx";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { Platform } from "../../src/adapters/platform.ts";
-import { registerWhenField } from "../../src/keys/when-dsl.ts";
-import { commandKeyLabel } from "../../src/keys/keyspec.ts";
-import { createPromptHistory } from "../../src/core/prompt-history.ts";
+import { InputDock, type SlashOutcome } from "#src/views/InputDock.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { Platform } from "#src/adapters/platform.ts";
+import { registerWhenField } from "#src/keys/when-dsl.ts";
+import { commandKeyLabel } from "#src/keys/keyspec.ts";
+import { createPromptHistory } from "#src/core/prompt-history.ts";
 import {
   MAX_COMPOSER_IMAGE_BYTES,
   MAX_COMPOSER_IMAGE_TOTAL_BYTES,
   MAX_COMPOSER_IMAGES,
-} from "../../src/core/attachments.ts";
-import type { CompleteProvider } from "../../src/views/input/autocomplete.ts";
+} from "#src/core/attachments.ts";
+import type { CompleteProvider } from "#src/views/input/autocomplete.ts";
 
 interface Log {
   submitted: MessageContent[];

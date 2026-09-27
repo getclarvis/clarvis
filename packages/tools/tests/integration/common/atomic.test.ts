@@ -3,9 +3,9 @@ import { promises as fsp, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { PathLike, Stats } from "node:fs";
 import { makeWorkspace, cleanup, write, read, exists } from "../../helpers/fixtures.ts";
-import { applyOpsAtomic } from "../../../src/lib/atomic.ts";
-import type { FileOp } from "../../../src/lib/atomic.ts";
-import { ToolError } from "../../../src/errors.ts";
+import { applyOpsAtomic } from "#src/lib/atomic.ts";
+import type { FileOp } from "#src/lib/atomic.ts";
+import { ToolError } from "#src/errors.ts";
 
 async function catchErr(p: Promise<unknown>): Promise<unknown> {
   return p.then(

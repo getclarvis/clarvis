@@ -4,7 +4,7 @@ import type { CliRenderer, KeyEvent } from "@opentui/core";
 import {
   installBootRendererLifecycle,
   type BootRendererProcess,
-} from "../../src/adapters/renderer-bootstrap.ts";
+} from "#src/adapters/renderer-bootstrap.ts";
 
 class FakeProcess extends EventEmitter {
   readonly platform: NodeJS.Platform;

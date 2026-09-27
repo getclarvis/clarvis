@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { Splash } from "../../src/views/Splash.tsx";
+import { Splash } from "#src/views/Splash.tsx";
 
 /**
  * The transcript region squeezed to a few rows — what happens when the

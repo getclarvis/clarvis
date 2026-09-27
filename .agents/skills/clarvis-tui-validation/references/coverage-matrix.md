@@ -19,22 +19,22 @@ passing lower-level suite does not establish execution of its E2E requirements.
 
 ## Boot, first paint, onboarding, and recovery
 
-| ID        | Scenario                                      | Minimum proof                                                                                                                    |
-| --------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `BOOT-01` | Clean interactive source boot                 | Startup composer is focused and usable before complete-app paint; no installed release is invoked                                |
-| `BOOT-02` | Early submitted task                          | Exact draft survives root replacement and starts once a runnable host exists, without a second Enter                             |
-| `BOOT-03` | Early draft without a runnable provider/agent | Accepted or unsent text becomes the complete composer's exact draft rather than disappearing                                     |
-| `BOOT-04` | Resume and continue boot                      | Startup input stays locked until the saved session is restored; unknown or absent sessions fail before taking the terminal       |
-| `BOOT-05` | Shutdown during foundation load               | No late run admission or complete-app mount; raw mode and alternate screen restore once                                          |
-| `BOOT-06` | Fatal boot and retry                          | Visible cause, bounded retry, Ctrl+C ownership; explicit old-host stop drains work before replacement; retry preserves it        |
-| `BOOT-07` | First paint across size classes               | Wide, narrow, single-column and below-layout-floor behavior is legible and non-crashing; refresh thresholds from `app/layout.ts` |
-| `BOOT-08` | Final bundle boot                             | `bun run build:code` and `bun run smoke` pass; source-critical checkpoints repeat without `CLARVIS_CODE_SOURCE`                  |
-| `ONB-01`  | First-run welcome to Ready                    | Provider, model, credential, default seeding, agent selection and final state succeed without rendering the secret               |
-| `ONB-02`  | Cancel provider or model selection            | Staged values remain unsaved and navigation returns predictably                                                                  |
-| `ONB-03`  | Failed save and retry                         | Failure remains visible and mounted; retry completes once without duplicate writes                                               |
-| `ONB-04`  | Compact first-run layout                      | Splash/picker thresholds preserve usable rows, focus and escape routes                                                           |
-| `ONB-05`  | Recovery and Doctor fixes                     | Missing, invalid or unusable configuration routes to an actionable repair and then to a runnable app                             |
-| `ONB-06`  | Personal subscription setup                   | Device flow cancel, pending, completion, reauthentication and disconnect are verified when authorized; otherwise unverified      |
+| ID        | Scenario                                      | Minimum proof                                                                                                                         |
+| --------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOOT-01` | Clean interactive source boot                 | Startup composer is focused and usable before complete-app paint; no installed release is invoked                                     |
+| `BOOT-02` | Early submitted task                          | Exact draft survives root replacement and starts once a runnable host exists, without a second Enter                                  |
+| `BOOT-03` | Early draft without a runnable provider/agent | Accepted or unsent text becomes the complete composer's exact draft rather than disappearing                                          |
+| `BOOT-04` | Resume and continue boot                      | Startup input stays locked until the saved session is restored; unknown or absent sessions fail before taking the terminal            |
+| `BOOT-05` | Shutdown during foundation load               | No late run admission or complete-app mount; raw mode and alternate screen restore once                                               |
+| `BOOT-06` | Fatal boot and retry                          | Visible cause, bounded retry, Ctrl+C ownership; explicit old-host stop drains work before replacement; retry preserves it             |
+| `BOOT-07` | First paint across size classes               | Wide, narrow, single-column and below-layout-floor behavior is legible and non-crashing; refresh thresholds from `app/layout.ts`      |
+| `BOOT-08` | Final bundle boot                             | `bun run build:code` and `bun run smoke` pass; source-critical checkpoints repeat by launching `packages/code/dist/index.js` directly |
+| `ONB-01`  | First-run welcome to Ready                    | Provider, model, credential, default seeding, agent selection and final state succeed without rendering the secret                    |
+| `ONB-02`  | Cancel provider or model selection            | Staged values remain unsaved and navigation returns predictably                                                                       |
+| `ONB-03`  | Failed save and retry                         | Failure remains visible and mounted; retry completes once without duplicate writes                                                    |
+| `ONB-04`  | Compact first-run layout                      | Splash/picker thresholds preserve usable rows, focus and escape routes                                                                |
+| `ONB-05`  | Recovery and Doctor fixes                     | Missing, invalid or unusable configuration routes to an actionable repair and then to a runnable app                                  |
+| `ONB-06`  | Personal subscription setup                   | Device flow cancel, pending, completion, reauthentication and disconnect are verified when authorized; otherwise unverified           |
 
 ## Composer, autocomplete, attachments, and local shell
 
@@ -98,6 +98,23 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `CMD-28` | `/attach <execution-id>` and explicit control takeover in discovery                                                                                                                    |
 | `CMD-29` | `/goal` semantic formulation with persistent read/search/thinking activity, inspection, literal creation, reviewed edit/replacement, pause/resume/cancel/clear and host-started stages |
 
+### Execution approval commands
+
+| ID       | Surface                                                                                                                             |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `CMD-30` | `/approval` idle manual/auto selection, judge availability validation, global persistence and active-run refusal                    |
+| `CMD-31` | `/authorize` active-run denied-call inspection, dismiss/confirm, scoped steering for a new reviewed attempt and no automatic replay |
+
+### Isolation controls
+
+| ID       | Surface                                                                                                                                                                                                                                                              |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CMD-32` | Ctrl+X I selects Host or Sandbox globally for future built-in tool runs; W and N save independent Sandbox workspace-write and tool-network preferences; Host requires confirmation, a failed save preserves the choice, and backend failure never falls back to Host |
+
+Reconcile these routes with `registerAppCommands` in
+[commands.tsx](../../../../packages/code/src/app/commands.tsx) and the approval/denied-action
+sections of [code-settings-panels.md](../../../../specs/hosts/code-settings-panels.md).
+
 ### Current Settings panels
 
 | ID       | Panel     |
@@ -153,28 +170,26 @@ routes.
 | `CAP-02` | Execution memory      | Fresh-install off, global Ctrl+X M choice across workspaces and restarts, policy, review/curation, run-model indexing, failure and recovery are coherent                                                 |
 | `CAP-03` | Subagents             | Three concurrent children share no transcript owners; Lead keeps two navigable markers; A→B→Lead invalidates stale restores and preserves independent anchors; background interactions remain accessible |
 | `CAP-04` | Workflows             | Built-in/custom precedence, manager tree, concurrency, cancellation, budget exhaustion, deletion and resume are correct                                                                                  |
-| `CAP-05` | Tasks board           | Availability, health, filters, detail, refresh, normalized/native state and claim semantics are honest                                                                                                   |
-| `CAP-06` | Task mutations        | Supported write, conflict, provider failure and unknown outcome never render as a successful empty board                                                                                                 |
-| `CAP-07` | Work on task          | Current workspace and selected agent are used; opening does not mutate; return refreshes source of truth                                                                                                 |
 | `CAP-09` | MCP tools and prompts | Inventory, refresh, duplicate names, invocation, errors, degraded pools and prompt injection are visible and bounded                                                                                     |
 | `CAP-10` | OAuth-pending MCP     | Browser flow remains background, other work runs, bounds are retained, no duplicate browser, later reuse works when authorized                                                                           |
 
 ## Extensions, trust, and executable behavior
 
-| ID        | Scenario                         | Minimum proof                                                                                                                                                                   |
-| --------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EXT-01`  | Extensions guided flow           | Scope, profile, inventory search, multi-select, contribution review, preview, apply, reconnect and final state                                                                  |
-| `EXT-02`  | Cancel/discard/leave during work | Draft discard confirmation and background completion ownership are predictable; Escape stays responsive                                                                         |
-| `EXT-03`  | Marketplace collections          | Built-in/configured sources, search, large list windowing, add source, load failure and retry are correct                                                                       |
-| `EXT-04`  | Plugin lifecycle                 | Install, identity validation, activate, update eligibility, uninstall and exact-ref selection are atomic and honest                                                             |
-| `EXT-05`  | Extension Profiles               | Create/customize/select/clear/delete, process-pinned read-only mode, conflicts and resolution errors are correct                                                                |
-| `EXT-06`  | Skills and resources             | Four-root inventory, qualified identity, task/agent routing, invalid or inactive roots and bounded reads are correct                                                            |
-| `EXT-07`  | Hooks and executables            | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                                                          |
-| `EXT-08`  | Workspace trust                  | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                                                                |
-| `EXT-09`  | Drift after admission            | After the documented asynchronous drift notice, affected skills or executable contributions are withdrawn, unaffected work remains usable, and reconnect captures changed bytes |
-| `SAFE-01` | Memory and plan choices          | Global Memory on/off and completed-plan retention update their intended scopes and show their effective state                                                                   |
-| `SAFE-04` | Secret and path boundaries       | Keys, subscriptions, logs, storage, export, attachments, marketplace and tool output reveal no protected material or escape path                                                |
-| `SAFE-05` | Host temporary interoperability  | Cross-tool host-temp access and non-owning cleanup are proved on the active OS                                                                                                  |
+| ID        | Scenario                         | Minimum proof                                                                                                                                                                                                                                                                   |
+| --------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EXT-01`  | Extensions guided flow           | Scope, profile, inventory search, multi-select, contribution review, preview, apply, reconnect and final state                                                                                                                                                                  |
+| `EXT-02`  | Cancel/discard/leave during work | Draft discard confirmation and background completion ownership are predictable; Escape stays responsive                                                                                                                                                                         |
+| `EXT-03`  | Marketplace collections          | Built-in/configured sources, search, large list windowing, add source, load failure and retry are correct                                                                                                                                                                       |
+| `EXT-04`  | Plugin lifecycle                 | Install, identity validation, activate, update eligibility, uninstall and exact-ref selection are atomic and honest                                                                                                                                                             |
+| `EXT-05`  | Extension Profiles               | Create/customize/select/clear/delete, process-pinned read-only mode, conflicts and resolution errors are correct                                                                                                                                                                |
+| `EXT-06`  | Skills and resources             | User and workspace standalone roots, selected plugin roots and the host-supplied system guide retain qualified identity, task/agent routing, invalid-root handling and bounded reads                                                                                            |
+| `EXT-07`  | Hooks and executables            | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                                                                                                                                                          |
+| `EXT-08`  | Workspace trust                  | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                                                                                                                                                                |
+| `EXT-09`  | Drift after admission            | After the documented asynchronous drift notice, affected skills or executable contributions are withdrawn, unaffected work remains usable, and reconnect captures changed bytes                                                                                                 |
+| `SAFE-01` | Memory and plan choices          | Global Memory on/off and completed-plan retention update their intended scopes and show their effective state                                                                                                                                                                   |
+| `SAFE-04` | Secret and path boundaries       | Names-only credential APIs, redaction and explicit Sandbox read denies protect their intended material; ordinary readable host files may appear in tool output; path confinement and write boundaries hold                                                                      |
+| `SAFE-05` | Host temporary interoperability  | Cross-tool host-temp access and non-owning cleanup are proved on the active OS                                                                                                                                                                                                  |
+| `SAFE-06` | Native execution isolation       | On the active native backend, Sandbox preserves ordinary host reads, blocks explicit denied reads and out-of-scope writes, enforces the chosen workspace-write and tool-network policies, and fails closed when unavailable; Host selection follows the confirmed global choice |
 
 For `SAFE-05`, create a path through a host-native temporary API in `shell`, then reuse its absolute
 path through a later coding tool. Teardown and fixture cleanup must stay distinct; Clarvis must

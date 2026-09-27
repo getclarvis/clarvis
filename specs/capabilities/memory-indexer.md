@@ -469,9 +469,7 @@ Evaluated strictly in this order (`packages/memory/src/jobs.ts`):
 
 `toFailure` maps a thrown value: a `MemoryIndexError` carries its own phase and `terminal`
 (`packages/memory/src/drain.ts`); a `MemoryPathError` is `apply` + terminal (`packages/memory/src/drain.ts`); anything else is
-`apply`, non-terminal (`packages/memory/src/drain.ts`) — the doc names the reason for that fallback: "an untagged
-throw escaped `store.exclusive` or `tx.batch`. It used to say `generate`, a phase no unclassified
-error has ever described" (`packages/memory/src/drain.ts`).
+`apply`, non-terminal (`packages/memory/src/drain.ts`). Untagged throws are classified as apply failures because they escape store or batch work.
 
 ### 4.6 `indexRun`, step by step
 
@@ -553,6 +551,9 @@ the measured cases: 5 110 875 input with 0 cached blocks; 2 270 231 with 2 083 4
 Both build their toolsets from `buildIndexerParts`: navigation is unbudgeted
 (`Number.MAX_SAFE_INTEGER`) while the write half carries `budgets.max_index_ops`
 (`packages/memory/src/capability.ts`, default 16 at `packages/memory/src/config.ts`).
+Indexer entry profiles omit lifecycle hooks so the pass does not execute foreground hooks.
+Already-published seed context remains governed by the engine's entry-context contract;
+`packages/loop/tests/unit/entry-seed-markers.test.ts` exercises inactive capability restoration.
 
 The refusal handler matches every wire name outside
 `readToolset.names ∪ writeToolset.names ∪ {submit_result}` (`packages/memory/src/capability.ts`) and answers with an envelope failure carrying "is not available in this pass"
@@ -610,8 +611,7 @@ nothing to the wiki and does not mark its run indexed.
   from the per-job `admitBlocked` limiter inside `drainIndexJobs` (MIX-17). A pass that settled
   anything is always logged. `packages/memory/tests/component/worker.test.ts` pins exactly this: two identical
   blocked-only passes produce exactly one `memory.drain.pass` record.
-- Scheduling belongs to `requestPass`'s completion, never to `runOnce`, "Arming a timer here left
-  that timer behind an immediate follow-up" (`packages/memory/src/worker.ts`).
+- Scheduling belongs to `requestPass`'s completion, so an immediate follow-up does not leave a second timer armed (`packages/memory/src/worker.ts`).
 - `nextDelay`: a pass that settled nothing and blocked something waits the full interval, because a
   blocked job's due time is already in the past (`packages/memory/src/worker.ts`); otherwise
   `min(interval, max(0, next_due_at - now))`.
@@ -1146,9 +1146,7 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 | `node:crypto` | `randomUUID` for the claim's fencing token (`packages/memory/src/drain.ts`), `createHash` for `encodeRunId` (`packages/memory/src/file-store/jobs.ts`) | static |
 | the run's trace store | `planPass` reads the subject through `indexer.deps.traceStore.getById(owner, run_id)` (`packages/memory/src/indexer/run.ts`) — no direct `@clarvis/trace` import or manifest edge | structural, via `ExecuteRunDeps` from `@clarvis/loop` |
 
-### 7.2 Inbound
-
-### 7.3 What the host, not this package, must compose
+### 7.2 Host composition
 
 The host composes `IndexerRuntime.passDeps`: workspace hooks are absent so they cannot run
 against indexing writes, and ordinary memory is replaced with `enqueueOnRunEnd: false`.
@@ -1156,7 +1154,7 @@ Source-work capabilities must retain their catalog without owning the source wor
 lifecycle. Dispatch denial alone does not stop recovery or finalization from mutating a plan.
 `composeIndexPassDeps` replaces planning in place with `createPlansCatalogCapability`, which
 opens no provider and has no source-plan gates, context publication, reconciliation, finalization
-or retention. Other capabilities, including tasks, retain registration order.
+or retention. Other registered capabilities retain their relative order.
 `file-kernel.ts` supplies fully composed deps and the same kernel-owned registry used for
 foreground execution. `buildIndexerContinuationRequest` carries only request parameters declared
 by that registry, both for the first continuation and recovery of an indexing attempt. This
@@ -1179,53 +1177,6 @@ registered parameter carry-over without copying unrelated request fields or sour
 
 ## 8. Open questions
 
-1. **Historical seed survival belongs to the engine's context contract.** Hooks are removed here
-   to prevent execution. Persistence and inactive capability restoration are exercised by
-   `packages/loop/tests/unit/entry-seed-markers.test.ts`; a capability's activation state does
-   not authorize rewriting an already-published block.
-
-2. **`DEFAULT_MEMORY_JOB_PAGE_SIZE` is exported from `packages/memory/src/jobs.ts` but not
-   re-exported from the barrel** (`packages/memory/src/index.ts`). The file and in-memory
-   adapters both consume it (`packages/memory/src/file-store/jobs.ts`,
-   `packages/memory/src/testing.ts`); whether omitting it from the package surface is deliberate
-   is not stated in the source.
-
-3. **The 500-char job-history error cap and 200-job page ceiling remain unpinned.** The history
-   length cap is now directly tested (`packages/memory/tests/unit/jobs-policy.test.ts`), and the
-   corrupt-record filename check is covered by
-   `packages/memory/tests/integration/file-store-observability.test.ts`; only the two remaining
-   bounds lack direct assertions (MIX-08, MIX-13).
-
-4. **`Memory.index` is a direct, unqueued entry point** (`packages/memory/src/memory.ts`) used by
-   integration and factory tests and by no `src` caller in scope outside that
-   facade. Whether any production host still calls it — as opposed to always going through
-   `enqueue` + `drain` — is undetermined.
-
-5. **The isolated pass's `budgets.max_index_ops` overage message is described but not located here.**
-   `packages/memory/src/indexer/capability.ts` says the (N+1)th mutating call is "refused with
-   a message the model can act on"; that behaviour lives in `buildMemoryToolset`
-   (`packages/memory/src/toolset.ts`), which belongs to the *memory-capability-and-tools* document.
-
-6. **Store atomicity, `store.exclusive` re-entrancy and journal recovery** are only referenced here.
-   `packages/memory/src/indexer/run.ts` states the file store's lock is re-entrant via `AsyncLocalStorage` and that
-   "Nothing enforces" the rule against starting a pass inside `store.exclusive`. Verification of that
-   claim belongs to *memory-wiki-store*.
-
-7. **Prefix-cache pricing.** Several comments quantify the cost of breaking the prefix
-    (`packages/memory/tests/architecture/indexer-surface-identity.test.ts` cites "120:1 against a
-    cache read" and points at [cross-cutting/prompt-cache.md](../cross-cutting/prompt-cache.md), which is outside this document's scope). The verified mechanism
-    is only that the surfaces are asserted equal; the economics are not derivable from this code.
-
-8. **Rationale for specific constants** — `INDEXER_ITERATION_LIMIT = 12`,
-    `INDEXER_TOKEN_LIMIT = 200_000`, `CACHE_EVIDENCE_MIN_INPUT = 100_000`, `DEFAULT_LEASE_MS =
-    600_000`, `DEFAULT_LIMIT = 5`, `DEFAULT_JOB_RETENTION`'s 7/30-day split, the broker's 30-minute
-    leak guard — is given as prose in the source and echoed above where the source states it. None of
-    it is verifiable from the code itself; where a test carries a measured number (the
-    `no-cache-observed` production case at
-    `packages/memory/tests/unit/indexer-continuation.test.ts`), the test is cited instead.
-
-9. **`MemoryBatchCommit.mark_indexed` has a production mechanism and no production producer.**
-   `packages/memory/src/file-store.ts` and the in-memory adapter replay it, while repository-wide
-   source search finds construction only in test fixtures. `packages/memory/src/indexer/run.ts`
-   says its former producer was removed; whether the field remains intentionally for external
-   adapters or should now be removed is not stated.
+- The 500-character job-history error cap and 200-job page ceiling lack direct assertions.
+  `packages/memory/tests/unit/jobs-policy.test.ts` pins the separate five-entry history count;
+  `packages/memory/src/jobs.ts` and `packages/memory/src/file-store/jobs.ts` own the two bounds.

@@ -6,18 +6,14 @@
  * Every other package reaches `.clarvis` and `.agents` through this module and
  * never spells either literal itself. That is what keeps the naming conventions
  * — the monitor prefix, the spill prefix, the temp prefix, the ignore lists —
- * from drifting apart across eight packages, which is how a sweeper came to look
- * for files no writer ever produced.
+ * aligned across their producers and consumers.
  *
  * Two families sit here for the same reason the names do. The **atomic-write**
  * family (`writeFileAtomic`, `writeFileDurable`, `tmpPathFor` + `isTmpFile`,
- * `writeFileDurableSync`) replaces seven hand-rolled tmp-and-rename copies that had
- * already diverged on the property that matters — one of them raced two
- * processes onto a single temp name — and it is where the `0o700`/`0o600`
- * posture is applied rather than restated. The **resolve** family
- * (`expandHome`, `resolveAgainst`, `resolveWorkspaceDir`) was forked verbatim
- * between the engine and an optional feature package that is structurally
- * forbidden from importing it.
+ * `writeFileDurableSync`) gives concurrent writers distinct temporary names
+ * and applies the `0o700`/`0o600` posture. The **resolve** family
+ * (`expandHome`, `resolveAgainst`, `resolveWorkspaceDir`) is shared by the
+ * engine and optional feature packages without an import between them.
  *
  * The package has no dependencies at all, internal or external, so the leaves of
  * the graph may depend on it without gaining an edge to anything else.

@@ -173,8 +173,8 @@ cannot force a literal `null` through this same hatch.
 
 ### 2.4 Filesystem policy — `@clarvis/tools`
 
-`resolveToolPath(input, workspaceRoot)` resolves relative paths and preserves absolute paths;
-it does not grant access. Production: `resolveToolPath` in
+`resolveFileToolPath(input, config)` resolves relative paths and preserves absolute paths;
+it does not grant access. Production: `resolveFileToolPath` in
 `packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/common/paths.test.ts` and
 `packages/tools/tests/integration/common/open-authority.test.ts`.
 
@@ -219,13 +219,15 @@ Both `filterHookEnv` and `interpolatedNames` are on the package barrel
 
 Wire methods `secrets.listNames` / `secrets.set` / `secrets.delete`, carrying
 `metadata.sensitivity === "secrets"` (`OPERATIONS.secrets` in
-`packages/kernel/src/transport/operations.ts`).
+`packages/kernel/src/transport/operations.ts`). `secrets.set` carries its value in the request
+frame; `toEnvelope` sanitizes errors, not request parameters. The stdio transport therefore
+assumes a trusted local peer, as specified in [kernel transport](../hosts/kernel-transport.md#63-authentication-and-operation-policy).
 
 ### 2.7 Workspace trust — `@clarvis/kernel`
 
 | Symbol | Signature | File |
 | --- | --- | --- |
-| `WORKSPACE_RISK_FIELDS` | 8-element const tuple | `packages/kernel/src/config/workspace-trust.ts` |
+| `WORKSPACE_RISK_FIELDS` | 5-element const tuple | `packages/kernel/src/config/workspace-trust.ts` |
 | `stripWorkspaceRiskFields` | `(settings) => { settings, withheld }` | `packages/kernel/src/config/workspace-trust.ts` |
 | `workspaceTrustFingerprint` | `(settings, agents, extensions?) => string \| undefined` | `packages/kernel/src/config/workspace-trust.ts` |
 | `workspaceTrustVerdict` | `(fingerprint, key, trust) => WorkspaceTrustVerdict` | `packages/kernel/src/config/workspace-trust.ts` |
@@ -333,8 +335,7 @@ path to a **non-empty array** of `{ fingerprint: /^sha256:[0-9a-f]{64}$/, approv
 ```
 
 The key is `realpathSync(workspaceRoot)`, falling back to the input when it cannot be resolved. The fingerprint is `sha256` over `JSON.stringify(canonical(surface))`, where `canonical`
-sorts object keys recursively and drops `undefined`. The surface is
-:
+sorts object keys recursively and drops `undefined`. The surface contains:
 
 | Key | Contents |
 | --- | --- |
@@ -345,7 +346,7 @@ sorts object keys recursively and drops `undefined`. The surface is
 
 A workspace with none of those keys yields `undefined` — it is **inert** and never prompted about
 (`workspaceExecutableSurface` in `packages/kernel/src/config/workspace-trust.ts`). Extension Profile
-Extension Profile definitions and global plugin selections do not enter this executable surface. The
+definitions and global plugin selections do not enter this executable surface. The
 workspace plugin inventory does so before selection. Code resolves it after the lightweight startup
 composer has painted, keeps repository plugins inactive in the meantime, and then asks automatically
 when the complete TUI receives the verdict.
@@ -396,8 +397,8 @@ fallback.
 
 ### 4.1 Resolving one tool path
 
-`resolveToolPath` makes relative paths absolute under the workspace and preserves absolute paths.
-This selects a path; host filesystem permissions determine access. Production: `resolveToolPath` in
+`resolveFileToolPath` makes relative paths absolute under the workspace and preserves absolute paths.
+This selects a path; the execution policy and host filesystem permissions determine access. Production: `resolveFileToolPath` in
 `packages/tools/src/lib/paths.ts` and `dispatch` in `packages/tools/src/core.ts`. Test:
 `packages/tools/tests/integration/common/open-authority.test.ts`.
 
@@ -575,8 +576,8 @@ an atomic unit, including its normalized hooks. There is no mutable per-hook app
 Extension Profile definitions and resolved snapshots never carry secrets. See
 [Extension Profiles](../hosts/extension-profiles.md#43-preview-composition-trust-and-resume).
 
-Two independent enforcement points read the verdict, and the code says gating only one would leave the
-other open (`packages/kernel/src/config/file-config-store.ts` for the settings merge for agent files).
+The settings merge and workspace-agent loading each read the trust verdict
+(`packages/kernel/src/config/file-config-store.ts`); both must withhold unapproved content.
 
 ### 4.10 An error crossing the wire
 
@@ -646,9 +647,11 @@ TOCTOU family between validation and rename, as described in §4.4.
 
 ## 5. Invariants
 
-1. **Workspace is a relative base, not a file-access boundary.** External paths follow host
-   process permissions. Production: `resolveToolPath` in `packages/tools/src/lib/paths.ts`.
-   Test: `packages/tools/tests/integration/common/open-authority.test.ts`.
+1. **Workspace is a relative base, not a file-access boundary.** External paths remain subject to
+   the selected execution policy and host process permissions. Production: `resolveFileToolPath` in
+   `packages/tools/src/lib/paths.ts` and `prepareToolAction` in
+   `packages/tools/src/execution/action.ts`. Test:
+   `packages/tools/tests/integration/common/open-authority.test.ts`.
 7. **A read uses one regular-file descriptor and a byte ceiling.** Production: `readRawFile` in
    `packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/common/bounded-read.test.ts`.
 9. **Native mutation refuses symlink targets.** Production: `assertNotSymlink` in
@@ -698,8 +701,7 @@ TOCTOU family between validation and rename, as described in §4.4.
     the distinct variable names. Production `packages/capability/src/env-interpolate.ts`;
     pinned `packages/capability/tests/unit/env-interpolate.test.ts`.
 24. **The hook environment keep-list wins over both deny rules.** Production
-    `packages/hooks/src/env.ts`; pinned `packages/hooks/tests/unit/env.test.ts` and, for
-    the counts.
+    `packages/hooks/src/env.ts`; pinned `packages/hooks/tests/unit/env.test.ts`.
 25. **A variable dropped by the exact denylist is never also charged to the shape rule.** Production
     `packages/hooks/src/env.ts`; pinned `packages/hooks/tests/unit/env.test.ts`.
 26. **The hook filter names nothing it withheld.** `FilteredHookEnv` carries only counts, and the log
@@ -739,15 +741,14 @@ TOCTOU family between validation and rename, as described in §4.4.
 34. **A workspace's risky settings never enter the merge while it is unapproved** — they are withheld
     *before* merging rather than filtered afterwards. Production
     `packages/kernel/src/config/file-config-store.ts`; pinned
-    `packages/kernel/tests/integration/workspace-trust.test.ts`, whose comment records that an
-    earlier post-merge filter compared by object identity and therefore permitted everything it claimed
-    to block.
+    `packages/kernel/tests/integration/workspace-trust.test.ts`.
 35. **Every declared risk field is gated, not just `hooks`.** Production
     `packages/kernel/src/config/workspace-trust.ts`; pinned
-    `packages/kernel/tests/integration/workspace-trust.test.ts` (all eight).
+    `packages/kernel/tests/integration/workspace-trust.test.ts` (all five).
 36. **An untrusted workspace contributes no agent layer**, on both the listing and the effective-agent
-    path. Production `packages/kernel/src/config/file-config-store.ts`. **Unpinned** —
-    `workspace-trust.test.ts` covers the settings half only.
+    path. Production `packages/kernel/src/config/file-config-store.ts`. Pinned by
+    `packages/kernel/tests/integration/file-kernel.test.ts` (a disk-authored `coder` overlay is
+    withheld before workspace approval and active afterward).
 37. **An empty risky value is not a declared surface.** `hooks: []` / `mcpServers: {}` leave the
     workspace `inert`. Production `packages/kernel/src/config/workspace-trust.ts`; pinned
     indirectly at `packages/kernel/tests/integration/workspace-trust.test.ts` for a workspace
@@ -769,7 +770,7 @@ TOCTOU family between validation and rename, as described in §4.4.
 42. **An agent name is one filename segment.** No separator, no drive/stream separator, no leading dot,
     no `..`, no `:`. Production `packages/kernel/src/config/config-service.ts`;
     pinned across all four name-taking methods at
-    `packages/kernel/tests/contract/physical/config-service.test.ts`, and for the file store.
+    `packages/kernel/tests/contract/physical/config-service.test.ts`.
 43. **A forbidden provider `body` key is refused by the schema *and* stripped by the adapter.**
     Production `packages/loop/src/validation/request/provider-rules.ts` and
     `packages/llm/src/openai-compatible-request.ts`; the constant is pinned against the TUI's
@@ -922,11 +923,14 @@ TOCTOU family between validation and rename, as described in §4.4.
 
 ## 6. Failure modes and degradation
 
-The [self-configuration flow](../hosts/self-configuration.md) uses ordinary file tools. Host OS
-permissions determine access. Configuration loaders validate documents when consumed; workspace
+The [self-configuration flow](../hosts/self-configuration.md) uses ordinary file tools under the
+selected execution policy and host OS permissions. Kernel-bound calls pass action authorization;
+configuration targets have no unconditional Sandbox write exemption. Configuration loaders
+validate documents when consumed; workspace
 trust still governs activation. Production: `dispatch` in
 [core.ts](../../packages/tools/src/core.ts) and `createFileConfigStore` in
 [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts). Test:
+[action-authorization.test.ts](../../packages/tools/tests/integration/common/action-authorization.test.ts),
 [open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts) and
 [configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
 
@@ -958,7 +962,7 @@ bugs: a failed spill loses the middle of one tool result rather than the run
 (`packages/loop/src/runtime/context/tool-spill.ts`); withholding a repository's risky fields
 lets the run proceed rather than refusing to start
 (`packages/kernel/src/config/workspace-trust.ts`); and the coarse fallback's false positives are
-real — a 64-hex project id and a full UUID both read as credentials, which is why
+real — a 64-hex project id and a full UUID both read as credentials.
 
 ## 7. Coupling
 
@@ -1006,44 +1010,17 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
 
 `stripWorkspaceRiskFields` is consumed only by `createFileConfigStore`
 (`packages/kernel/src/config/file-config-store.ts`, applied once in `operatorLayers`), which is what makes
-`file-kernel.ts` able to state that no hook filtering happens at the hook layer any more
-(`packages/kernel/src/file-kernel.ts`).
+`file-kernel.ts` able to consume the already-gated settings without a second hook-specific
+filter (`packages/kernel/src/file-kernel.ts`).
 
 ## 8. Open questions
 
-- **Path-based file mutation has a parent-directory replacement race.** Closing it requires
+- Path-based file mutation has a parent-directory replacement race. Closing it requires
   descriptor-relative mutation across native write handlers. Production: `applyOpsAtomic` in
-  `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/common/atomic.test.ts`
-  covers atomic failure but does not prove that the parent-directory race is closed.
-- ~~**A stale rationale in `packages/hooks/src/env.ts`.**~~ **Resolved.** The comment claimed the
-  secret-name vocabulary was duplicated because the two sides "live on opposite sides of a dependency
-  edge this package must not close", naming `@clarvis/loop`'s trace sanitizer. That edge does not
-  exist: the sanitizer is `SENSITIVE_KEY` in `@clarvis/capability`
-  (`packages/capability/src/sanitize.ts`), which `packages/hooks/package.json` already declares
-  and `packages/hooks/src/env.ts` already imports from. The remark now gives the reason that does
-  hold — the two patterns are deliberately different because their failure modes are opposite: a
-  redactor over-matching costs legibility, while dropping an environment variable over-matching
-  breaks the hook, which is why this one is separator-anchored and carries `auth`, `credentials` and
-  `session` (`packages/hooks/src/env.ts`).
-  Whether the duplication is still wanted for the _behavioural_ reason (`SECRET_NAME` is
-  separator-anchored and adds `auth`/`session`/thirteen prefixes; `SENSITIVE_KEY` is an unanchored
-  substring test) is not stated.
-- **`metadata.sensitivity` is never enforced, `secrets.set` carries its value in cleartext, and the
-  transport's two host policy hooks fail open with no production implementation** — settled against
-  the code, with the stdio trust model that bounds it, in
-  [kernel-transport.md](../hosts/kernel-transport.md) §6.3. **Recorded**: both hooks now
-  state their own absence — `KernelServerOptions.authorize` and
-  `KernelServerOptions.resolveConnection` each carry a `@remarks` naming what is unrestrained without
-  them, why it is inert (no hosted case for this wire exists in the tree), and each other, since
-  wiring one without the other is the incoherent state. Behaviour is unchanged and building the seam
-  stays the owner's decision.
-- **Whether `keys.json` values are ever redacted on the wire.** `secrets.set`'s params object contains
-  the raw value; the redaction path (`toEnvelope`) applies only to _errors_, not to request params.
-  Whether a request frame is ever logged is a question for [cross-cutting/observability.md](observability.md).
-- **Unpinned rules found while surveying** (each already flagged in §5): the read-only nature of the
-  the write-side TOCTOU residue (10), the bound-before-sanitize ordering (20),
-  the "count, never name" property of the hook log (26), the model-level header extraction (27),
-  `keys.json` file mode (30), the refusal to overwrite a corrupt `keys.json` (32), the agent-file half
-  of workspace trust (36), the empty-array risk value (37), the "unreadable store means unapproved"
-  degradation (39), the realpath trust key (40), the env-only log knobs (45), and the `internal`
-  collapse of a non-`ToolError` throw (46).
+  `packages/tools/src/lib/atomic.ts`. `packages/tools/tests/integration/common/atomic.test.ts`
+  covers atomic failure, not parent replacement.
+- Focused tests are still needed for the rules identified in §5: bound-before-sanitize ordering
+  (20), hook-log count without names (26), model-header extraction
+  (27), `keys.json` mode and corrupt-file refusal (30, 32), empty-array risk value (37), unreadable trust-store degradation (39), realpath trust key
+  (40), env-only log knobs (45), and non-`ToolError` collapse (46). Current source states these
+  rules; adjacent tests do not assert each named edge.

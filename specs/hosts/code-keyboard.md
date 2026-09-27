@@ -502,8 +502,7 @@ and repeats the shared prefix").
 
 A band announces only the keys the keymap really dispatches. Two commands can be *reachable* and
 still disagree about one sequence — the shell's `plan.open` and the Plan page's own close verb both
-claim `Ctrl+X P` — and `getCommandEntries` reports each command independently, so the band used to
-print both and a reader could not tell which effect the sequence had on that screen.
+claim `Ctrl+X P` — and `getCommandEntries` reports each command independently.
 `retainWinningActions` keeps each announced sequence only for the command the keymap's own layer
 graph puts first (`liveSequenceOwners` in `packages/code/src/keys/sequence-owner.ts`, resolving by
 layer precedence: priority descending, then later registration first, and skipping a binding whose
@@ -630,8 +629,8 @@ The guard prevents a held Ctrl+C from cancelling a run and then flowing into qui
 run settles. Escape is deliberately outside the guard: every event is immediately available
 to clear input or navigate one level, including rapid consecutive presses.
 `releaseWindowGesture` clears a matching cancel gesture on key release. The comparison resolves the
-current registered single-stroke `run.cancel` binding, so rebinding transfers repeat protection and
-physical Ctrl+C no longer receives special treatment. Repeat ownership is pinned at
+current registered single-stroke `run.cancel` binding, so repeat protection follows that binding
+even when it is rebound. Repeat ownership is pinned at
 `packages/code/tests/integration/interaction.test.ts`; rapid Escape navigation is
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx`.
 
@@ -920,13 +919,35 @@ no error, loading is **not** true, and an `empty` projection was supplied. A non
 list always renders its scrollbox, independent of an error or loading state coexisting
 above it.
 
+The footer groups the available `transcript.focusPrev` and `transcript.focusNext` actions as
+`[Ctrl+X Up / Ctrl+X Down] previous / next block` before block focus and
+`[↑ / ↓] previous / next block` while block focus is active, using resolved keys before width
+budgeting. The bindings remain independent in dispatch and full Help. One active action keeps its
+individual label; a grouped segment is admitted or omitted as a whole. Production:
+`budgetFooterActions` and `actionSegment` in
+[active-actions.ts](../../packages/code/src/ui/patterns/active-actions.ts). Test:
+[active-actions.test.ts](../../packages/code/tests/unit/active-actions.test.ts), atomic block
+navigation footer segment.
+
+The Ctrl+X prefix uses OpenTUI's timed-leader addon; a prefix alone executes no action. The
+application footer projects reachable complete bindings before the prefix is pressed. While the
+prefix is pending, the navigation band projects its pending parts and live continuations from
+`getActiveKeys`, filtered by surface visibility. Escape and timeout clear the pending prefix.
+Shell interruption uses Ctrl+X then T; Diff uses Ctrl+X then D. Production:
+`createInteraction` in `packages/code/src/keys/interaction.ts`, `projectCommandActions` in
+`packages/code/src/ui/patterns/active-actions.ts` and `usePendingBand` in
+`packages/code/src/ui/patterns/navigation-bar.tsx`. Test:
+`packages/code/tests/integration/interaction.test.ts` and
+`packages/code/tests/integration/navigation-bar-render.test.tsx`.
+
 ## 5. Invariants
 
-**INV-254.** No source file anywhere under `packages/code/src/` contains the obsolete
-navigation-label identifiers `defaultKeyHint`, `PANEL_KEY_LEGEND`, `hintLine(`, or
-`scrollHint(` — navigation labels have no legacy static source of truth left.
-Production: n/a (a negative/absence invariant — the whole `src/` tree is the subject).
-Test: `packages/code/tests/architecture/tui-navigation-boundary.test.ts`.
+**INV-254.** Navigation labels derive from registered command entries and the live layer graph.
+Production: `keymap.getCommandEntries` in `packages/code/src/keys/commands.ts`,
+`retainWinningActions` in `packages/code/src/ui/patterns/active-actions.ts` and
+`NavigationBar` in `packages/code/src/ui/patterns/navigation-bar.tsx`.
+Test: `packages/code/tests/unit/active-actions.test.ts` and
+`packages/code/tests/integration/navigation-bar-render.test.tsx`.
 
 **INV-255.** Every ordinary screen — every source file **except**
 `views/FatalBoot.tsx`, `views/config/KeyboardView.tsx`, and `keys/keyspec.ts` — is free
@@ -1215,90 +1236,6 @@ contract **by shape** without either module importing the other.
 
 ## 8. Open questions
 
-- ~~**`adapters/keys.ts` is a scope/naming mismatch.**~~ **Resolved by renaming the file.** Its
-  content (`KeySource`, `keyOrigin`, `KeysAdapter`, `createKeysAdapter`) is the provider-secret cache
-  used by the Providers panel and touches nothing in `@opentui/keymap`, `keys/**` or `ui/patterns/**`
-  — it was listed under keyboard-and-navigation only because it shared a word. It is now
-  `packages/code/src/adapters/provider-secrets.ts`, with a module comment recording that a "key" there
-  is a credential and never a keystroke, and its unit test moved with it
-  (`packages/code/tests/unit/provider-secrets.test.ts`). It remains out of scope for this document.
-
-- **`keys/command-groups.ts` has no dedicated unit test.** `GROUP_ORDER`, `GROUP_LABEL`,
-  and `isTopLevelCommand` are exercised only transitively through `views/App.tsx` integration tests,
-  outside this document's file set
-  — no `tests/unit/command-groups.test.ts` (or similarly named file) exists anywhere in the
-  package.
-
-- **The "`ui/` may not import `views/`" rule is a comment, not a test assertion for the
-  `ui` layer.** `packages/code/src/ui/patterns/map-editor.tsx` states it in prose; `architecture-boundary.test.ts`'s
-  `ui`-layer check (`packages/code/tests/architecture/architecture-boundary.test.ts`) only forbids
-  `@clarvis/kernel`, `adapters`, and `features` — `views` is checked as a forbidden target
-  only for the **`adapters`** layer (`packages/code/tests/architecture/architecture-boundary.test.ts`), not for `ui`.
-  In the current tree no `ui/**` file actually imports `views/**`, so the stronger claim
-  holds in practice, but nothing would fail the build if it stopped holding. This is an
-  unpinned invariant, distinct from — and narrower coverage than — the four INV-254–257
-  rules this document does own.
-
-- **INV-D7 (gated verb's key absorbed by a same-key no-op binding) has no direct test.**
-  `tests/unit/keyspec.test.ts` exercises `registerLevel` for escape-priority, scroll-vs-nav
-  precedence, and the `verb()` helper itself, but no test constructs a `LevelSpec` with a
-  gated verb and asserts the second no-op binding is present or that pressing the key while
-  disabled does nothing observable.
-
-- **Whether `ui/patterns/index.ts`'s `export *` surface is deliberately narrower than
-  `keys/**`'s is not stated anywhere.** `index.ts` re-exports everything from
-  `level-keys.ts` and `list-navigation.ts` (which themselves re-export several `keyspec.ts`
-  symbols) but does not re-export `active-actions.ts`, `navigation-bar.tsx`, or
-  `bind-level-keys.ts`'s `EditingState` type — each of those is imported directly by its
-  consumers rather than through the barrel (e.g. `view-frame.tsx` imports
-  `active-actions.ts`'s `ActiveAction` type directly rather than via `index.ts`). The code
-  does not say whether this asymmetry is intentional API surface curation or incidental.
-
-- **The exact terminal/SSH compatibility measurements** (which real terminal emulators
-  report Kitty-protocol support, which multiplexers pass modifiers through, etc.) that
-  presumably informed `defaultKeyboardProfile`'s "local Kitty only" default are not present
-  in this subsystem's code or tests — delegated, per the document's own instruction, to
-  [cross-cutting/build-and-ci.md](../cross-cutting/build-and-ci.md).
-
-- **What `views/config/field-editor.tsx`'s `FieldEditor` and `create-view-host.ts`'s
-  `ViewHost` construction actually do** (beyond satisfying `MapFieldEditor` and
-  `ViewHost`'s structural shapes) is out of this document's scope; only the shapes those
-  modules must satisfy to compose with `ui/patterns/**` are covered here.
-
-
-The footer groups the available `transcript.focusPrev` and `transcript.focusNext` actions as
-`[Ctrl+X Up / Ctrl+X Down] previous / next block` before block focus and
-`[↑ / ↓] previous / next block` while block focus is active, using their resolved keys before
-width budgeting. Both
-bindings remain independent in dispatch and full Help. If only one action is active, it retains its
-individual label. A grouped segment is admitted or omitted as a whole.
-Production: `budgetFooterActions` and `actionSegment` in
-[active-actions.ts](../../packages/code/src/ui/patterns/active-actions.ts).
-Test: [active-actions.test.ts](../../packages/code/tests/unit/active-actions.test.ts), atomic block
-navigation footer segment.
-
-
-The Ctrl+X prefix is registered with OpenTUI's timed-leader addon and bindings use its
-leader token rather than interpreting a simultaneous Ctrl+X+letter chord. A prefix alone
-executes no action. The application footer projects reachable complete command bindings,
-so actions remain discoverable before the prefix is pressed. While the keymap reports the prefix
-pending, the **navigation band** takes over: it names the sequence the user actually holds — from
-the pending parts, so a custom leader is not reported as Ctrl+X — and lists the keys the keymap
-reports live while it is held (`getActiveKeys`), which are that prefix's continuations plus any
-action still dispatchable in the same state, filtered by the surface's own visibility rules and
-transformed by its local wording. It shows the continuation key each one adds after the prefix, so
-`Ctrl+X active ▸ [K] expand · [M] memory` reads as one sequence and its options. The indicator
-appears once, on the surface that owns the projection, and the normal discovery rows return when the
-prefix clears. Escape and timeout clear
-the pending prefix; when a surface offers no continuation of its own, its ordinary rows stay and no
-prefix is claimed. Shell interruption uses Ctrl+X then T; Diff uses Ctrl+X then D.
-Production: `packages/code/src/keys/interaction.ts` (`createInteraction`,
-`DEFAULT_BINDING_CANDIDATES`), `packages/code/src/views/ElicitBlock.tsx` (`ElicitBlock`),
-`packages/code/src/ui/patterns/active-actions.ts` (`projectCommandActions`),
-`packages/code/src/ui/patterns/navigation-bar.tsx` (`NavigationBar`, `usePendingBand`) and
-`packages/code/src/keys/keyspec.ts` (`compactSequence`).
-Test: `packages/code/tests/integration/interaction.test.ts` ("leader picker sequences
-dispatch while Tab retains focus navigation", "Ctrl+X T interrupts the focused shell
-when that command is enabled"), `packages/code/tests/integration/navigation-bar-render.test.tsx`
-and `packages/code/tests/integration/app-shell-render.test.tsx`
-(picker open/close, editor sequences, and the pending band's continuations).
+- The stated rule that `ui/**` must not import `views/**` is not asserted by the `ui` architecture boundary test. Current imports satisfy it, but a new reverse import would not fail that check.
+- No direct test constructs a gated `LevelSpec` verb and asserts that its key is absorbed by the disabled no-op binding (INV-D7).
+- Physical-terminal and SSH modifier compatibility measurements are not established by the source or keymap tests. Qualification requires the selected terminal and multiplexer.

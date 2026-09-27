@@ -16,18 +16,12 @@ internal or external (`packages/paths/package.json` lists no `dependencies` key 
 external"), so every other package in the graph can depend on it without gaining an edge to
 anything else (`packages/paths/src/index.ts`).
 
-The problem it solves is stated directly in its own module doc: "Every other package reaches
-`.clarvis` and `.agents` through this module and never spells either literal itself. That is what
-keeps the naming conventions … from drifting apart across eight packages, which is how a sweeper
-came to look for files no writer ever produced." (`packages/paths/src/index.ts`). A second,
-narrower problem is durability: the atomic-write family "replaces seven hand-rolled tmp-and-rename
-copies that had already diverged on the property that matters — one of them raced two processes
-onto a single temp name" (`packages/paths/src/index.ts`; see also
-`packages/paths/src/atomic.ts`, whose temporary-name contract prevents two writers from colliding on one path. A third,
-narrower reason covers the **resolve** family (`expandHome`, `resolveAgainst`,
-`resolveWorkspaceDir`, §2.11): those three functions "were forked verbatim between the engine and
-an optional feature package that is structurally forbidden from importing it," so this
-dependency-free leaf is the only place both could share them (`packages/paths/src/index.ts`).
+Every other package reaches `.clarvis` and `.agents` through this package, keeping builders and
+recognizers under one owner (`packages/paths/src/index.ts`). The atomic-write family prevents
+writers from colliding on one temporary path and provides durable publication where required
+(`packages/paths/src/atomic.ts`). The resolve family (`expandHome`, `resolveAgainst`,
+`resolveWorkspaceDir`, §2.11) is shared by the engine and optional feature packages without an
+import between them.
 
 The package draws one structural line through everything it builds: a workspace's `<ws>/.clarvis`
 tree holds only what a human authors or reads, and every byte of generated machinery — prompt history, the memory wiki's journal, plan lockfiles — lives instead
@@ -198,10 +192,9 @@ builder tests do not qualify native IPC behavior.
 
 `agentsWorkspaceDir(root?)` returns the complete `<ws>/.agents` control root.
 
-Interface doc: "Machinery is deliberately **absent from this type**… The keys are removed rather
-than deprecated so that writing generated bookkeeping into someone's working tree is a compile
-error rather than a convention." (`packages/paths/src/workspace.ts`). The one residue kept is transient: an
-atomic write's temp file must be a sibling of its target inside the same filesystem
+Workspace path types exclude generated machinery, so a caller cannot write that bookkeeping into
+the working tree through this interface (`packages/paths/src/workspace.ts`). An atomic write's temp
+file must be a sibling of its target inside the same filesystem
 (`packages/paths/src/workspace.ts`).
 
 Supporting `.agents` functions (`packages/paths/src/workspace.ts`):
@@ -241,8 +234,8 @@ record (`packages/paths/src/workspace-state.ts`) rooted at `<global>/state/works
 host-selected roots when a process boundary carries only data. It resolves every field and the
 owner/spill builder methods under that exact state root; the caller owns the association between
 the workspace and state roots. Production: `workspaceStatePathsFromRoot` in
-`packages/paths/src/workspace-state.ts` and `runFilesystemWorker` in
-`packages/tools/src/core.ts`. Test: `rebuilds all state paths and builders from the
+`packages/paths/src/workspace-state.ts` and `resolvedConfig` in
+`packages/tools/src/execution/worker.ts`. Test: `rebuilds all state paths and builders from the
 host-selected root` in `packages/paths/tests/integration/workspace-state.test.ts`.
 
 The `isSpillFile(name)` predicate is paired with `toolOutputSpill(token)` in `packages/paths/src/workspace-state.ts`. Command sessions have no persisted path builder.
@@ -302,8 +295,8 @@ removal on their own, and an allocation with no readable record is never a candi
 evidence the allocating process wrote rather than a statement the pass can authenticate, so the pass
 assumes same-account cooperation and reclaims nothing that could still be someone's.
 `sweepGlobalStateArtifacts` runs that pass unless the caller passes `temporaryRoots: false`
-(`packages/paths/src/housekeeping.ts`), and still reclaims stale empty legacy run containers, whose
-producer no longer exists, under the same content rule.
+(`packages/paths/src/housekeeping.ts`); it also reclaims stale empty run containers under the same
+content rule.
 
 `ancestorTrust(path)` (`packages/paths/src/short-temporaries.ts`) is the single implementation of the
 private-state ancestor policy: every ancestor from the parent upward must be a real directory, never a
@@ -436,9 +429,8 @@ imports or calls `announceOnce`.
 
 ### 2.16 Settings / model-facing surface
 
-`@clarvis/paths` has **no** zod schemas, no settings block, no model-facing tool, and no CLI —
-confirmed by the absence of `zod` from its dependencies (`package.json`, section 2 above) and by
-`grep`, and consistent with its role as a pure leaf of path-building functions.
+`@clarvis/paths` exposes path and filesystem functions, without a settings block or model-facing
+tool (`packages/paths/src/index.ts`; `packages/paths/package.json`).
 
 ## 3. Data and formats
 
@@ -446,7 +438,7 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 
 `<ws>/.clarvis` top level, exhaustively enumerated by the allow-list a kernel test drives every
 real writer against: `.gitignore`, `settings.json`, `agents`, `workflows`,
-`extension-profiles`, `plans`, `memory`, `owners`, `worktrees`
+`extension-profiles`, `shared-agent.md`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts`):
@@ -474,7 +466,7 @@ operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `e
 (`sessions/`, `traces/`, `workflows/` [records], `extension-profile.json`, `code.json`, private remote-MCP OAuth credentials)
 and `cache/` (`models-dev.json`, `update-check.json`). The product-owned documentation skill remains
 under `<global>/skills/.system/`; externally authored skills are read only from `.agents/skills`.
-Existing `.clarvis/skills` and `.clarvis/plugins` trees are neither scanned nor migrated. Production:
+Production:
 `clarvisSkillRoots` in `packages/skills/src/preset.ts`, `listInstalledPlugins` in
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts`, and `configurationPathClass` in
 `packages/paths/src/configuration.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`,
@@ -510,9 +502,8 @@ catalog without writing into the workspace").
 ### 3.4 Owner-id and segment encoding
 
 - `ownerFromWorkspace(dir, fallback = "clarvis")` (`packages/paths/src/roots.ts`): `ws_<sha256hex>` of the
-  resolved absolute path (or `fallback` if resolution is somehow empty). Chosen over a
-  separator-to-underscore slug because that "was lossy: `/a/b` and `/a_b` both became `_a_b`,
-  silently merging their state" (`packages/paths/src/roots.ts`).
+  resolved absolute path (or `fallback` if resolution is somehow empty). The full resolved path
+  participates in the hash, preserving distinct workspace identities.
 - `ownerSegment(value)` (`packages/paths/src/roots.ts`): percent-encodes `value` via a `encodeSegment`
   extension of `encodeURIComponent` that additionally escapes `. ! ~ * ' ()` so a segment can
   never literally be `.` or `..` (`packages/paths/src/roots.ts`). If the encoded form exceeds
@@ -567,9 +558,7 @@ the error code before giving up.
 (dir))`; reject with a thrown `Error` if the relative path is empty, `..`, starts with `../`, or
 is itself absolute (`packages/paths/src/ensure.ts`) — i.e. `dir` must be strictly inside `<ws>/.clarvis`.
 Then call `ensureWorkspaceDir(root)` (guaranteeing the `.gitignore` exists first) before
-`mkdirSync`ing the target. The doc frames this as fixing a reappearing instance of the same bug:
-"Both used to `mkdir` their own root, which meant the workspace `.gitignore` was seeded only if
-some *other* writer happened to run first" (`packages/paths/src/ensure.ts`).
+`mkdirSync`ing the target (`packages/paths/src/ensure.ts`).
 
 ### 4.2 Atomic write (`writeStaged`, `packages/paths/src/atomic.ts`)
 
@@ -851,8 +840,8 @@ collide on a name. Test: `packages/paths/tests/contract/physical/atomic.test.ts`
 **INV-007.** The temp file name embeds the current process's pid, so an orphaned temp file is
 attributable to the process that created it. Test: `packages/paths/tests/contract/physical/atomic.test.ts`.
 
-**INV-008.** `isTmpFile` recognises exactly the names `tmpPathFor` produces and no other pattern
-(neither the bare target name nor legacy `*.tmp`/`*.tmp-<pid>` suffixes). Production:
+**INV-008.** `isTmpFile` recognises names with the `TMP_PREFIX` prefix used by `tmpPathFor`,
+without treating a bare target name as a temporary file. Production:
 `packages/paths/src/atomic.ts`. Test: `packages/paths/tests/contract/physical/atomic.test.ts`.
 
 **INV-009.** `writeFileAtomic` replacing an existing file leaves no orphaned temp file behind and
@@ -894,7 +883,7 @@ evidence the owner is dead. Test: `packages/paths/tests/contract/physical/local-
 **INV-192.** Driving every writer that touches a workspace (plan repository listing, two memory
 batch writes, `markIndexed`) leaves `<ws>/.clarvis`'s top level containing only entries from the
 fixed allowed set (`.gitignore`, `settings.json`, `agents`, `workflows`,
-`plans`, `memory`, `owners`, `worktrees`), and every file found under the workspace root is
+`extension-profiles`, `shared-agent.md`, `plans`, `memory`, `owners`, `worktrees`), and every file found under the workspace root is
 inside `.clarvis/`. Test:
 `packages/kernel/tests/architecture/workspace-surface.test.ts`.
 
@@ -980,8 +969,7 @@ says so, and names the phase").
 
 **Depends on nothing.** `@clarvis/paths` has zero dependencies, internal or external
 (`package.json`; `packages/paths/src/index.ts`; `packages/paths/src/diag.ts` states this is enforced by
-`tooling/checks/package-graph.ts`, a build/tooling script outside this package's own `src`/`tests`
-that this document's scope does not include verifying directly — see §8).
+`tooling/checks/package-graph.ts`).
 
 **Depended on by every package that touches a workspace or global root.** This is enforced
 structurally rather than by any single test in this document's scope: `WorkspacePaths`,
@@ -1014,28 +1002,6 @@ root — a **runtime** (environment-variable) coupling, not an import.
 
 ## 8. Open questions
 
-- **Whether any test exercises the `PENDING` exception list becoming non-empty** (i.e. what
-  happens when a deliberate, reviewed exception is actually added) is not observable from an
-  always-empty list; the mechanism is present (`packages/paths/tests/architecture/invariant.test.ts`) but its behavior with
-  a populated list is untested by construction.
-- **The exact recovery/quarantine race outcome when a filesystem's `link()` does not behave
-  POSIX-atomically** (a filesystem-specific assumption `tryPublish` depends on for its "canonical
-  path appears in one step" guarantee, `packages/paths/src/local-lease.ts`) is asserted by comment, not
-  measured against a real non-POSIX-compliant filesystem in any test in this document's scope.
-- **Worktree launch semantics** are explicitly out of scope here and belong to the
-  [launch-worktrees](../capabilities/worktrees.md) document; this package owns only the canonical
-  checkout path.
-- **The TOCTOU threat model for classified configuration writes** is owned by
-  [security](../cross-cutting/security.md). `ensureWorkspaceSubdir` in
-  `packages/paths/src/ensure.ts` has its own confinement contract; this document does not claim
-  that pathname checks close concurrent parent replacement. Ordinary model file tools follow their
-  selected environment policy, with `workspaceRoot` as a relative base.
-
-- **`memory`'s and `trace`'s own on-disk layouts** beneath the roots this package hands them
-  (`memoryMachineryRoot`, `tracesDir`, etc.) are delegated to [memory-wiki-store](../capabilities/memory-store.md) and
-  [trace-recording-and-persistence](trace.md) respectively, per this document's scope statement, and are not
-  described here beyond the single directory path each root resolves to.
-
-The shared `configurationTarget` locator classifies already resolved targets against the configuration roots, including absent leaves and root/sibling distinctions. It grants no permission and does not replace caller-owned link/confinement checks.
-Production: `configurationTarget` in [configuration.ts](../../packages/paths/src/configuration.ts).
-Test: resolved targets, private paths and sibling-prefix rejection in [configuration.test.ts](../../packages/paths/tests/unit/configuration.test.ts).
+- The local lease assumes POSIX-atomic `link()` publication
+  (`tryPublish` in `packages/paths/src/local-lease.ts`). The recovery/quarantine race on a
+  filesystem that violates that assumption has no native test evidence.

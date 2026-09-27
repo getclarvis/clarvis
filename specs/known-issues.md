@@ -1,14 +1,14 @@
 # Known issues
 
 What was **measured**, what was **ruled out**, and what was **tried and reverted**. `AGENTS.md`
-carries the short form of each entry; this file carries the evidence.
+directs contributors here before changing a workaround; this file carries the evidence.
 
 It sits beside the contract corpus indexed by [`specs/README.md`](README.md) rather than inside it,
 and the distinction is load-bearing. That corpus specifies what Clarvis must do and cites the stable
 files, symbols, and tests that implement it; it cannot say what a CI run measured, what an RSS soak showed, or what was
 attempted and abandoned. `specs/cross-cutting/build-and-ci.md`
-§8 says so explicitly about the Bun crash below: it documents the retry state machine and reports the
-rate as unknown to it. This file is where that kind of evidence lives, and its whole purpose is to
+§8 says so explicitly about the Bun crash below: the current canary still needs run evidence,
+while the historical rate is recorded here. This file is where that kind of evidence lives, and its whole purpose is to
 stop someone re-diagnosing what has already been diagnosed.
 
 Entries carry their own verification or resolution evidence without embedding calendar dates.
@@ -49,7 +49,7 @@ A host with no usable temporary parent reports `smoke_fixture_no_usable_parent`;
 
 Carried from the gap report's §1.1 and closed during the same audit. They are kept because the
 diagnosis is the expensive part and each cost a real hunt; most fixes were small but non-obvious.
-Each is also recorded in its owning spec's §8.
+Their current contracts remain in the owning specs without incident chronology.
 
 **A `run_ended` event carrying `code` could not cross the kernel wire, and took the connection with
 it.** The protocol declares `code?: string` on `run_ended` (`packages/protocol/src/runs.ts`)
@@ -176,7 +176,7 @@ approval wait times out`).
 
 **Resolved.** The manager/Admiral no longer contributes the workflow ledger as its
 `outputBudget`; it remains on the primary run budget. The dedicated workflow-child ledger now
-defaults to 640,000,000 output tokens (four times the primary-run default) and
+defaults to 8,589,934,592 output tokens, configured by `WORKFLOWS_DEFAULTS.budget_tokens`, and
 divides headroom across concurrent auxiliary consumers with no extra manager share. The provider adapter still
 safely reserves every retry attempt, but a manager call can
 no longer make workflow-child headroom transiently read as zero.
@@ -185,7 +185,7 @@ no longer make workflow-child headroom transiently read as zero.
 in-process children of the manager. For a provider model without an explicit output cap, the first
 child's first call reserved every remaining token; siblings then failed their pre-loop budget check
 with zero iterations. If that call's stream outcome was unknown at cancellation, conservative
-settlement could persist the complete 640,000,000-token reservation as apparent spend. Each child
+settlement could persist the complete historical 640,000,000-token reservation as apparent spend. Each child
 now receives a lazy per-call fair-share wrapper: attachment and pre-loop reads reserve nothing, and
 unused headroom returns when that provider call settles. The divisor covers both possible leaders
 and direct manager subagents. A leader's held subtree is partitioned again across its entry agent and
@@ -257,9 +257,8 @@ overlay is flat, so neither the harness nor the renderer's own frame loop is res
 
 ### Remeasurement during the performance review
 
-The review now specified in
-[`hosts/code-performance.md`](hosts/code-performance.md#81-measurement-snapshot) drove the
-current built artifact in a real 120x32 PTY on Bun 1.4.0. A 100-cycle Context Help open/close churn
+The performance review drove the then-current built artifact in a real 120x32 PTY on Bun 1.4.0.
+A 100-cycle Context Help open/close churn
 moved process RSS from 173,328 KiB to 253,872 KiB before explicit collection; a following 100-cycle
 agent-picker churn moved it from 241,488 KiB to 305,692 KiB. Those are immediate post-churn samples,
 not leak rates, because heap/external allocations had not all been collected.
@@ -276,9 +275,9 @@ The expanded audit also tested the non-`FloatFrame` autocomplete popup while hol
 draft so the conditional Splash could not churn. Across 100 screen-verified `@` popup cycles, RSS
 moved from 195,552 to 239,656 KiB and private dirty from 142,544 to 186,456 KiB immediately after
 churn; a later sample without explicit GC had fallen to 202,192 KiB RSS and 148,992 KiB private
-dirty. This is a **candidate**, not a confirmed leak rate: it still needs the forced-GC popup and
-no-popup input-mutation controls specified in
-[`hosts/code-performance.md`](hosts/code-performance.md#84-overlay-leak-implementation-and-correction-plan).
+dirty. This is a **candidate**, not a confirmed leak rate: it still needs forced-GC popup and
+no-popup input-mutation controls. Current qualification gaps are in
+[`hosts/code-performance.md`](hosts/code-performance.md#8-open-questions).
 It is recorded because autocomplete does not use `FloatFrame`, so a complete remediation cannot
 assume the known float-card cause is the only renderer lifecycle at risk.
 
@@ -1346,6 +1345,15 @@ input both had a 182 ms median, while complete header and input hydration had a 
 nine-plugin real launch reached the focused composer at 264 ms and complete hydration at 1,110 ms.
 These samples are not mutually comparable; they establish which stage remains expensive, not a
 cross-machine absolute baseline.
+
+Additional historical batches separated the stages. A five-repeat AC-powered, 16-core source,
+direct-bundle and launcher run measured roughly 1,131 ms median first paint. With three configured
+subscriptions, header paint took 725–728 ms and a usable conversation took 1,265–1,356 ms. A later
+seven-sample macOS batch under OpenTUI 0.5.9 measured a 157 ms median focused composer and 639 ms
+median complete application paint at load/core 0.172; its smoke outer time was 819 ms versus a
+679 ms diagnostic complete paint. Earlier batches with AC or power state not established measured
+roughly 750, 749 and 686 ms complete paint. These are environment-scoped observations, not a
+single startup target or proof of provider readiness.
 
 The repository-owned multiplicative waits were separately reproduced and corrected. Repeated plugin
 parsing/hashing had made the same nine-plugin Extension Profile take about 32.9 seconds; pinned projections

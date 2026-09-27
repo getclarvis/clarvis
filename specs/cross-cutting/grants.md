@@ -13,8 +13,8 @@ subagents inherit the same host authority. Production: `createAgentToolset` in
 
 > Implemented at `packages/capability/src`, `packages/loop/src/validation` and
 > `packages/loop/src/runtime`, `packages/kernel/src/config/builtin-agents`, plus the capability
-> packages that contribute their own grants (`skills`, `workflows`, `tasks`). Every
-> claim below is anchored to a file and a named symbol or test. Open questions are collected in the final section.
+> packages that contribute their own grants (`skills`, `workflows`). Every
+> claim below is anchored to a file and a named symbol or test.
 
 ## 1. Purpose
 
@@ -25,7 +25,7 @@ everything else is contributed at boot by whichever capability package wants a
 grant to exist, before any request is validated
 (`packages/capability/src/contract.ts`, `packages/capability/src/registry.ts`).
 This is the seam that lets `@clarvis/loop` stay ignorant of `use_skills`,
-`workflow` or the seven `tasks.*` grants while still refusing a
+`workflow` while still refusing a
 profile that names an undeclared one
 (`packages/loop/src/validation/request/grant-registry.ts`).
 
@@ -34,7 +34,7 @@ The problem this subsystem solves is: given one `AgentProfile` (a model, a
 built-in), decide (a) which of `@clarvis/tools`' coding tools this agent's
 toolset actually contains, (b) whether this agent can spawn children at all,
 and (c) whether each optional capability (skills, ask-user,
-workflows, tasks) contributes its own tools to this particular agent. The
+workflows) contributes its own tools to this particular agent. The
 grant string is the single input to all three decisions, and each decision is
 made independently, by a different piece of code, at a different point in the
 run's lifecycle (request validation, run-shape derivation, and per-agent
@@ -85,7 +85,7 @@ Only `workflow` sets `entryCanSpawn: true`
 `workflow`-granted entry agent get a supervision registry even with an empty
 `can_spawn` (§4.3). Deep semantics of each capability's own tools (`load_skill`,
 `run_leader` and its
-siblings, the ten `tasks.*` tools) belong to that capability's own document —
+siblings) belong to that capability's own document —
 this document covers only the grant string that gates them.
 
 ### 2.4 Coding-toolset ceiling: env var and the grant→capability mapping
@@ -285,8 +285,8 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
      otherwise-full (`canMutate: true`) definition list
      (`packages/loop/src/runtime/tools/builtin/toolset.ts`).
    - Net effect per ceiling tier: `read` → the 3 read-only tools only; `edit` →
-     read-only + the 9 members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`
-     or `shell_session`; `exec` → all 20.
+     read-only + the 4 members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`
+     or `shell_session`; `exec` → all 9.
 4. `dispatch(name, …)` on the built toolset rejects any call whose `name` is
    not in the filtered `names` set with `{ isError: true, text: "Tool '<name>'
    is not available to this agent." }`
@@ -323,7 +323,7 @@ when this registry was created (`agents !== undefined`)
 kind is checked a second time at that point
 (`packages/loop/src/runtime/capabilities/agents.ts`). So the grant (or
 `can_spawn`) decides only whether the registry — and with it the capability —
-exists at all for this run; once it exists, every entry agent gets all five
+exists at all for this run; once it exists, every entry agent gets all four
 tools unconditionally, with no way for a profile author to grant spawning
 without also granting supervision visibility, or vice versa.
 
@@ -517,7 +517,7 @@ except for this one filtered field — carried `workflow`.
   `activationForScope`/`capabilitiesForScope` all live there
   (`packages/capability/src/api.ts`, `packages/capability/src/contract.ts`,
   `packages/capability/src/registry.ts`, `packages/capability/src/compose.ts`), and every consumer (`loop`, `skills`,
-  `workflows`, `tasks`) imports the type from it rather than
+  `workflows`) imports the type from it rather than
   redeclaring it — a static, compile-time edge.
 - **`@clarvis/loop`'s `grant-registry.ts` is the only place `BUILTIN_GRANT_NAMES`
   is combined with a host's `CapabilityRegistry.grants()`.** This forces every
@@ -571,8 +571,8 @@ except for this one filtered field — carried `workflow`.
   (`packages/loop/src/validation/request/profile-schemas.ts`), which is
   itself just `BUILTIN_GRANT_NAMES` — a "static UI discovery aid" per that
   schema's own remark, not the set of grants `requireKnownGrants` (§4.1) or
-  `ConfigService.knownGrants()` (below) actually accepts on a real run. A
-  unknown grants through `grantBadges`' raw-id fallback; see `code-domain-hubs.md` invariant 17.
+  `ConfigService.knownGrants()` (below) actually accepts on a real run. The editor preserves
+  unknown grants and `grantBadges` renders their raw IDs; see `code-domain-hubs.md` invariant 17.
 - **`@clarvis/kernel`'s own `ConfigService.knownGrants()` independently
   re-derives the same union** `executeRun` validates against, for UI-facing
   discovery: `[...BUILTIN_GRANT_NAMES, ...mergedRegistry.grants().map(g =>
@@ -586,23 +586,3 @@ except for this one filtered field — carried `workflow`.
   it is runnable and must not be reported otherwise." (same citation) — a
   fourth, independent re-derivation of the grant union beside `executeRun`'s
   own (§4.1) and `runOrchestrator`'s (§4.3).
-
-## 8. Open questions
-
-- **The exact runtime code path that computes `LeaderProfileInfo[]` inside
-  `AgentWorkflowPolicy.leaderProfiles()`** (`packages/kernel/src/application/workflow-policy.ts`)
-  — i.e., which profiles are eligible to be launched as a leader, and whether
-  that set is related to `can_spawn`, `admiral`'s own grants, or something
-  else entirely — was not traced beyond confirming it is a separate,
-  kernel-owned list (§4.6). Left to whichever sibling document owns
-  `@clarvis/workflows`'/`@clarvis/kernel`'s workflow service.
-- **Whether any request-time (not just runtime) cross-check exists tying
-  `CLARVIS_AGENT_TOOLS_MAX_GRANT` to a profile's declared grants** — none is
-  specified (§4.1, point 4); the absence itself is the finding, not an
-  unexamined gap.
-- **`INV-182`-style grant-based workflow routing** ("a run whose entry profile
-  lacks the `workflow` grant is never routed through `WorkflowsService`") is
-  covered by `packages/kernel/tests/integration/workflows-service.test.ts`;
-  this document does not re-verify that kernel-side routing test, since the
-  `WorkflowsService` itself belongs to a workflows/kernel sibling document — it is
-  noted here only because it is a grant-gated routing decision.

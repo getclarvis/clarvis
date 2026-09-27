@@ -97,10 +97,10 @@ Source ownership:
 | --- | --- |
 | `index.ts` | Barrel: `export type *` from the modules below |
 | `common.ts` | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe` |
-| `runs.ts` | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (39-value discriminated union), messages, usage, Extension Profile identity, guard/memory/plans modes, elicitation types |
+| `runs.ts` | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (closed discriminated union), messages, usage, Extension Profile identity, guard/memory/plans modes, elicitation types |
 | `hosting.ts` | Hosted-run identity, snapshot pages, handoff receipts, control epochs, attachments and the `HostingService` interface |
 | `goals.ts` | Persistent goal state, criteria, usage, operation receipts and authenticated user-control DTOs and `GoalService` contract |
-| `local-host.ts` | Optional local operator process state, bounded browser handoff DTOs and explicit runtime retry/restart controls |
+| `local-host.ts` | Optional local operator process state, bounded browser handoff DTOs and explicit restart/shutdown controls |
 | `config.ts` | `ConfigService`, settings and trust DTOs, repair plans, agent documents and context documents |
 | `plugins.ts` | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs |
 | `extension-profiles.ts` | `ExtensionProfileService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
@@ -167,7 +167,7 @@ generation is present in the handshake. Ordinary in-process/stdio composition do
 It is advertised only to an authenticated local operator. `LocalHostStatus` carries runtime state,
 sequenced notices and restart state; `LocalHostBrowserRequest` carries a claimed URL with an id and
 expiry. The service uses the same kernel operation catalog and never serializes application callbacks
-or provider credentials. Runtime retry and restart remain explicit operations.
+or provider credentials. Restart and shutdown remain explicit operations.
 `requestShutdown` is a separate operator-only action for an explicitly confirmed replacement: it
 stops new admission and retires the old generation after cancelling and draining hosted work.
 
@@ -206,6 +206,7 @@ optional hosted-run ownership and a close method:
 | `workspace` | `WorkspaceRef` | `KernelClient.workspace` |
 | `runs` | `RunService` | `KernelClient.runs` |
 | `hosting?` | `HostingService` | `KernelClient.hosting`; requires the advertised host generation |
+| `localHost?` | `LocalHostService` | `KernelClient.localHost`; requires authenticated local process controls |
 | `config` | `ConfigService` | `KernelClient.config` |
 | `plugins` | `PluginService` | `KernelClient.plugins` |
 | `extensionProfiles` | `ExtensionProfileService` | `KernelClient.extensionProfiles` |
@@ -216,6 +217,7 @@ optional hosted-run ownership and a close method:
 | `changes` | `WorkspaceChangesService` | `KernelClient.changes` |
 | `memory` | `MemoryService` | `KernelClient.memory` |
 | `plans` | `PlansService` | `KernelClient.plans` |
+| `goals` | `GoalService` | `KernelClient.goals`; availability is reported separately |
 | `workflows` | `WorkflowsService` | `KernelClient.workflows` |
 | `skills` | `SkillsService` | `KernelClient.skills` |
 | `sessions` | `SessionService` | `KernelClient.sessions` |
@@ -223,7 +225,8 @@ optional hosted-run ownership and a close method:
 | `close(): Promise<void>` | method | `KernelClient.close` |
 
 `KernelCapabilities` has the three booleans `memory`, `skills`, and `agent_tools`, plus the
-optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
+optional `goals`, `local_host`, host-reported `runtime`, and `hosting` (including its generation and
+optional default owner). Native placement reports `kind`,
 `host_platform` and lifecycle.
 The runtime projection is informational, not a client-controlled launch input. Public compatibility remains the concrete
 transport's `CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
@@ -264,6 +267,7 @@ Every signature below is the one declared in its file.
 | `cancel` | `() => Promise<void>` | `RunHandle.cancel` |
 | `interruptTool` | `(toolExecutionId: string) => Promise<ToolInterruptReceipt>` | `RunHandle.interruptTool`; interrupts one live builtin `shell` without cancelling the run |
 | `respond` | `(response: ElicitationResponse) => Promise<void>` | `RunHandle.respond` |
+| `present?` | `(presentation: ElicitationPresentation) => Promise<ElicitationPresentationAck>` | `RunHandle.present`; confirms a pending question is visible |
 | `onElicit` | `(handler: (req: ElicitationRequest) => void) => void \| (() => void)` | `RunHandle.onElicit`; managed handles return unsubscribe |
 | `onElicitSettled?` | `(handler: (id: string) => void) => () => void` | `RunHandle.onElicitSettled`; answered or expired questions |
 | `done` | `readonly Promise<RunResult>` | `RunHandle.done` |
@@ -410,9 +414,8 @@ The kernel adapter contract is [workspace-changes.md](workspace-changes.md).
 | `jobs` | `(filter?: MemoryJobFilter) => Promise<{ jobs: MemoryJob[]; counts }>` | `packages/protocol/src/memory.ts` |
 | `retryJob` | `(runId: string) => Promise<MemoryJob \| null>` | `packages/protocol/src/memory.ts` |
 
-Deliberately narrow: the doc comment says browsing/reading/searching/editing/revision history "left
-with the memory browser they existed to draw — the wiki is markdown on disk, and the only thing that
-writes it is the agent" (`packages/protocol/src/memory.ts`). Methods reject with `capability_disabled` when memory is
+The service exposes operational health and job controls; the wiki is markdown on disk and agent
+tools own its content. Methods reject with `capability_disabled` when memory is
 not configured (`packages/protocol/src/memory.ts`).
 
 #### `PlansService` (`packages/protocol/src/plans.ts`)
@@ -440,7 +443,7 @@ No `start` method: the `WorkflowsService` doc comment states that a workflow is 
 carries the `workflow` grant. This service adds only the tree structure (the edges plus a rollup)
 over runs that are individually reachable through `RunService.get`.
 `WorkflowDetail.sequence` optionally adds the latest durable Admiral-controlled round checkpoint;
-absence means a legacy record or a workflow that used no controlled round sequence.
+absence means the workflow has no such checkpoint.
 
 #### `SkillsService` (`packages/protocol/src/skills.ts`)
 
@@ -545,12 +548,13 @@ authority and epoch-fencing invariants share that hosted-run contract.
 `ResolveHostedRecoveryParams` requires an old execution generation, observed revision and explicit
 physical-closure confirmation. The operator-only `HostingService.resolveRecovery` returns a
 physically closed reference with `HostedRecoveryResolution`, without manufacturing an outcome.
-The canonical session turn retains the resolution after discovery acknowledgement and archives the
-conversation against further inference. Production: [hosting.ts](../../packages/protocol/src/hosting.ts)
+The canonical session turn retains the resolution after discovery acknowledgement. An `archive`
+disposition closes the conversation to later inference; `continue` permits a successor without
+replaying uncertain effects. Production: [hosting.ts](../../packages/protocol/src/hosting.ts)
 and [sessions.ts](../../packages/protocol/src/sessions.ts). The commit ordering, authority and tests
 are owned by [explicit operator recovery](hosted-runs.md#explicit-operator-recovery).
 
-### 3.3 `RunEvent` — the 39-variant discriminated union
+### 3.3 `RunEvent` — the closed discriminated union
 
 Successful run endings may carry finalization disposition; it does not replace execution status
 or confer goal-continuation authority. Clients must distinguish `checkpoint` from ordinary final
@@ -572,8 +576,8 @@ distinguishing fields:
 | `tool_call_started` | `call_id`, `tool`, `server`, `arguments?`, `control?` | `packages/protocol/src/runs.ts`; `control` is present only while the invocation is interruptible |
 | `tool_call` | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `interruption?` | `packages/protocol/src/runs.ts`; `interruption` implies `ok: false` and is operator-only |
 | `tool_output_delta` | `call_id`, `chunk` | `packages/protocol/src/runs.ts` |
-
 | `tool_call_announced` | `call_id`, `tool`, non-negative `iteration`, positive `attempt`; no arguments | `RunEvent` in `packages/protocol/src/runs.ts` |
+| `tool_control_released` | `call_id`, `tool_execution_id` | `RunEvent` in `packages/protocol/src/runs.ts` |
 | `tool_input_delta` | `call_id`, `tool`, `chars`, `stream_chars?`, `complete?: true` | `packages/protocol/src/runs.ts` (`RunEvent`) |
 | `reasoning` | `iteration`, `text` | `packages/protocol/src/runs.ts` |
 | `text_delta` | `iteration`, `channel: "text" \| "reasoning"`, `text`, `reset` | `packages/protocol/src/runs.ts` |
@@ -612,8 +616,8 @@ The `RunEvent` union in `packages/protocol/src/runs.ts` is the authoritative
 catalog. The delegation completed/failed pair shares one object shape.
 
 Durability is not inferable from the union alone. The kernel's exhaustive `RUN_EVENT_POLICY`, checked
-with `satisfies Record<RunEvent["type"], RunEventPolicy>`, currently marks 15 values live-only:
-`tool_output_delta`, `tool_input_delta`, `text_delta`, `workflow_title_updated`,
+with `satisfies Record<RunEvent["type"], RunEventPolicy>`, marks these values live-only:
+`tool_output_delta`, `tool_control_released`, `tool_input_delta`, `text_delta`, `workflow_title_updated`,
 `workflow_sequence_state`, `workflow_run_progress`, all five plan events, `compaction_started`, `memory_ingest`,
 `capability_event`, and `events_dropped` (`packages/kernel/src/runs/event-policy.ts`). Every
 other value is persisted. This agrees with the protocol comments that call deltas streamed-only
@@ -644,15 +648,15 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `prompt_cache_ttl?` | `"5m" \| "1h"` | forwarded only when provided (`packages/protocol/src/runs.ts`) |
 | `memory?` | `MemoryMode` | `"on" \| "off"` (`packages/protocol/src/runs.ts`) |
 | `plans?` | `PlansMode` | `"off" \| "on" \| "review"` (`packages/protocol/src/runs.ts`) |
-| `task?` | `ActiveTaskRequestDto` | legacy request field; no Tasks provider is registered |
 | `skill?` | `{ name: string; task?: string }` | the `/skill` flow |
 | `output_schema?` | `JsonSchema` | structured-output request |
 
-Configuration uses ordinary run parameters and tool events. The host owns authority bindings;
+Configuration uses ordinary run parameters and tool events. The host owns action authority;
 clients do not supply a configuration consent nonce. Production: `StartRunParams` in
-[runs.ts](../../packages/protocol/src/runs.ts) and `createAuthoringMutationReview` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts).
-Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
+[runs.ts](../../packages/protocol/src/runs.ts), `prepareToolAction` in
+[action.ts](../../packages/tools/src/execution/action.ts), and `createApprovalService` in
+[approval-service.ts](../../packages/kernel/src/execution/approval-service.ts).
+Test: [approval-policy.test.ts](../../packages/kernel/tests/integration/approval-policy.test.ts)
 and [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 See [self-configuration.md](self-configuration.md).
 
@@ -695,8 +699,7 @@ const textDelta = {
 
 The same fixture goes on to compile-pin several whole interfaces via `satisfies`, beyond the three
 literals above: `SettingsRepairPlan`'s `strip` variant (`packages/protocol/tests/contract/public-contract.fixture.ts` — `{ scope: "workspace",
-revision: "sha256", action: "strip", dropped: ["providers.invalid"] }`), `CreateTaskDto`
-(`packages/protocol/tests/contract/public-contract.fixture.ts`), and — in one contiguous block — `RunHandle` (`packages/protocol/tests/contract/public-contract.fixture.ts`), `RunService`
+revision: "sha256", action: "strip", dropped: ["providers.invalid"] }`), and — in one contiguous block — `RunHandle` (`packages/protocol/tests/contract/public-contract.fixture.ts`), `RunService`
 (`packages/protocol/tests/contract/public-contract.fixture.ts`), `SecretService` (`packages/protocol/tests/contract/public-contract.fixture.ts`) and `KernelTransport`
 (`packages/protocol/tests/contract/public-contract.fixture.ts`). None of these five are exercised elsewhere in this document outside the
 `client` object covered in §5 invariant 3.
@@ -879,7 +882,7 @@ The following are derived directly from this package's own source and tests.
 
 1. **The package's public surface is exhaustively type-only: every export is `interface`/`type`, and
    every sibling module is re-exported with `export type *`.**
-   Production: `packages/protocol/src/index.ts` (18 `export type *` lines).
+   Production: `packages/protocol/src/index.ts` (`export type *` across its modules).
    Test/enforcement: `tooling/checks/coverage.ts`'s `findUnmeasuredSources` calls
    `looksExecutionFree` (`tooling/checks/coverage.ts`) on every module of a
    `TYPE_ONLY_PACKAGES` member (`tooling/checks/coverage.ts`, containing only `"protocol"`) and
@@ -908,14 +911,14 @@ The following are derived directly from this package's own source and tests.
    which is literally `tsc -p tsconfig.json`, `packages/protocol/package.json`) if a service were
    missing or an extra one were required. The same fixture file separately compile-pins `RunHandle`,
    `RunService`, `SecretService` and `KernelTransport` in full via their own `satisfies` blocks
-   (`packages/protocol/tests/contract/public-contract.fixture.ts`, §3.6) and `SettingsRepairPlan`/`CreateTaskDto` as single literals
+   (`packages/protocol/tests/contract/public-contract.fixture.ts`, §3.6) and `SettingsRepairPlan` as a single literal
    (`packages/protocol/tests/contract/public-contract.fixture.ts`) — five further interfaces get compile-time pinning beyond the
    `KernelClient` aggregate and the lone `RunEvent` variant this invariant and invariant 4 discuss.
    Also pinned from the consumer side: `KernelServices` in
-   `packages/kernel/src/transport/operations.ts` is a `Pick<KernelClient...>` naming the same 15 service keys
-   (minus the 4 identity fields, which are not "services").
+   `packages/kernel/src/transport/operations.ts` is a `Pick<KernelClient...>` naming the transport
+   service keys, including optional `hosting` and `localHost`; identity fields are not services.
 
-4. **`RunEvent` is closed to exactly 39 named variants; an open/unknown capability event is carried
+4. **`RunEvent` is a closed union of named variants; an open/unknown capability event is carried
    through the single `capability_event` escape variant rather than by widening the union.**
    Production: `RunEvent` in `packages/protocol/src/runs.ts`; the `capability_event` variant's own
    doc comment says capability event names are deliberately open at the capability boundary while
@@ -975,7 +978,7 @@ The following are derived directly from this package's own source and tests.
 12. **The workflow checkpoint uses the same closed shape live and at rest.**
     `workflow_sequence_state` and `WorkflowSequence` carry the same six-state lifecycle, CAS
     revision, current/proposed round/pass and cumulative leader counters; `WorkflowDetail.sequence`
-    is optional only for legacy/ad-hoc-only records. The live event is classified non-droppable but
+    is optional when no controlled round checkpoint exists. The live event is classified non-droppable but
     live-only because the workflow store, not the run journal, owns durable recovery.
     Production: `RunEvent` in `packages/protocol/src/runs.ts`, `WorkflowSequence` in
     `packages/protocol/src/workflows.ts`, and `RUN_EVENT_POLICY`.
@@ -1026,70 +1029,31 @@ Nothing. `packages/protocol/package.json` has no `dependencies`/`devDependencies
 full — no such key appears). Its own `.ts` files import nothing from any other package; every
 `import type` in the package points at a sibling module inside `packages/protocol/src/`
 (`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,workflows,workspace-changes}.ts`).
-The remaining eight modules import nothing; `index.ts` only type-reexports siblings. There is no
+`index.ts` only type-reexports siblings. There is no
 cross-package source import in this package.
 
 ### 7.2 Depended on by
 
-Every consumer reaches it **only as a type import**, verified directly (§5, invariant 2):
+Kernel and Code consume the type-only public barrel. Their source profiles select the `bun` export
+condition through `customConditions: ["bun"]`; there is no workspace `paths` alias. Build profiles
+clear that condition and consume declarations through the workspace project-reference graph.
+Production: `packages/protocol/package.json`, `packages/kernel/tsconfig.json`,
+`packages/kernel/tsconfig.build.json`, and the corresponding Code configs.
+Test: `tooling/tests/architecture/module-resolution-contract.test.ts` and
+`packages/protocol/tests/contract/public-contract.fixture.ts`.
 
-| Consumer | Value imports | Type imports | Forcing mechanism |
-| --- | --- | --- | --- |
-| `@clarvis/kernel` | 0 | 91 source/test files currently import the public barrel, all with `import type` | `packages/kernel/tsconfig.json` maps `@clarvis/protocol` to the package's own **source**, so `tsc` checks the implementation directly against these interfaces |
-| `@clarvis/code` | 0 | 110 source/test files currently import the public barrel, all with `import type` | `packages/code/tests/architecture/dependency-boundary.test.ts` pins `code`'s Clarvis-namespaced manifest dependencies to `@clarvis/kernel` and `@clarvis/protocol` |
+Code's dependency-boundary test permits `@clarvis/protocol` while forbidding `@clarvis/loop` and
+engine-layer imports. See `packages/code/tests/architecture/dependency-boundary.test.ts`.
 
-`code`'s dependency-boundary test permits `@clarvis/protocol` while forbidding
-`@clarvis/loop` and every engine-layer package.
+### 7.3 Type-only enforcement
 
-### 7.3 What forces the type-only property, structurally
+The barrel explicitly uses `export type *`; consumer `verbatimModuleSyntax` checks require
+interfaces and aliases to be imported as types. The `looksExecutionFree` scan for
+`TYPE_ONLY_PACKAGES` in `tooling/checks/coverage.ts` rejects runtime declarations and value
+re-exports independently of test imports or stale coverage reports.
+Production: `packages/protocol/src/index.ts`, `packages/protocol/tsconfig.json`, and
+`tooling/checks/coverage.ts`. Test: `tooling/tests/architecture/coverage.test.ts`.
 
-1. `verbatimModuleSyntax: true` in `packages/protocol/tsconfig.json` forces every re-export in
-   `index.ts` to be spelled `export type *` rather than plain `export *` — a plain `export *` of an
-   `interface`-only module would still compile under a looser setting, but under this one the
-   compiler requires the `type` modifier once nothing in the module is a value.
-2. `tooling/checks/coverage.ts`'s `TYPE_ONLY_PACKAGES` gate (§5, invariant 1) makes a *regression* —
-   someone adding a real `export const` to any protocol module — fail the coverage step of
-   `check:pre-commit`, independent of whether any test imports the new symbol.
-3. `packages/kernel/tsconfig.json`'s `paths` mapping to **source** (not `dist`) means the kernel's
-   own `tsc` run is the thing that would catch a signature mismatch between what `client.ts` promises
-   and what `kernel.ts` actually implements — there is no build step in between that could paper over
-   drift.
-
-## 8. Open questions
-
-- **Why two independent pagination families exist** (offset/limit vs. cursor) is stated as an
-  intent ("stores whose contents change over time", `packages/protocol/src/common.ts`) but no test or runtime code in
-  this package demonstrates a failure mode the offset/limit family would actually suffer under
-  mutation — the reasoning is asserted in a comment, not shown.
-- **A remote HTTP/WebSocket `KernelTransport` remains unimplemented.** The current kernel exports an
-  in-process client, `createLoopbackTransport`, `createStdioTransport`, and
-  `serveKernelOverStdio` (`packages/kernel/src/index.ts`). `Principal` and `ConnectOptions.auth` remain
-  forward-compatible hosted-kernel shapes rather than a transport exercised in this repository.
-- **The exact set of `KernelErrorCode` values a given method can actually return** is not enumerated
-  per-method anywhere in this package outside the handful of doc-comment mentions captured in §6 —
-  most methods simply return `Promise<T>` with no declared error type, so a client cannot know from
-  the type alone which of the 11 codes a given call might raise. This is presumably resolved by
-  kernel-side documentation/behavior outside this document's scope.
-- **The numeric `RunEvent` count is not pinned as 39.** No protocol-package test counts union arms,
-  and its fixture constructs only `text_delta` (`packages/protocol/tests/contract/public-contract.fixture.ts`).
-  Growth is nevertheless not silent inside the kernel: `RUN_EVENT_POLICY` exhaustively keys
-  `RunEvent["type"]`, so a new value must first receive source, durability, mapping and backpressure
-  classifications (`packages/kernel/src/runs/event-policy.ts`). Client exhaustiveness remains
-  the responsibility of each consumer.
-- **The one test file this package owns** (`tests/contract/public-contract.fixture.ts`) is exercised
-  only via `tsc -p tsconfig.json` (`packages/protocol/package.json`) — there is no `bun test` runner invocation
-  for `protocol` beyond that typecheck, and `test:coverage` is an alias for the same command
-  (`packages/protocol/package.json`). This means "coverage" for this package, as reported by
-  `tooling/checks/coverage.ts`, is entirely the `looksExecutionFree` static scan (§5, invariant 1),
-  never an executed-line count — consistent with, but worth stating plainly: there is no runtime
-  test of this package at all, by construction, because there is no runtime to test.
-  **Recorded**: this is a design the gate enforces rather than an unguarded assumption —
-  `looksExecutionFree` runs over every module of a `TYPE_ONLY_PACKAGES` member and fails on a runtime
-  export *even when a stale report happens to mention that module*, which
-  `tooling/tests/architecture/coverage.test.ts` pins directly. The report-staleness warning added to
-  `coverage.ts` deliberately exempts such a package: its `test:coverage`
-  writes no LCOV, so whatever file exists can never be refreshed and the warning would be permanent
-  noise.
 Host-owned `Session.operator_intents` retains bounded accepted submissions separately from executed
 turns, and `operator_sequence` survives pruning of admitted receipts. Client saves cannot modify
 these fields. `GoalReceipt.resume_pending` denotes durable recovery work, not a successful launch.
@@ -1137,3 +1101,17 @@ Test: preparation and recovery cases in
 [goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts), and lost-write
 acknowledgement recovery in
 [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+## 8. Open questions
+
+- **The exact set of `KernelErrorCode` values a given method can actually return** is not enumerated
+  per-method anywhere in this package outside the handful of doc-comment mentions captured in §6 —
+  most methods simply return `Promise<T>` with no declared error type, so a client cannot know from
+  the type alone which of the 11 codes a given call might raise. This is presumably resolved by
+  kernel-side documentation/behavior outside this document's scope.
+- **Protocol fixtures do not exercise every `RunEvent` variant.** No protocol-package test counts union arms,
+  and its fixture constructs only `text_delta` (`packages/protocol/tests/contract/public-contract.fixture.ts`).
+  Growth is nevertheless not silent inside the kernel: `RUN_EVENT_POLICY` exhaustively keys
+  `RunEvent["type"]`, so a new value must first receive source, durability, mapping and backpressure
+  classifications (`packages/kernel/src/runs/event-policy.ts`). Client exhaustiveness remains
+  the responsibility of each consumer.

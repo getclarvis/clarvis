@@ -1,15 +1,9 @@
 # The Clarvis spec corpus
 
-This corpus specifies what the Clarvis monorepo does and records what has been measured, ruled out,
-or tried and reverted.
+This corpus specifies the current contracts of the Clarvis monorepo.
 
-The findings register that used to sit beside them — `gaps.md`, the cross-cutting list of what the
-corpus had left open — is **gone because every item in it was closed.** Nothing
-was dropped in the closing. What was a code defect was fixed with a test; what was an unpinned
-rule got the test; what genuinely depends on something outside this repository moved into
-[`known-issues.md`](known-issues.md), which is where evidence the source cannot supply belongs;
-and what a document had simply never described is now described in the document that owns it.
-Historical evidence that still affects current work remains in the owning spec or
+Current behavior and invariants belong in the owning specs. Measurements, environmental limits,
+and diagnostic history that source inspection cannot establish belong in
 [`known-issues.md`](known-issues.md).
 
 ## What this is
@@ -124,16 +118,17 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`memory-capability.md`](capabilities/memory-capability.md) | The seam from wiki to run: the `<memory>` seed block, the seven tools, the entry-agent-only write policy, the settings block and the kernel control plane | `memory`, `kernel` |
 | [`memory-indexer.md`](capabilities/memory-indexer.md) | Turning a finished run into something the wiki knows: the durable enqueue, the background drain with leases and retry budgets, and the isolated versus continuation index passes | `memory`, `kernel` |
 | [`workflows-scheduling.md`](capabilities/workflows-scheduling.md) | Manager-to-leader fan-out: the four spawn tools, wave scheduling and write-conflict separation, round barriers, the FIFO concurrency semaphore and the tree-wide token ledger | `workflows` |
+| [`worktrees.md`](capabilities/worktrees.md) | Explicit CLI-created Git worktrees, isolation, reopen and exit cleanup | `code`, `paths` |
 | [`workflows-service.md`](capabilities/workflows-service.md) | The non-live half: code-backed built-ins, optional `WORKFLOW.md` overrides, the three reusable result schemas, and the kernel's persisted workflow tree and routing | `workflows`, `kernel`, `code` |
 
-### `hosts/` — the kernel, the terminal UI and the HTTP facade
+### `hosts/` — the kernel, protocol and terminal UI
 
 | Document | Covers | Implemented in |
 | --- | --- | --- |
 | [`protocol.md`](hosts/protocol.md) | The transport-agnostic contract: wire DTOs plus the `KernelClient` service interfaces, a pure leaf with no dependency of any kind | `protocol` |
 | [`kernel-composition.md`](hosts/kernel-composition.md) | The three stacked construction entry points — in-process composition, `createFileKernel` as the sole local one-workspace bootstrap, and `createFileRunHost` process hosting — plus owner scoping | `kernel` |
 | [`kernel-config.md`](hosts/kernel-config.md) | The synchronous config store under the async config service, `kernelSettingsSchema` validation, the shipped agent fleet as TypeScript data, and field-by-field overlays | `kernel`, `protocol` |
-| [`self-configuration.md`](hosts/self-configuration.md) | Reviewed configuration file tools, host authority, and the product-owned Markdown documentation skill | `kernel`, `paths`, `protocol`, `code`, `skills`, `loop` |
+| [`self-configuration.md`](hosts/self-configuration.md) | Configuration file tools under execution authorization, host authority, and the product-owned Markdown documentation skill | `kernel`, `paths`, `protocol`, `code`, `skills`, `loop` |
 | [`kernel-runs.md`](hosts/kernel-runs.md) | Admission and execution identity, request assembly from settings plus agent records, the run-scoped handle with its queues, and the two mappers that project events into the protocol union | `kernel`, `protocol` |
 | [`hosted-runs.md`](hosts/hosted-runs.md) | Independent workspace host, bounded observation and recovery, conversation authority, and TUI background/attach commands | `kernel`, `protocol`, `paths`, `code` |
 | [`kernel-transport.md`](hosts/kernel-transport.md) | The JSON-RPC-shaped wire with Clarvis's own vocabulary: one operations table both halves are built from, stdio framing, the loopback seam and inbound run-event re-validation | `kernel`, `protocol` |
@@ -180,8 +175,8 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 
 | Document | Holds | Reach for it when |
 | --- | --- | --- |
-| [`known-issues.md`](known-issues.md) | What was measured, ruled out, or tried and reverted: the ten behaviours that turn on something outside this repository, the Bun crash forensics and its retry, the memory leaks and their soaks, the extractions that were abandoned, and the four confirmed defects and how each was closed | Something is failing and you want to know whether it has already been diagnosed — or you are about to re-run an experiment someone else has run |
-| [`package-coupling-analysis.md`](package-coupling-analysis.md) | The generated package-graph report | You want the dependency edges as the checker sees them — this one is generated and gated, so it is the only file here that cannot drift |
+| [`known-issues.md`](known-issues.md) | Retained measurements, environmental limitations, Bun crash forensics, memory soaks, reverted approaches and resolved defect diagnoses | Something is failing and you want to know whether it has already been diagnosed — or you are about to re-run an experiment someone else has run |
+| [`package-coupling-analysis.md`](package-coupling-analysis.md) | The generated package-graph report | You want the dependency edges as the checker sees them; `bun run check:graph` verifies it against current source |
 
 ---
 

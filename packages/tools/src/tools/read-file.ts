@@ -31,8 +31,8 @@ export const readFile: ToolDef = {
   name: "read_file",
   description:
     "Read a text file with 1-based line prefixes. Output is byte-bounded and loses its tail; use the footer's next " +
-    "offset to continue. Binary files are rejected. Locate unknown paths with glob; search " +
-    "contents with grep instead of reading a whole file to find a string.",
+    "offset to continue. Binary files are rejected. Locate unknown paths with list_dir; " +
+    "when shell is available, use it for recursive filename or content searches.",
   bounded: true,
   inputSchema: {
     type: "object",

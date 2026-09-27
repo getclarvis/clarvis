@@ -1520,51 +1520,8 @@ application lifecycle work (`tooling/checks/coverage.ts`, `NO_COUNTER_ALLOWLIST.
 
 ## 8. Open questions
 
-- ~~**`TurnRef.error` is populated but has no wire field.**~~ **Resolved.** The reading was
-  right and understated: **both** legs of the conversion dropped it, `metaToSession` on the way out
-  and `sessionToMeta` on the way back, so fixing either alone would not have round-tripped. The
-  unanswerable half is now answered too — the wire `Session` turn had no slot, and nothing validates
-  a turn's members either: `isSession` in `packages/kernel/src/sessions/session-service.ts`
-  checks identity and `Array.isArray(turns)`, there is no schema for the document, and the transport
-  passes it opaquely. So an added key is not rejected on read, and a corrupt one is not caught. Both
-  legs now carry `error` (`metaToSession` and `sessionToMeta` in
-  `packages/code/src/adapters/session-store.ts`), the read side validates the `{code, message}` shape
-  (`persistedTurnError`), and the value is masked and bounded at the producer (`redactTurnError`,
-  applied by `createSession.endTurn` in `packages/code/src/adapters/session.ts`) rather than inside the converter — which keeps the
-  in-memory and on-disk values identical and honours the existing `redactPreviews: false` opt-out.
-  The bound is load-bearing rather than tidy: this is the first provider free text written into a
-  session document, and one unbounded message could push it past `SESSION_MAX_BYTES`, after which
-  the store swallows the throw and silently stops persisting that session for the rest of its life.
-- **`RunHost.submitTurn`'s declared arity is 2 but the implementation's is 3.** The `skill` parameter
-  (`packages/code/src/run-host.ts`) is reachable only through `submitPromptTurn`. Whether the interface
-  narrowing is deliberate encapsulation or an oversight is not stated in the source.
-- **`packages/code/tests/unit/active-agent.test.ts` is named "prefers runnable coder"** but the
-  production preference is `marshall` (`packages/code/src/adapters/active-agent.ts`); the fixture contains no `marshall`, so
-  the assertion is really testing the alphabetically-first-Lead branch. The test name and the code
-  disagree; the source does not settle which is stale.
-- ~~**`ActivityStore.openRun` ignores its `execId` argument.**~~ **Resolved at the type boundary:** it
-  accepts only an optional `{ current?: boolean }` selector and no execution id
-  (`packages/code/src/adapters/activity-store.ts`). The projection genuinely is
-  process-global — it feeds the sidebar and status surfaces, which show *the* current run — so two
-  sinks open at once still fold into one cumulative subagent/plan/usage state; `current: true` only
-  claims ownership of the live-run usage delta. The signature no longer implies per-execution
-  isolation.
-  `TranscriptStore.openRun` keeps its parameter, because it really is keyed by execution: it
-  namespaces every node key with it (`packages/code/src/adapters/store.ts`).
-- **`ConnectionStore` and `connectionLabel` have no producer in this document's scope.** `runtime.tsx` calls
-  `conn.set(...)`, but which header component consumes `connectionLabel`
-  belongs to [hosts/code-bootstrap.md](code-bootstrap.md).
-- **Delegated, deliberately:** transcript node kinds, segmentation, the tool-body hydration window and
-  the reconcile ordering algorithm (`packages/code/src/adapters/store.ts`) belong to
-  [hosts/code-transcript.md](code-transcript.md); the kernel-side session record format, cursor paging and
-  rehydration event mapping belong to [hosts/sessions.md](sessions.md); the `stream-metrics`
-  duplicate-drift rule and the coverage-floor machinery belong to [cross-cutting/test-architecture.md](../cross-cutting/test-architecture.md).
-- **No rationale is recoverable for the specific numeric constants** `RESIDENT_TRANSCRIPT_TURN_LIMIT
-  = 20`, `EXPORT_BATCH_NODE_LIMIT = 128`, `FETCH_CONCURRENCY = 6`, `MAX_RESIDENT_FULL_SESSIONS = 8`,
-  `ACTIVITY_SUBAGENT_SUMMARIES_MAX = 64`, the 0.8/0.7 pressure ratios, or the two 10 s memory-pressure
-  bounds. Only `ACTIVITY_SUBAGENT_SUMMARIES_MAX` carries a stated reason —
-  `"Mirrors the supervision registry's maximum retained settled-child roster"`
-  (`packages/code/src/adapters/activity-store.ts`) — which is unverified against `@clarvis/supervision`.
+- `RunHost.submitTurn` accepts an internal `skill` argument through `submitPromptTurn`, while the declared host interface exposes two arguments. The source does not say whether that narrower public contract is deliberate.
+- `active-agent.test.ts` names a "prefers runnable coder" case, but its fixture omits `marshall`, the production preference. The assertion covers the alphabetically first Lead fallback; the intended test name remains unresolved.
 
 ## Hosted submission before admission
 

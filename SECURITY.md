@@ -29,8 +29,9 @@ Reports are especially useful when they concern filesystem policy or classified 
 credential exposure, untrusted MCP/plugin/hook content, release or updater integrity, network trust,
 or a bypass of an explicit approval boundary.
 
-Clarvis sends selected context to the configured model provider. Shell and file tools execute
-with the host process's permissions. External MCP servers, plugins, hooks, task providers and
+Clarvis sends selected context to the configured model provider. Built-in shell and file tools use
+native Sandbox by default, subject to the host account's permissions; an explicit Host choice removes
+that boundary for future runs. External MCP servers, plugins, hooks and
 local model endpoints keep their own trust boundaries. Remote SSH connections carry the Kernel
 protocol through OpenSSH and rely on the selected remote host's controls.
 

@@ -697,10 +697,9 @@ export function validateSkillDocument(
  * @returns the registry facade over {@link byName}.
  * @remarks `get` returns `undefined` for an unknown name, whereas `resource`
  *   throws {@link SkillError} `not_found`; `resource` also throws `not_found` for
- *   a missing resource and `not_a_file` when the path is not a regular file. A
- *   path inside the harness configuration directory is reported `not_found` as
- *   well: it is not a bundled resource, and answering anything more specific
- *   would confirm the file exists to a caller that must not read it.
+ *   a missing resource and `not_a_file` when the path is not a regular file.
+ *   The harness configuration directory is omitted from enumeration, but an
+ *   explicitly supplied path within it remains readable.
  */
 function makeRegistry(byName: Map<string, ResolvedSkill>, config: SkillConfig): SkillRegistry {
   const resourcePath = (name: string, rel: string): string => {

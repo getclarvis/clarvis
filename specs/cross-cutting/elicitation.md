@@ -29,8 +29,8 @@ allows it. `untrusted` policy preserves human review. Production:
 `createApprovalService` in `packages/kernel/src/execution/approval-service.ts`.
 Test: `packages/kernel/tests/integration/judge-approval.test.ts`.
 
-> Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
-> are collected in the final section.
+> Claims below cite their source and test owners across capability, loop, kernel, protocol, MCP,
+> workflows and Code.
 
 ## 1. Purpose
 
@@ -612,9 +612,8 @@ Test: `packages/workflows/tests/contract/memory/elicit-mux.test.ts`.
 entry profile's grants include `"ask_user"`; a spawned sub-agent never receives the tool regardless of
 its own profile's grants.
 Production: `packages/loop/src/runtime/capabilities/ask-user.ts`.
-Test: `packages/loop/tests/integration/ask-user-grant-gating.test.ts` confirms only the
-entry-vs-grant half (an escalate-budget entry agent without the grant is not offered `ask_user`; one
-with the grant is) — see §8 for the sub-agent-exclusion half, which this file does not exercise.
+Test: `packages/loop/tests/integration/ask-user-grant-gating.test.ts` confirms both grant-gated
+entry admission and that `ask_user` never reaches a sub-agent.
 
 **ELI-02.** An elicitation's wait time is never charged against the run's compute budget:
 `elicitWithClockPause` pauses the clock before calling the underlying elicit and resumes it in a
@@ -820,33 +819,3 @@ direct client under its own id).
   (`runManaged` in `packages/code/src/run-host.ts`), and `elicit.resolve` into the App surface
   (`packages/code/src/runtime.tsx`, `runControls`). Detailed overlay/keyboard rendering of the resulting block is
   **code-input-overlays-and-commands**' concern.
-
-## 8. Open questions
-
-- **ELI-01's sub-agent-exclusion half is production-only.** `packages/loop/tests/integration/ask-user-grant-gating.test.ts`
-  was opened; its two tests confirm only that `ask_user` injection is gated on the entry profile's
-  `"ask_user"` grant (an escalate-budget entry agent without the grant is not offered it; one with the
-  grant is). Neither test spawns a sub-agent, so the invariant's other half — that a spawned sub-agent
-  never receives the tool regardless of its own profile's grants, which the production code enforces at
-  `packages/loop/src/runtime/capabilities/ask-user.ts` (`if (!scope.entry) return null`) — remains production-verified only, with no located
-  test in this document's scope.
-- ~~**`ElicitBridge.elicit` with an already-aborted signal.**~~ Resolved by the preflight cancellation
-  and listener-before-delivery contract in §4.4, covered by the pre-aborted and synchronous observer
-  cancellation tests in [elicit-bridge.test.ts](../../packages/kernel/tests/unit/elicit-bridge.test.ts).
-- ~~**Remote-transport elicit-buffering test coverage (ELI-05).**~~ **Resolved:**
-  `packages/kernel/tests/contract/memory/transport-codecs.test.ts` now pins the buffering path directly —
-  a question emitted before `runs.start` resolves is delivered to the handler that attaches later, a
-  question the kernel settles first leaves the buffer empty, and a settlement naming another run
-  leaves the buffered question alone.
-- **Detailed wire framing** (JSON-RPC method names `M.runsRespond`, notification names `N.runElicitation`,
-  request/response envelope validation beyond the DTO shapes in §2.5) is delegated to
-  **kernel-transport-and-wire**.
-- **Detailed rendering/keyboard behavior of `ElicitBlock.tsx`** (form field layout, choice navigation,
-  plan-review summary rendering, URL-mode presentation) is delegated to
-  **code-input-overlays-and-commands**; this document covers only what data reaches the block and the
-  `ElicitResult` contract it must produce.
-- **`workflows`' `run-leader`/manager construction of the `ElicitMux`** — i.e., which service actually
-  calls `createElicitMux` and passes `mux.manager`/`mux.forLeader(runId)` into a manager or leader run's
-  deps — is outside this document's scope; only the mux's own contract (`elicit-mux.ts`) and its test are
-  covered here. The construction site (likely `packages/kernel/src/workflows/workflows-service.ts`, per the
-  wider repository's dependency-graph notes) belongs to whichever document covers workflow orchestration.

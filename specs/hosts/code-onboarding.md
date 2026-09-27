@@ -3,7 +3,7 @@
 > Implemented at `packages/code/src/onboarding/**`, `packages/code/src/views/config/DoctorView.tsx`,
 > `packages/code/src/adapters/{platform,terminal-guard, clipboard-process,debug-session,diagnostic-session}.ts`
 > and `packages/code/src/core/diagnostic-events.ts`. Every claim below is anchored to a file and
-> line. Open questions are collected in the final section.
+> named symbol or test. Open questions are collected in the final section.
 
 ## 1. Purpose
 
@@ -764,29 +764,4 @@ recovery screen with no further keypress — pinned by
 
 ## 8. Open questions
 
-- **`cli-args.ts`'s `resolveDebugRequest`/`FLAGS`/`DebugFlag` machinery** is the CLI half of the `--debug`
-  contract and is cited in §2.10/§5 because the diagnostic channel's boot-time enablement is otherwise
-  undocumented, but the file itself — and its dedicated `tests/unit/cli-args.test.ts`, which does pin
-  invariants 17–18 directly — belongs to [hosts/code-bootstrap.md](code-bootstrap.md) §2.2, not to
-  this document.
-- **Why `MEMORY_SAMPLE_EVERY` is exactly 32, `MAX_SANITIZE_NODES` exactly 256, `HEARTBEAT_MS` exactly
-  5000, or `SHUTDOWN_BUDGET_MS` exactly 2000** — all are stated as fixed constants with a doc-comment
-  rationale for *why sampling/bounding exists at all* (e.g. `packages/code/src/adapters/diagnostic-session.ts`), but not for why
-  that specific number. Not settled by the source beyond "it is the current tuning."
-  `session.close()`'s `runtime.heartbeat` counter/timer's *consumer* (what reads it, if anything, once
-  written) is not visible in this document's scope.
-- **Whether any test exercises the `heartbeat` timer's actual firing** (as opposed to its construction) is
-  not answered in `tests/unit/diagnostics.test.ts`; the heartbeat's `unref()` call (`packages/code/src/adapters/diagnostic-session.ts`)
-  suggests it is expected not to keep the process alive, but no test in this document's scope asserts that.
-- **The exact six `GateId`s classified `optional: true`** (`workspace_trust`,
-  `default_agent`, `theme`, `plans`, `backend`, `diagnostics` — i.e., every non-hard/soft gate)
-  carry an `optional` flag on the `Gate` interface (`packages/code/src/onboarding/doctor.ts`) whose only reader within this document's
-  scope is documentation-only; `runGates`'s blocking computation reads `severity`, not `optional`
-  (`packages/code/src/onboarding/doctor.ts`). Whether `optional` is consumed anywhere else (e.g. a UI affordance beyond what
-  `DoctorView.tsx` already renders from `severity`) is undetermined; it may be dead metadata, another document's
-  concern, or read only by `views/onboarding/**` (see above).
-- **The specific numeric values of `PROFILE_SHAPED_ISSUES`'s issue codes** (`malformed_frontmatter`,
-  `unknown_grant`, etc.) are read here only as opaque strings the `agents` gate filters on
-  (`packages/code/src/onboarding/doctor.ts`); their producer (`agentReadiness` in `adapters/agent-files.ts`) and the full set of
-  issue codes it can emit belong to [hosts/kernel-config.md](kernel-config.md) per the delegation note in this document's scope
-  and are not described further here.
+- The diagnostics tests construct the heartbeat timer, but no focused test exercises its actual firing and verifies that the unreferenced timer does not retain the process.

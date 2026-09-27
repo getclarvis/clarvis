@@ -1,7 +1,7 @@
 # Run-request validation, profile readiness and the engine settings schema
 
 > Implemented at `packages/loop/src/validation/**` and `packages/loop/src/settings/**`. Every claim
-> below is anchored to a file and a named symbol or test. Open questions are collected in the final section.
+> below is anchored to a file and a named symbol or test.
 
 ## 1. Purpose
 
@@ -174,10 +174,8 @@ One agent profile (`agentProfileSchema`,
 `context_fraction`, `target_fraction`, `max_result_chars`, `preserve_recent_tokens`, `prompt`,
 `prompt_mode`), `orchestration?` (an **open** object that names no key at all —
 `packages/loop/src/validation/request/profile-schemas.ts`; an unknown key is accepted and dropped,
-and the block's only remaining meaning is the lead-only marker the semantic rules read. Proven by
-`packages/loop/tests/unit/request-profile-validation.test.ts`, which accepts a profile still
-carrying the retired `force_tool_on_nudge` alongside an extra `capability_owned` key and asserts
-the parsed block is empty — so nothing a hand-written file names there can re-arm a policy). `compactionSchema` carries a `superRefine`
+and the block serves as a lead-only marker for semantic rules. The empty parsed block is pinned by
+`packages/loop/tests/unit/request-profile-validation.test.ts`). `compactionSchema` carries a `superRefine`
 (`packages/loop/src/validation/request/profile-schemas.ts`) enforcing two cross-field rules
 not implied by any single field's own type: (a) `compaction.target_fraction` must be `<=
 compaction.context_fraction` (the low-water mark cannot sit above the high-water mark); (b)
@@ -349,13 +347,6 @@ The doc comment on `parseRunRequest` calls this "the stable, observable failure 
 `packages/loop/tests/component/request-schema-facade.test.ts` pins one instance of it
 directly: a body with both a duplicate server name *and* a duplicate profile name throws
 `duplicate_server_name` (server dedup runs first), never `duplicate_profile_name`.
-
-A minor documentation artifact worth naming so a reader is not misled: `identity-rules.ts` ends with
-the doc comment for `budget-rules.ts`'s `enforceBudgetMode`, `budget-rules.ts` ends with the doc
-comment for `provider-rules.ts`'s internal `rejectProviderMapIssues`, and `provider-rules.ts` ends
-with the doc comment for `profile-rules.ts`'s `enforcePerProfileRules` — each function's own TSDoc
-lives at the bottom of the *previous* file in the pipeline rather than above its own declaration.
-Purely cosmetic; nothing here changes behavior.
 
 ### 4.2 Structural parse → coded error (`parseRunRequest` / `classifyIssue`)
 
@@ -586,8 +577,6 @@ error. `agentPromptOf(basePrompt, body)`
 (`packages/loop/src/settings/agent-frontmatter.ts`) prefers a non-blank trimmed `body` and
 falls back to `basePrompt` only when the body is empty/whitespace-only.
 
-### 4.11 Ajv construction and its two consumers
-
 ## 5. Invariants
 
 **INV-046.** A text-only wire request carrying a multi-turn `messages` continuity seed (no tool
@@ -697,10 +686,8 @@ Test: `packages/loop/tests/unit/settings-merge.test.ts`.
 `_engineServerDriftLock` only type-checks while `MapperCoversSettings` holds — every key of
 `McpServerSettings` is one of the mapper's own `MappedSettingsKey` union (transport, process,
 credential, OAuth, timeout, enablement, tool-filter, and authentication-policy fields). Its own doc
-comment states what it
-would silently miss without this: "a key added to the settings schema and forgotten here would
-otherwise be dropped in silence on the way to the engine — which is exactly how the
-`type`/`transport` mismatch survived from the initial commit."
+comment identifies the failure it prevents: a settings schema key omitted from the mapper would
+otherwise be dropped silently before reaching the engine.
 Production: `packages/loop/src/settings/engine-server.ts`.
 
 **I.** `compactionSchema`'s `superRefine` enforces two cross-field rules no single field's own type
@@ -786,32 +773,3 @@ the package):
 `@clarvis/capability`'s hand-written `RunRequest`/`AgentProfile`/`McpServerConfig`/`ProviderConfig`
 types that is not mirrored in the corresponding Zod schema breaks the **build**, not a test run — this
 is a compile-time-only edge with zero runtime cost.
-
-## 8. Open questions
-
-- **Why `capabilityRequestParamFields`/`capabilitySettingsFields` are spread statically from
-  `settings-specs.ts` while `settingsSchemaFor`/`runRequestSchemaFor` separately extend from a
-  runtime `CapabilityRegistry`** is explained in comments as an inference-precision tradeoff
-  (`packages/loop/src/settings/capability-settings.ts`, `packages/loop/src/validation/request/request-schema.ts`),
-  and the reason for the split itself is now stated at
-  `packages/loop/src/runtime/capabilities/settings-specs.ts`: the static spread *is* the
-  reason. A registry is a runtime value, so a schema composed from one is
-  `ZodObject<Record<string, unknown>>` — `SettingsFile` and `ParsedRunRequest` stop being precise
-  types and every consumer of a settings field falls back to `unknown`, `@clarvis/code` above all.
-  The built-ins are exactly the capabilities the engine itself owns and can therefore name at compile
-  time; a host-registered capability cannot be named there without the engine depending on it, which
-  is the registry's whole purpose. So it is not two mechanisms for one job — it is the type boundary
-  between what the engine knows statically and what a host adds.
-
-- **`typo-suggestion.ts`'s `editDistance`/`typoBudget` have no call site inside this document's own
-  scope** (`settings-schema.ts`, `settings-merge.ts`, `capability-settings.ts`, `engine-server.ts`,
-  `agent-frontmatter.ts` — none import from `typo-suggestion.js`). Their two production consumers are
-  confirmed by a grep across the whole `packages/loop/src` tree: `plugin-schema.ts`'s
-  `suspectedManifestTypos` (which calls `editDistance` against every `unknownManifestKeys` entry, one
-  per unrecognized plugin-manifest key) and `marketplace-schema.ts`'s structurally identical
-  function. Both are [plugins-and-marketplace](../hosts/plugins.md)'s territory, not this document's, so the
-  two functions' own contracts are described (§2.2) without going further into how that package uses them.
-- **The exact value and derivation of `envRefPattern()`** (imported from `@clarvis/capability` and
-  used at `packages/loop/src/validation/request/provider-rules.ts`) is out of this document's scope
-  (owned by `@clarvis/capability`); what is verified is only that `rejectProviderMapIssues` calls it to
-  reject any leftover `${` after stripping every well-formed match.

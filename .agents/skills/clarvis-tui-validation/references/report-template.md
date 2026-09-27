@@ -6,7 +6,8 @@ disposition and every unresolved gap. Never include credentials in evidence exce
 
 ## Scope and verdict
 
-- Requested scope, provider/model, platforms, and authorized fixes
+- Requested profile, selected journeys/subcases, provider/model, platforms, and authorized fixes
+- Provider selection authorization, configured source (no secrets), and real versus fixture traffic
 - Overall: pass / fail / incomplete, qualified by verified scope
 - Required and executed scenarios; passed, failed, partial, blocked/unverified, and justified exclusions
 - Critical source/final-bundle outcome and highest-severity finding
@@ -24,6 +25,7 @@ incomplete; partial proof does not count as a pass.
 | Bundle build command, flavor, identity, and launch                                        |       |
 | Bun/OpenTUI, OS/architecture, terminal/profile, sizes                                     |       |
 | Isolated home, workspaces, fixture revisions/configuration                                |       |
+| Execution context, preflight result and host-permission retry if needed                   |       |
 | For remote: local/remote artifact, SSH executable/auth posture, host-key proof, workspace |       |
 
 | Check | Command / named test | Input/artifact identity | Exit / outcome | Evidence | Reused evidence and why still valid |
@@ -36,7 +38,8 @@ incomplete; partial proof does not count as a pass.
 | ------------------ | -------------- | ------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------- | -------------------------------------- | ---------------------- |
 |                    |                | static / deterministic / PTY / real account / native hardware | source / bundle / image | pass / fail / partial / blocked / unverified / not applicable | exact test, frames, diagnostics, state |                        |
 
-Each matrix ID must appear. Split subcases when proof differs; justify exclusions and blockers.
+In a full audit each matrix ID must appear; narrower profiles list every selected subcase and name
+the excluded scope. Split subcases when proof differs; justify exclusions and blockers.
 Repeated rows may cite shared evidence if its assertions support each row. Do not infer a
 checkpoint from a whole package's test total, a displayed header, or a token also present in input.
 If images were not inspected, visual requirements remain unverified.
@@ -67,5 +70,6 @@ tooling's limits. Reuse the same sample across applicable scenario rows.
 - Required account/integration/platform/hardware paths unavailable, exact blocker, and alternatives attempted
 - Synthetic boundaries, unattempted available work, interrupted checks, and remaining risks
 - Owned PTYs, processes, listeners, workspace roots, and credential copies removed
+- Live-file unchanged/changed verdicts, verified temporary-copy removal, and any cleanup failure
 - Retained evidence/cache/state paths, ownership, and reason; normal versus forced shutdown evidence
 - Documentation disposition and any publication action actually authorized and performed

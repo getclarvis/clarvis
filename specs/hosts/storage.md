@@ -8,8 +8,7 @@ surface exposed by the kernel. Physical path construction remains owned by
 [`foundations/trace.md`](../foundations/trace.md), and secret handling by
 [`cross-cutting/security.md`](../cross-cutting/security.md).
 
-The inventory is a logical classification of the existing layout. It does not introduce a new
-`config/` directory, move files, or rewrite durable records.
+The inventory classifies the existing layout without moving files or rewriting durable records.
 
 ## Protocol
 
@@ -74,8 +73,9 @@ an `EACCES`/`EPERM` refusal fails closed with a path-free conflict.
 File-kernel startup runs bounded housekeeping across every workspace state directory, including
 inactive workspaces. Recognized spill files are repaired to `0600` on POSIX and spills older than 24
 hours are removed. Empty run containers older than 24 hours are removed only when their descendants
-contain no files other than empty `tmp` directories. Normal run teardown removes its temporary root
-and prunes the empty execution and `runs/` parents immediately.
+contain no files other than empty `tmp` directories. Normal run teardown removes its owned short
+temporary allocation when command termination is confirmed and cleanup budget remains; otherwise
+it retains the allocation for bounded housekeeping.
 
 Trace retention defaults to 30 days. A cleanup pass receives all execution ids referenced by valid
 persisted sessions across owners and skips those traces, so resumption history is protected. The
@@ -89,6 +89,7 @@ cleanup in `packages/loop/src/runtime/capabilities/tools.ts`, `referencedSession
 `packages/kernel/src/sessions/session-service.ts`, and trace cleanup composition in
 `packages/kernel/src/file-kernel.ts`.
 Test: `packages/paths/tests/integration/housekeeping.test.ts`,
+`packages/paths/tests/integration/short-temporaries.test.ts`,
 `packages/kernel/tests/integration/session-service.test.ts`, and
 `packages/trace/tests/component/cleanup.test.ts`.
 
@@ -110,7 +111,7 @@ Test: `packages/paths/tests/integration/housekeeping.test.ts`,
 Hosted observation files remain private host state, outside generic cache/temporary cleanup.
 The hosted registry reclaims their exact segment namespace only after acknowledgement; it never
 removes active snapshots or unrelated sibling files through generic storage cleanup. Segmentation
-preserves logical byte offsets without imposing the former lifetime projection quota.
+preserves logical byte offsets while bounding individual segments.
 
 Production: `removeProjectionStorage` in
 [projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts), called by

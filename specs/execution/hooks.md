@@ -17,7 +17,7 @@ orchestrating selection/execution/resolution across a whole list of configured h
 `@clarvis/loop`'s `LifecycleHook` contract — everything else in the package is deliberately
 ignorant of what a lifecycle hook is (`packages/hooks/src/types.ts`, `packages/hooks/src/index.ts`).
 
-(`packages/hooks/src/env.ts`). A hook command runs with full operator privileges, reads/writes
+A hook command runs with full operator privileges, reads/writes
 the workspace and reaches the network; the one goal the environment filter pursues is that "the
 model-provider credentials this run is holding must not reach a subprocess that had no reason to
 see them" (`packages/hooks/src/env.ts`). Likewise a tool/argument `match` filter is "a scoping
@@ -313,8 +313,7 @@ counterpart and are absent from the table on purpose — "an approximation that 
 moment is worse than an honest gap".
 
 `EXTERNAL_TOOL_NAMES` (keyed by `normalizeToolName`: letters+digits only, lower-cased): `bash`/`shell→shell`, `read`/`readfile→read_file`, `write`/`writefile→write_file`,
-`edit`/`editfile→edit_file`, `applypatch→apply_patch`, `ls`/`listdir→list_dir`, `skill→load_skill`. Measured against a public catalog of
-196 plugins, external names without Clarvis counterparts must be reported rather than silently accepted. `EXTERNAL_HOOK_TOOL_NAMES` owns the reverse spelling emitted on stdin;
+`edit`/`editfile→edit_file`, `applypatch→apply_patch`, `ls`/`listdir→list_dir`, `skill→load_skill`. External names without Clarvis counterparts must be reported rather than silently accepted. `EXTERNAL_HOOK_TOOL_NAMES` owns the reverse spelling emitted on stdin;
 the two directions are explicit because several external aliases map to one Clarvis tool.
 `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` lists 5 foreign names with no
 Clarvis tool at all (`exitplanmode`, `todowrite`, `notebookedit`, `webfetch`, `websearch`) so a
@@ -345,7 +344,7 @@ interface FilteredHookEnv {
   denied: { exact: number; shape: number };  // counts only, never names
 }
 ```
-(`packages/hooks/src/env.ts`.) The keep-list (`KEEP_EXACT`, 31 names +
+(`packages/hooks/src/env.ts`.) The keep-list (`KEEP_EXACT`, 24 names +
 `KEEP_PREFIX = ["LC_"]`, `packages/hooks/src/env.ts`), the secret name-shape regex
 (`SECRET_NAME`) and the credential-family prefixes (`SECRET_PREFIX`, 13 entries)
 are the concrete rule set; **derivation rationale for the denylist is delegated to
@@ -623,9 +622,11 @@ loads (`packages/kernel/src/runs/settings-assembler.ts`; tests
 `packages/kernel/tests/integration/settings-assembler.test.ts`).
 
 The `Capability` object itself (returned by `createWorkspaceHooksCapability`, not its activation)
-**always** declares `seedMarker: HOOKS_SEED_MARKER` regardless of whether any hook is configured, so a stale `<workspace-hooks>` block from a prior run is stripped even on a later run
-where hooks are configured away entirely (test: "always declares its seed marker, so a stale block
-is stripped even when off", `packages/hooks/tests/component/capability.test.ts`).
+**always** declares `seedMarker: HOOKS_SEED_MARKER` regardless of whether any hook is configured.
+The continuation retains an earlier `<workspace-hooks>` block in its historical position and an
+active later run adds no duplicate. The component test pins marker registration even when hooks are
+off (`packages/hooks/tests/component/capability.test.ts`); preservation and duplicate avoidance are
+pinned in `packages/loop/tests/unit/entry-seed-markers.test.ts`.
 
 ### 4.9 `runCredentialNames` — the denylist a run's own credential surface derives
 
@@ -828,11 +829,11 @@ The following invariants govern the behaviour covered above.
 | stdout parses to JSON that is not an object (array, `null`, string, number) | — | `packages/hooks/src/parse.ts` | `bad_output`, `"stdout JSON is not an object"` |
 | `kind` is present but not a string (e.g. `7`) | — | `packages/hooks/src/parse.ts` | `bad_output`, `"stdout 'kind' is not a string"` |
 | `kind` is a string but not one of the five recognized values | — | `packages/hooks/src/parse.ts` | `bad_output`, `` `unknown kind '<clamped value>'` `` |
-
-The six JSON-shape sub-cases above are individually pinned by the parametrized table
-`packages/hooks/tests/unit/parse.test.ts` ("`%p` is bad output").
 | A representable-but-illegal outcome (`context` at a gate, `rewrite` where not rewritable, non-object rewrite arguments) | — | `packages/hooks/src/parse.ts` | `bad_output`, specific reason string |
-| A gate hook itself throws (only reachable via a non-production `HookRunner`) | — | n/a (production runner never throws) | `buildSeedBlock` catches and logs; the engine's own blanket fail-closed handling of a *thrown* `LifecycleHook` method is documented as "unreachable here by construction" (`packages/hooks/src/capability.ts`) |
+| A gate hook itself throws (only reachable via a non-production `HookRunner`) | — | n/a (production runner never throws) | `buildSeedBlock` catches and logs; the engine's own blanket fail-closed handling of a *thrown* `LifecycleHook` method is documented as unreachable here by construction (`packages/hooks/src/capability.ts`) |
+
+The JSON-shape cases above are individually pinned by the parametrized table
+`packages/hooks/tests/unit/parse.test.ts` ("`%p` is bad output").
 
 `HookFailure.stderr` carries a clamped tail (`STDERR_TAIL_CHARS = 2_000`,
 `packages/hooks/src/runner.ts`) of the child's stderr for every failure kind except
@@ -905,10 +906,6 @@ in [loop-run-lifecycle](../engine/loop-run-lifecycle.md), delegated per the docu
 
 ## 8. Open questions
 
-- **Why `pre_spawn_subagent`, `run_start`, `model_call_error` and `budget_exhausted` have no foreign
-  dialect counterpart** is not stated beyond the general principle ("an approximation that fires at
-  the wrong moment is worse than an honest gap", `packages/capability/src/hooks-config.ts`); no comment explains why
-  specifically these four rather than some other subset lack a mapping.
 - **Invariant #7** (`post_tool_use` is deliberately excluded from `REWRITABLE_EVENTS`) has no direct
   unit test in this package driving `hookInvocationFor("post_tool_use", …)` and asserting
   `rewritable` is `false`; the constraint is enforced by construction (the `Set` literally omits
@@ -919,36 +916,3 @@ in [loop-run-lifecycle](../engine/loop-run-lifecycle.md), delegated per the docu
   that later hooks see the *replaced arguments*, not that a hook which would newly match those
   replaced arguments (but not the original ones) is excluded from firing. No test constructs that
   scenario.
-- **Whether `denied_by_exact`/`denied_by_shape` counts, or any other field of the
-  `hooks.env_filtered` log record, could ever leak a variable's identity through some other field**
-  (e.g. if a future change added a details object) is not tested; the current code only ever emits
-  counts (`packages/hooks/src/capability.ts`), so the invariant holds today, but there is no architecture-level
-  guard (comparable to `packages/paths`'s literal-scan test) enforcing it against a future
-  regression in this package's own tests.
-- **The production values `HookRunnerDeps` composes into a `HookRunner`'s `killGraceMs` /
-  `maxStdoutBytes` when a **host** other than `createWorkspaceHooksCapability` constructs one** are
-  not fully explored here — `createHookRunner` is called with only `workspaceRoot`, `baseEnv`,
-  `logger`, `sessionId` and `callMcpTool` in `packages/hooks/src/capability.ts`,
-  leaving `killGraceMs`/`maxStdoutBytes`/
-  `maxStderrBytes` at the subprocess-level defaults (`DEFAULT_KILL_GRACE_MS`,
-  `DEFAULT_MAX_STDOUT_BYTES`, `DEFAULT_MAX_STDERR_BYTES`) for every workspace-hook run in
-  production; whether any other host in the repository overrides them is outside this document's
-  scope (`packages/loop/src/runtime/build-run-deps.ts` construction call was not traced past the
-  `useHooks` gate cited above).
-- **Translating a plugin's foreign hooks document into Clarvis's vocabulary** (`hook-dialects.ts`)
-  is explicitly delegated to [plugins-and-marketplace](../hosts/plugins.md) per this document's scope and is not described here
-  beyond its existence and its import of `EXTERNAL_TOOL_NAMES`
-  (`packages/kernel/src/plugins/hook-dialects.ts`).
-- ~~**The rationale for the specific set of `KEEP_EXACT` names and `SECRET_NAME`/`SECRET_PREFIX`
-  patterns.**~~ **The membership rules are now stated at the source.** `KEEP_EXACT` keeps
-  what a shell needs to start and behave, plus the version-manager and toolchain roots that make `bun`, `cargo` or `java`
-  resolvable — and *nothing* kept merely because a hook is likely to want it, since a name promoted
-  into the keep-list becomes unremovable by any future secret rule
-  (`packages/hooks/src/env.ts`). `SECRET_NAME` is deliberately not the same pattern as
-  `@clarvis/capability`'s `SENSITIVE_KEY`, and must not converge with it: that one redacts a value
-  already being logged, where over-matching costs only legibility, so it is unanchored; this one
-  *drops an environment variable*, where over-matching breaks the hook — hence the separator
-  anchoring and the extra `auth`/`credentials`/`session` families a redactor has no reason to carry
-  (`packages/hooks/src/env.ts`). The deeper threat model remains delegated to
-  [security-confinement-and-redaction](../cross-cutting/security.md); the mechanism and precedence
-  are in §3.6, §4.9 and invariant #13 here.

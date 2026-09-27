@@ -1,6 +1,6 @@
 ---
 name: clarvis-tui-validation
-description: "Validate Clarvis TUI behavior in a real PTY, investigate startup or runtime performance, or audit complete product journeys. Select focused, performance, or full-audit mode for the requested evidence."
+description: "Test Clarvis end to end with tui-driver: happy paths, secondary flows, selected journeys or the full app. Includes configured-provider selection, disposable credentials, host execution and performance investigations."
 ---
 
 # Clarvis TUI validation
@@ -8,19 +8,31 @@ description: "Validate Clarvis TUI behavior in a real PTY, investigate startup o
 Use one validation workflow for interactive behavior and performance. Follow the repository's
 [operating and evidence-reuse rules](../../../AGENTS.md#repository-skills-and-evidence-reuse).
 Choose the mode from the user's request and name the checkpoints before execution.
+Read the available `opentui` skill for TUI work and `tui-driver` for PTY mechanics.
+Reviewing or editing this skill is static work: do not inspect personal credentials or launch
+provider requests merely to validate its instructions.
 
 ## Select the scope
 
-| Request                                         | Read next                                                                      | Required outcome                                                                              |
-| ----------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| One interactive regression or bounded journey   | This file is sufficient                                                        | Reproduction, affected transitions, recovery, and final-artifact verification                 |
-| Startup, plugin cost, latency, or retention     | [performance.md](references/performance.md)                                    | Comparable measurements of the implicated stages and correctness checks                       |
-| Complete product E2E or a broad daily-use audit | [full-audit.md](references/full-audit.md), then its matrix and report template | Per-scenario evidence, explicit gaps, triaged defects, and critical paths on the final bundle |
+| Request                                                           | Read next                                                                      | Required outcome                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| One interactive regression or bounded journey                     | This file and [execution setup](references/execution-setup.md)                 | Reproduction, affected transitions, recovery, and final-artifact verification                 |
+| Happy paths, happy plus secondary flows, or selected E2E journeys | [journey-profiles.md](references/journey-profiles.md)                          | Execute the selected actions and assert each observable outcome                               |
+| Startup, plugin cost, latency, or retention                       | [performance.md](references/performance.md)                                    | Comparable measurements of the implicated stages and correctness checks                       |
+| Complete product E2E or a broad daily-use audit                   | [full-audit.md](references/full-audit.md), then its matrix and report template | Per-scenario evidence, explicit gaps, triaged defects, and critical paths on the final bundle |
 
 Combine modes only when the request spans them. Full-audit mode includes performance work once;
 a focused defect does not inherit the entire matrix, marketplace A/B, or resource soak.
+Honor an already specified scope. For an ambiguous request such as “test the app”, offer the four
+profiles in [journey-profiles.md](references/journey-profiles.md) in one scope question. Prepare the
+artifact and fixtures while awaiting the choice; do not silently select a full audit. If no choice
+arrives and the request permits a default, state that you are running happy paths only.
 Documentation synchronization uses the static maintenance section in
 [full-audit.md](references/full-audit.md#maintain-the-inventory) without launching the app.
+
+Before any PTY execution, follow [execution-setup.md](references/execution-setup.md) for host versus
+sandbox preflight, provider discovery/selection, isolated copies, and cleanup. The focused mode
+needs that setup too, but does not need the broad journey catalog.
 
 ## Pin the contract and artifact
 
@@ -31,18 +43,17 @@ choosing expectations. Reuse this reading across checkpoints while the files are
 
 Record the full commit and worktree changes, exact launch command, artifact flavor/build identity,
 Bun/OpenTUI versions, OS/architecture, terminal dimensions and keyboard profile, plus fixture and
-configuration identities. Launch the checkout's `packages/code/src/cli.ts` with
-`CLARVIS_CODE_SOURCE=1` for source diagnosis. For bundle evidence, use `bun run build:code` when the
-artifact needs rebuilding, run `bun run smoke`, and launch that CLI with source mode unset. Resolve
-the CLI to an absolute path when the disposable workspace is elsewhere. A source-only result does
+configuration identities. Launch the checkout's `packages/code/src/cli.ts` for source diagnosis.
+The current CLI always loads source; `CLARVIS_CODE_SOURCE` is only a legacy hint. For bundle
+evidence, use `bun run build:code` when the artifact needs rebuilding, run `bun run smoke`, and
+launch `bun /absolute/checkout/packages/code/dist/index.js` directly. Resolve
+the entry to an absolute path when the disposable workspace is elsewhere. A source-only result does
 not qualify the bundle; repeat affected checkpoints after the final relevant build.
 
-Use a temporary `CLARVIS_HOME` and disposable workspace appropriate to the scenario; Git is needed
-only for Git/worktree behavior. Reuse a fixture for intentional multi-turn, cache, or recovery tests;
-reset unrelated state families. A request to use an existing subscription or configured engine
-already authorizes that use within the task. Check session authorization before asking again.
-Keep required host credentials outside the guest, logs, and evidence; remove any test-owned copies
-after use. Preserve unrelated user state.
+Use the isolated roots and selected-provider fixture from the setup reference; Git is needed only
+for Git/worktree behavior. Reuse a fixture for intentional multi-turn, cache, or recovery tests;
+reset unrelated state families. Keep required provider credentials on the test host, outside the
+Clarvis execution guest, logs, and evidence. Preserve unrelated user state.
 
 For `--remote`, record local and remote artifact identities, the destination form without private
 host data, absolute remote workspace, OpenSSH executable/config posture, host-key verification and

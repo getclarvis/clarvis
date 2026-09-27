@@ -6,8 +6,8 @@
 > `packages/kernel/tests/architecture/`,
 > `packages/kernel/tests/integration/plugin-manifest.test.ts`,
 > `packages/capability/tests/unit/hooks-config.test.ts` and
-> `packages/skills/tests/integration/sidecar.test.ts`. Every claim below is anchored to a file and
-> line. Open questions are collected in the final section.
+> `packages/skills/tests/integration/sidecar.test.ts`. Claims below cite their source and test
+> owners. Open questions are collected in the final section.
 
 ## 1. Purpose
 
@@ -138,7 +138,7 @@ Internal helpers with their own, independently useful contracts: `translateTimeo
 
 | Symbol | File | What it does |
 | --- | --- | --- |
-| `clarvisSkillRoots(opts)` | `packages/skills/src/preset.ts` | returns the 4 standard `SkillRootInput`s, lowest precedence first |
+| `clarvisSkillRoots(opts)` | `packages/skills/src/preset.ts` | returns the 2 shared `SkillRootInput`s, lowest precedence first |
 | `HARNESS_CONFIG_DIR` | `packages/skills/src/scan.ts` | `"agents"` — the harness-directed subdirectory *inside* one skill's own directory |
 | `findSkillSidecar(dir, followSymlinks, diagnostics)` | `packages/skills/src/scan.ts` | locates the preferred `.yaml`/`.yml` file directly under `<skill>/agents/` |
 | `resolveResourcePath(skillDir, rel, logger)` | `packages/skills/src/paths.ts` | resolves a resource path from the skill directory without a containment check |
@@ -416,12 +416,7 @@ A plugin manifest's `mcpServers` map is read through a schema that is deliberate
 `mcpServerSettingsSchema`, which does add `.strict()`. An operator's own `settings.json` is
 best served by rejecting a stray key as the typo it probably is; a plugin manifest's entry arrives
 written for another agent host and may carry a key this one gives no meaning to (a working directory, a
-per-server startup budget) — rejecting the whole entry over one such key used to fail the *manifest*,
-taking the plugin's agents, hooks and skills down with it. Measured on a public catalog of 196 plugins,
-that single rule broke 24 of them and cost 82 skills that had nothing to do with MCP
-(`packages/loop/src/settings/settings-schema.ts`) — the same shape of measurement the "5 of 39
-names existed" figure the `EXTERNAL_TOOL_NAMES` architecture test uses elsewhere in this document. Unknown
-keys are dropped, not carried forward, so nothing downstream can start treating a foreign key as a
+per-server startup budget). Unknown keys are dropped, not carried forward, so nothing downstream can start treating a foreign key as a
 contract this host never agreed to.
 
 When `mcpServers` is absent, the resolver also recognizes companion documents by convention. It tries
@@ -634,8 +629,7 @@ MCP entries (`packages/kernel/src/plugins/plugin-manifest.ts`).
   to concrete `HookConfig` values itself and hands the engine an ordinary array. There is no dedicated
   architecture test for this direction in this document's scope —
   `packages/kernel/tests/architecture/dependency-direction.test.ts` checks three unrelated things
-  (`application`/`core`/`ports` not importing `node:fs`/adapters, `transport` not importing
-  `file-kernel`, and no source file naming the removed `@clarvis/loop/internal` surface) and never
+  (`application`/`core`/`ports` not importing `node:fs`/adapters, plus transport isolation) and never
   mentions `@clarvis/hooks`. The evidence available is structural: `packages/kernel/package.json`
   declares no `@clarvis/hooks` dependency, and a scan of `packages/kernel/src` finds the package name
   only in the comment remarks cited above, never in an `import`.
@@ -660,25 +654,8 @@ MCP entries (`packages/kernel/src/plugins/plugin-manifest.ts`).
 
 ## 8. Open questions
 
-- **Why `pre_spawn_subagent` has no foreign counterpart** is stated as a design choice
-  ("Events with no counterpart on either side are absent on purpose",
-  `packages/capability/src/hooks-config.ts`) but the code does not say why no foreign host's
-  vocabulary was judged close enough to reuse — only that none was chosen.
-  Similarly, why exactly these 5 names (`exitplanmode`, `todowrite`, `notebookedit`, `webfetch`,
-  `websearch`) constitute the *complete* set of foreign tools with no counterpart — as opposed to a
-  larger or smaller set — is not derivable from the code; it is asserted as a closed list with no
-  visible derivation from an external catalog inside this repository (the "measured against a public
-  catalog of 196 plugins" figures at `packages/capability/src/hooks-config.ts` and
-  `packages/loop/src/settings/settings-schema.ts` are cited *inside* the source's own doc
-  comments as the origin of these numbers, but the catalog itself is not part of this repository and
-  this document could not independently verify it).
-- **The plugin manifest's broader per-artifact degradation model** (agents, skills-root directives,
-  install records, and atomic plugin hooks) is delegated to [hosts/plugins.md](../hosts/plugins.md); this document cites
-  `plugin-manifest.ts` only at the points where it composes the tables, translator, and MCP companion
-  tolerance this document owns (`resolveMcpServers`, `sanitizeMcpServers`, and `harvestDocument`/the declared-hook harvest).
-- **The deeper skill-registry mechanics** — required-field defaulting beyond the one example shown,
-  `allowed-tools` vs. `tools` precedence, `user-invocable`/`catalogSuppressed` as two independent gating
-  axes, the full limits regime (`MAX_SKILL_NESTING`, `MAX_SKILL_GROUP_DIRECTORIES`, etc.) — are
-  delegated to [execution/skills.md](../execution/skills.md); this document describes only the `HARNESS_CONFIG_DIR` mechanism and the
-  sidecar's dialect tolerance, both of which sit squarely on the "foreign document, tolerant reading"
-  theme this document owns.
+The correspondence tables in `packages/capability/src/hooks-config.ts` specify which foreign
+hook events and tools have Clarvis counterparts. The cited external plugin catalog is not stored
+in this repository, so this audit cannot independently verify that the closed set of
+unsupported foreign names is exhaustive. The current translator behavior is defined by the
+tables and pinned by `packages/kernel/tests/integration/plugin-manifest.test.ts`.

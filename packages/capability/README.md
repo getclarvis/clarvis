@@ -5,7 +5,7 @@ Neutral `RunRequest` carries capability parameters through the generic request v
 attempt, profile and revision identity across the loop boundary. Approval,
 policy and execution-attempt trace kinds are neutral; the Kernel owns their
 decisions. Production: `ActionAuthorizationPort` in
-`src/action-authorization.ts` and `TraceKindDetailMap` in `src/trace-kinds.ts`.
+`src/action-authorization.ts` and `TraceDetailMap` in `src/trace-kinds.ts`.
 Test: `packages/kernel/tests/integration/approval-policy.test.ts`.
 The port also exposes a generic host stop reason after repeated denied reviews;
 the loop does not depend on the judge package. Production: `stopReason` in
@@ -19,7 +19,7 @@ that composes a list of them. A dependency-free leaf of the graph — its only e
 
 ```text
 capability ──> llm | supervision | trace | mcp-client | hooks | skills | memory | plan | goal
-           ──> tasks | loop | workflows | kernel | server
+           ──> loop | workflows | kernel
 ```
 
 ## Contract
@@ -39,9 +39,8 @@ scope construction, while `rateLimitMs` remains per observation.
 
 ## Why it is separate from the engine
 
-The engine used to own the contract, which meant a capability shipped from outside it still had to
-edit `packages/loop` to register anything. This package is the half of the engine that a capability
-author needs: the request and settings vocabulary, the ports, the trace kinds, and `compose`.
+This package owns the contracts a capability author needs: the request and settings vocabulary,
+the ports, the trace kinds, and `compose`.
 The builtin trace vocabulary includes live `tool_control_released`, keyed by call and opaque control
 identity, for physical settlement of yielded shell sessions.
 
@@ -310,7 +309,7 @@ alternative was a dependency edge nobody wanted:
 
 | Module                                              | Why not elsewhere                                                                                                                                                                                    |
 | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model-ref.ts` (`parseModelRef`, `resolveProvider`) | read by the request schema, the memory factory and subagent profiles — none of which should depend on a provider implementation |
+| `model-ref.ts` (`parseModelRef`, `resolveProvider`) | read by the request schema, the memory factory and subagent profiles — none of which should depend on a provider implementation                                                                      |
 | `reasoning-budget.ts` (`reasoningOutputFloor`)      | pure arithmetic needed by both the engine's hot loop and the adapter; leaving it in `@clarvis/llm` would make `runtime/loop/` import the provider layer                                              |
 | `message-content.ts` (`contentToText`)              | shared by the engine and the memory adapter                                                                                                                                                          |
 | `sanitize.ts`                                       | the secret-redaction rules, below                                                                                                                                                                    |
@@ -368,9 +367,6 @@ and the guard kills the run faster than the bug it is reporting.
 `AgentBuildContext.validateArgs` port rather than an ajv instance of its own, which is what keeps
 this package's only external dependency `zod`. Supplying a `schema` with **no** `validate` throws:
 the alternative is a validation boundary failing open in silence.
-
-`OperatorInstructions` carries host-captured persistent instructions in the
-authority seed/state; child inheritance preserves them without widening the parent's ceiling.
 
 ### `frontmatter-fence.ts` splits; it does not parse
 
@@ -453,9 +449,6 @@ boundary. See [trace](../../specs/foundations/trace.md).
 
 `ExecutionRecord.visibility` is the required neutral `ExecutionVisibility` discriminator (`public` or
 `internal`). The host supplies it explicitly; Trace owns storage, validation and query semantics.
-
-The authority ledger retains `envelope_context_revision` beside an installed envelope.
-Revocation or settlement clears it. It is host state, not model-authored content.
 
 ## Test suites
 

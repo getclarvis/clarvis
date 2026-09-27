@@ -189,9 +189,9 @@ interface Loadable {
  * engine turns that refusal into an *empty* skills provider — so exceeding it
  * does not cost the last plugin its skills, it costs the workspace all of them.
  * The reserve left below the ceiling is for the roots the host contributes
- * itself. `clarvisSkillRoots` returns exactly four — `.agents` and `.clarvis`,
- * each at user and workspace scope — so the reserve is double what the host
- * spends today. That margin is deliberate and cheap: adding a host root must not
+ * itself. `clarvisSkillRoots` returns two `.agents` roots, at user and workspace
+ * scope, leaving six of the eight reserved slots for other host roots. That
+ * margin is deliberate and cheap: adding a host root must not
  * silently narrow what plugins may contribute, and the cost of being one short
  * is not the marginal plugin's skills but *every* skill in the workspace, since
  * the refusal degrades to an empty provider. Plugins are bounded here so they

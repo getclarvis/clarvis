@@ -111,8 +111,8 @@ policy". The runs-owned half:
 | `engineResultToProto`, `storedToDetail`, `summaryToProto`, `failedResult` | value | `packages/kernel/src/runs/map-result.ts` |
 | `engineMessagesToProto`, `protoMessagesToEngine`, `protoSteerToEngineContent` | value | `packages/kernel/src/runs/map-message.ts` |
 
-`packages/kernel/tests/architecture/public-surface.test.ts` pins the package to exactly six
-entrypoints (`.`, `./bootstrap`, `./config`, `./local`, `./logger`, `./policy`), so `./policy` is a deliberate,
+`packages/kernel/tests/architecture/public-surface.test.ts` pins the package's public
+entrypoints, including `./policy`, so it is a deliberate,
 named surface rather than a barrel.
 
 Not exported from any entrypoint: `isDroppableRunEvent` and `DEFAULT_RUN_EVENT_BUFFER*`
@@ -226,7 +226,7 @@ holds its own catalog lease while it can use skills. Production: `releaseRunLeas
 | `profiles` | the transitive `can_spawn` closure, deduplicated |
 | `entry` | resolved agent name |
 | `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed |
-| `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `memory`, `task` | straight passthrough, present only when the param is |
+| `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `memory` | straight passthrough, present only when the param is |
 | `prompt_cache_ttl` | request value when provided, else absent |
 | `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills |
 | `plans` | request value, else settings block with the skill-mode override, else settings block, else absent |
@@ -302,6 +302,10 @@ Complete table, transcribed :
 | `compaction` | engine_trace | persisted | engine | false | false |
 | `compaction_skipped` | engine_trace | persisted | engine | false | false |
 | `elicitation_requested` | engine_trace | persisted | engine | false | false |
+| `approval_requested` | engine_trace | persisted | engine | false | false |
+| `approval_resolved` | engine_trace | persisted | engine | false | false |
+| `execution_policy_result` | engine_trace | persisted | engine | false | false |
+| `execution_attempt` | engine_trace | persisted | engine | false | false |
 | `elicitation_resolved` | engine_trace | persisted | engine | false | false |
 | `steering_applied` | engine_trace | persisted | engine | false | false |
 | `memory_ingest` | capability_channel | live_only | capability | false | false |
@@ -309,8 +313,8 @@ Complete table, transcribed :
 | `events_dropped` | **kernel_derived** | live_only | **managed_run** | false | false |
 | `mcp_degraded` | engine_trace | persisted | engine | false | false |
 
-Read as a client live-versus-rehydration matrix: fifteen types are `live_only` and therefore absent
-from restored `RunDetail.events` — the three deltas, three workflow state/metadata/progress events,
+Read as a client live-versus-rehydration matrix: `live_only` types are absent
+from restored `RunDetail.events` — the three deltas, `tool_control_released`, three workflow state/metadata/progress events,
 five plan events, `compaction_started`, `memory_ingest`, `capability_event`, and `events_dropped`.
 The latest workflow sequence state remains separately durable in the workflow store. The separate
 minimal `tool_call_announced` is persisted, non-droppable and non-coalescible. It restores named
@@ -482,8 +486,8 @@ model do what the user asked without flattening a heterogeneous sub-agent fleet"
 The code names the difference: the plans default would otherwise be unreachable behind the plan
 store's own fallback, whereas "the loop owns the defaults outright (`AGENTS_DEFAULTS`),
 so an absent field must stay absent — writing one out would freeze today's default into every run
-request and make a later change to it invisible". `agentsBlockToParam` recognizes exactly
-ten numeric fields, `AGENTS_FIELDS` : `buffer_lines`, `buffer_bytes`,
+request and make a later change to it invisible". `agentsBlockToParam` recognizes the
+numeric fields in `AGENTS_FIELDS`: `buffer_lines`, `buffer_bytes`,
 `max_total_buffer_bytes`, `poll_max_bytes`, `max_live_children`,
 `max_retained_children`, `max_notices_per_iteration`, `max_consecutive_failed_children`,
 `finish_nudges` — each carried through only when it is a non-negative integer.
@@ -603,8 +607,7 @@ arm carries `parent_run_id`. On `workflow_run_started` it spreads an optional `p
 `legacyWorkflowTitle(event.task)` when `event.title` is unset, and conditionally spreads
 `round_id`/`pass`/`item_index`/`replica`/`replica_count`. On `workflow_run_completed` it
 hardcodes `status: "completed"` rather than deriving it. On `workflow_run_failed` it
-derives `status` via `endedReasonToStatus(event.status)` and conditionally spreads `error`. `legacyWorkflowTitle` is the title fallback for a persisted event that
-predates the `title` field: it takes the first non-blank line of `task`, then `parseTaskTitle`
+derives `status` via `endedReasonToStatus(event.status)` and conditionally spreads `error`. `legacyWorkflowTitle` supplies a title when a persisted event has no `title`: it takes the first non-blank line of `task`, then `parseTaskTitle`
 (falling back to a `TASK_TITLE_MAX`-clipped slice on failure) — the same `@clarvis/capability` helper
 listed in §7.1.
 
@@ -659,8 +662,8 @@ capability actually emitted the event. This is unlike `engineEventToProto`, whos
 `at` from the trace event itself (`ev.occurred_at`/`ev.started_at`/`ev.ended_at`/etc., e.g.); a capability-channel event's `at` therefore reflects delivery time, not origination
 time.
 
-The docstring records that the previous design matched against a list of known capability names, and
-that "any capability the kernel had not been taught about … had its events dropped in silence". `packages/kernel/tests/unit/map-events.test.ts` pins the new behaviour for an invented `audit`
+The generic envelope accepts a capability name without a kernel-side allowlist.
+`packages/kernel/tests/unit/map-events.test.ts` pins this behavior with an invented `audit`
 capability.
 
 ### 4.9 Backpressure (`coalesce-events.ts` over `core/event-stream.ts`)
@@ -1124,11 +1127,11 @@ store owns the full schema".
 
 ## 8. Open questions
 
-- **`sources`, `durability` and `mapper` have no runtime reader at all.** The only fields anything
-  reads are `coalesce` and `droppable` (`packages/kernel/src/runs/coalesce-events.ts`). The other three
-  exist as documentation-as-data pinned by `packages/kernel/tests/unit/event-policy.test.ts`. Nothing in the
-  code cross-checks them against the mappers — nothing would fail if `plan_created` were marked
-  `mapper: "engine"` while `capabilityEventToProto` still produced it.
+- **The declared event source and mapper are not cross-checked against producers.**
+  `rehydrateEvents` reads `durability` from `RUN_EVENT_POLICY`, and buffering reads `coalesce`
+  and `droppable`; `sources` and `mapper` still describe the mapping without a runtime assertion
+  that the named producer actually emits that type. A mismatched annotation can therefore pass
+  current tests unless a specific event case catches it.
 - **Why `engineEventToProto` ends in `default: return null` instead of a `never` check.** The test
   file flags the consequence — "a new engine event that nobody adds a case for is dropped between the
   kernel and the client with a green build and a green suite. This is the only thing standing in for
@@ -1163,23 +1166,3 @@ store owns the full schema".
   no schema validation (`packages/trace/src/json-trace-store.ts`, the latter through
   `parseStoredJson` at `packages/trace/src/trace-store.ts`), so a hand-edited
   or foreign-written store file could still make the two values diverge, and nothing would detect it.
-- **`inspectCoalescedRunEvent` is described as "Internal structural diagnostics"**
-  (`packages/kernel/src/runs/coalesce-events.ts`) and is exported from the module but from no entrypoint; its only
-  consumer is `tests/unit/event-stream.test.ts`.
-- **The `ManagedRunSpec.ingestMaxWaitMs` field is described as an "internal deterministic-test seam"**
-  (`packages/kernel/src/runs/managed-run.ts`) but is a plain public field of an exported interface — no mechanism prevents a
-  host from setting it. **Recorded, shape unchanged**: its `@remarks` now says the lack of
-  a mechanism is deliberate and bounds what a host can do with it. The value is clamped against the
-  sliding grace before use, so the worst a host achieves is shortening or lengthening how long a
-  settled run's stream waits for a memory-ingest notice — it cannot make the wait unbounded and
-  cannot affect the run. Hiding it behind a private construction path would cost the one thing it
-  buys: a test that observes the absolute deadline without waiting out the real one. It also carries
-  an `@internal` tag now, which is the strongest marker available without changing the interface.
-- **Delegated, and deliberately not described here:** the `RunEvent` wire schemas and their decoding
-  (`transport/run-event-codec.ts`) go to [hosts/kernel-transport.md](kernel-transport.md); `compaction-queue.ts` to
-  [engine/context-compaction.md](../engine/context-compaction.md); `memory-ingest-phase.ts`'s job semantics (as opposed to its use as a
-  close-grace predicate) to [capabilities/memory-indexer.md](../capabilities/memory-indexer.md); `plan-ref.ts` to [capabilities/plan-capability.md](../capabilities/plan-capability.md);
-  `elicit-bridge.ts` to
-  [cross-cutting/elicitation.md](../cross-cutting/elicitation.md); `core/event-stream.ts` itself to
-  [hosts/kernel-composition.md](kernel-composition.md) (cited here only where the runs policy plugs into it); the
-  workflows manager path to [capabilities/workflows-service.md](../capabilities/workflows-service.md).

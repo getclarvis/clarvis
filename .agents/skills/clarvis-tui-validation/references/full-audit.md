@@ -3,6 +3,9 @@
 Apply the shared artifact, PTY, isolation, and evidence rules in [SKILL.md](../SKILL.md) once.
 Use this mode when the user requests broad product coverage. A completed inventory means every
 scenario has a disposition; it does not mean every scenario passed E2E.
+The “entire app” choice in [journey-profiles.md](journey-profiles.md) selects this mode. Use its
+journey ordering as a starting point, then cover every matrix requirement, including cases beyond
+the happy and secondary columns. Apply [execution-setup.md](execution-setup.md) before PTY launch.
 
 ## Maintain the inventory
 
@@ -27,6 +30,9 @@ It checks registered slash commands, Settings panel names, dynamic-command rows,
 scenario IDs, including padded Markdown cells. It does not cover every dynamic registration or
 prove any journey executed. Manually reconcile the remaining surfaces. Derive totals from parsed
 rows, never a saved count or a list of every ID mentioned in prose.
+The checker does not establish that capability journeys still exist. Before selecting one, verify
+its current production entrypoint and owning contract; legacy DTOs or an old matrix row do not
+establish an active feature. Remove retired scenarios rather than marking them unavailable.
 
 When documentation synchronization or a behavior change changes a covered surface, update the
 relevant matrix rows in the same iteration. Change the main skill only when its workflow changes,

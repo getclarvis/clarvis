@@ -256,8 +256,7 @@ detail (`packages/workflows/src/trace-events.ts`): `run_id`, `parent_run_id`, `s
 
 The projectors add an absolute timestamp — `started_at` / `completed_at` from
 `context.absoluteTime(entry.at)` (`packages/workflows/src/trace-events.ts`) — and **throw** `TypeError("invalid
-<kind> trace detail")` when the opaque detail fails its guard (`packages/workflows/src/trace-events.ts`). `title` is optional on the persisted start event, documented as
-"absent only on traces written before titles and tasks were separated"
+<kind> trace detail")` when the opaque detail fails its guard (`packages/workflows/src/trace-events.ts`). `title` is optional on the persisted start event
 (`packages/workflows/src/trace-events.ts`, guard).
 
 `recordWorkflowTrace` is an overloaded wrapper whose only body is `trace.record(kind, detail)`
@@ -409,6 +408,11 @@ the second's spend.
 | project | `status === "error"` → `LeaderResult.error = {code,message}`; otherwise status/result/usage passed through | `packages/workflows/src/run-leader.ts` |
 | fault | a thrown `executeRun` is caught, logged at `error` with a stack, and returned as `status:"error"`, `code:"leader_run_failed"` | `packages/workflows/src/run-leader.ts` |
 | always | `reservation.release()` | `packages/workflows/src/run-leader.ts` |
+
+The loop combines `deps.capabilities` with the per-call `capabilities` array, so the leader retains
+the host's admitted capability set and adds its budget capability
+(`executeRun` in `packages/loop/src/runtime/execute-run.ts`). The host assembles leader deps with
+its own capability policy (`packages/kernel/src/workflows/workflows-service.ts`).
 
 A leader's prompt is multiplexed into the manager run's channel (`createElicitMux`), and the leader
 channel only prefixes the message with `[leader …]` while spreading the params — so a leader's
@@ -610,7 +614,7 @@ Synchronous refusals, before anything is registered:
 | the complete first round exceeds remaining `max_total_leaders` or `beginDispatch` cannot register its first wave | `launch` inside `createRoundCoordinator` |
 
 `roundCallBoundsError` exists because `run_workflow` and embedders call `startRounds` with **typed
-objects`, and types are not a runtime admission control. The programmatic-boundary cases in
+objects**, and types are not a runtime admission control. The programmatic-boundary cases in
 `packages/workflows/tests/component/run-round.test.ts` pin every refusal before registration.
 
 **`planRound`**:
@@ -1151,10 +1155,8 @@ The engine dependency is deliberately narrowed further at runtime by `WorkflowRu
 implementation; every test in this package supplies a per-context fake instead of mocking a module
 (`packages/workflows/tests/helpers/workflow.ts`).
 
-The loop's own `@clarvis/loop/workflows` entry exports exactly one symbol,
-`createElicitSerializer` (`packages/loop/src/workflows.ts`), and its TSDoc records that
-supervision used to be re-exported there and was moved to `@clarvis/supervision` so both packages
-depend on a leaf (`packages/loop/src/workflows.ts`).
+The loop's `@clarvis/loop/workflows` entry exports `createElicitSerializer`
+(`packages/loop/src/workflows.ts`).
 
 ### 7.2 What depends on this package
 
@@ -1184,41 +1186,16 @@ grant from every profile so a leader can never become a
 
 ## 8. Open questions
 
-- **`ExecuteRunDeps.capabilities` vs `ExecuteRunArgs.capabilities` for leaders.** `runLeader` passes
-  the budget-only capability on the per-call `capabilities` array (`packages/workflows/src/run-leader.ts`) while handing
-  `ctx.deps` through unchanged. Whether the host's `deps.capabilities` are *also* active for a leader
-  run is decided in the loop's composition, which is outside this document's scope; the debug
-  record at `packages/workflows/src/run-leader.ts` implies they are ("the capabilities named here are the whole
-  surface it gets"), but that is prose, not a verified mechanism.
-- **Why background is the only mode.** The module TSDoc in `capability.ts` asserts it and gives a
-  rationale, and the immediate-verdict component case fails with a message about a deferred verdict
-  — but no test in this package measures the manager's latency, so the TSDoc claim that a deferred
-  verdict is joined by `runDispatch`'s `finally` is unverified from this package's code. The
-  loop-side dispatch belongs to another document.
-- **`WorkflowCtx.workflowDefs` provenance.** The type says the host supplies loaded definitions and
-  "this package never reads a root itself" (`WorkflowCtx.workflowDefs` in
-  `packages/workflows/src/types.ts`); the loader in `artifact.ts` and the kernel service that calls
-  it belong to **workflows-documents-and-service**.
-- **`ExecuteRunOutcome.response.status` domain.** `LeaderStatus` (`packages/workflows/src/types.ts`) enumerates six
-  statuses and `runLeader` passes `response.status` through verbatim (`packages/workflows/src/run-leader.ts`); the loop's
-  `RunResponse` is outside this document's scope, so whether the two sets coincide is unconfirmed.
-- **`elicitWithClockPause` semantics.** Used by `buildRunWorkflowHandler`; its clock-pause
-  behaviour is the elicitation document's.
-- **`AgentRegistryPort.liveCount()` counting rules.** `waitForCapacity` subtracts `oursLive` from it
-  and treats the remainder as foreign. What exactly the registry counts as live (adopted tasks?
-  retained children?) is [foundations/supervision.md](../foundations/supervision.md)'s.
-- **Unpinned invariants.** (a) `workflowsSettingsSpec` exposing no `requestParams` is
-  asserted nowhere in this package (§5 INV-W34). (b) `describeQueued`'s appearance in
-  `run_round`'s `describePlan` text is unasserted (§5 INV-W38). (c) `placeholders`
-  (`packages/workflows/src/interpolate.ts`) has a unit test (`packages/workflows/tests/unit/interpolate.test.ts`) but no `src/` caller
-  inside this document's scope — its consumer is presumably `artifact.ts`'s load-time validation, which
-  is not covered here.
-- **`WorkflowLedger.reserve` sizing rationale.** Division by `maxConcurrent` and `ceil` are
-  documented by `WorkflowLedger.reserve` and pinned numerically in
-  `packages/workflows/tests/unit/ledger.test.ts`; the separate manager budget is a topology rule,
-  not another provisional share in this arithmetic.
-- **`MANAGER_REGISTRY_HEADROOM = 4`.** Its TSDoc in `settings.ts` enumerates three slot consumers
-  and says four covers the shapes a manager actually produces; no test derives 4 from those three,
-  so the constant is a judgement that cannot be verified mechanically.
-- **`DispatchUnit.replicaCount`** is recorded into the start trace by `runOne` and projected
-  (`packages/workflows/src/trace-events.ts`), but nothing in this package reads it back; its consumer would be a UI.
+- **Background dispatch latency is not measured here.** `createWorkflowsCapability` returns an
+  immediate verdict, and `runDispatch` owns the settlement boundary
+  (`packages/workflows/src/capability.ts`, `packages/loop/src/runtime/loop/loop.ts`).
+  Component tests assert the immediate tool result, but no workload test measures manager response
+  latency under an active leader fan-out.
+- **Three invariants have narrow proof.** `workflowsSettingsSpec` exposing no `requestParams` is
+  not directly asserted (§5 INV-W34); `describeQueued` appearing in `run_round`'s preview text is
+  unasserted (§5 INV-W38). `placeholders` has a unit test
+  (`packages/workflows/tests/unit/interpolate.test.ts`), while its catalog-load consumer is outside
+  this spec's test scope.
+- **`MANAGER_REGISTRY_HEADROOM = 4` is a policy judgement.** The TSDoc in
+  `packages/workflows/src/settings.ts` enumerates slot consumers, but no test derives that numeric
+  allowance from a complete concurrent workload.

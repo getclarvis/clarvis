@@ -4,12 +4,12 @@
 
 Four model-facing tools change files: `write_file`, `edit_file`, `apply_patch`
 and `remove`. Relative paths resolve from the workspace root; absolute paths
-use host filesystem permissions by default. A trusted Sandbox execution port can instead apply
-the native filesystem boundary. A `readOnly` run advertises none of them; Sandbox workspace
+remain subject to host permissions and the selected execution policy. Standalone callers default
+to Host; the file Kernel binds Sandbox execution and per-action authorization by default. A `readOnly` run advertises none of them; Sandbox workspace
 read-only access is a separate preference and can leave mutation tools available for temporary paths.
 
 Production: `toolDescriptors` in [registry.ts](../../packages/tools/src/tools/registry.ts),
-`resolveToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts), and
+`resolveFileToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts), and
 `dispatch` in [core.ts](../../packages/tools/src/core.ts).
 Test: [tool-surface.test.ts](../../packages/tools/tests/integration/common/tool-surface.test.ts)
 and [open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts).
@@ -52,8 +52,7 @@ eliminate a parent-directory replacement race.
 
 `CoordinatedToolExecutor` serializes native file mutations for its run. An
 aborted or uncertain mutation is not replayed on Host; later operations are
-still admitted so the agent can inspect state and continue. Safe reads may
-retry once on Host after a typed policy denial. The worker's process tree is
+still admitted so the agent can inspect state and continue. Reads also return denials without an automatic Host retry. The worker's process tree is
 stopped before its queue releases, and an unconfirmed stop fails close rather
 than certifying scratch cleanup.
 

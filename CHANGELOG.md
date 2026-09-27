@@ -7,30 +7,15 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Changed
 
-- Removed Shell Guard, Judge, command review and file-tool path admission. Shell and file tools now
-  follow host process permissions.
+- Built-in shell and file tools use native Sandbox execution by default, with scoped write and
+  network permissions, explicit Host selection, deterministic command rules, and manual or
+  automatic review for eligible actions. `/approval` chooses the review mode and `/authorize`
+  requests a new attempt after an eligible denial.
 - Removed Docker and Podman execution, container images and runtime installers. Remote SSH
   connections remain available. Release candidates use source identity and
   stable releases continue to publish portable binaries.
 
 ## [0.2.0] - Unreleased
-
-### Changed
-
-- Live context compaction replaces `working` on the Lead activity line above the composer instead of
-  repeating `Compacting context…` in the footer.
-
-### Fixed
-
-- `/diff` no longer blinks the open file patch on an unchanged poll. `StableDiff` stays mounted
-  until the selected unified diff actually changes.
-- `clarvis --worktree` bases a new `clarvis/<name>` branch on the commit at `HEAD` of the checkout it
-  was started in, not on the remote default branch. Creation no longer fetches `origin`, so an
-  unreachable remote, a differently configured `origin/HEAD`, or a commit that exists only locally
-  cannot change the base. A source checkout without a commit fails, once a new branch is required,
-  before creating a branch or checkout, while an existing `clarvis/<name>` branch is still reused;
-  uncommitted changes stay where they were, and the new branch records no upstream, so `git push`
-  inside the checkout cannot inherit the remote default branch.
 
 ### Added
 
@@ -59,6 +44,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Changed
 
+- Live context compaction replaces `working` on the Lead activity line above the composer instead of
+  repeating `Compacting context…` in the footer.
 - The transcript now uses native OpenTUI scrolling and one semantic row model for streaming and
   settled content, preserving the reader's position while new work arrives and returning explicit
   submissions to the live tail.
@@ -72,6 +59,15 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
+- `/diff` no longer blinks the open file patch on an unchanged poll. `StableDiff` stays mounted
+  until the selected unified diff actually changes.
+- `clarvis --worktree` bases a new `clarvis/<name>` branch on the commit at `HEAD` of the checkout it
+  was started in, not on the remote default branch. Creation no longer fetches `origin`, so an
+  unreachable remote, a differently configured `origin/HEAD`, or a commit that exists only locally
+  cannot change the base. A source checkout without a commit fails, once a new branch is required,
+  before creating a branch or checkout, while an existing `clarvis/<name>` branch is still reused;
+  uncommitted changes stay where they were, and the new branch records no upstream, so `git push`
+  inside the checkout cannot inherit the remote default branch.
 - Grok subscription catalogs keep `vision` unless the entitled payload omits image input, so persisted
   `tool_calling`-only rows can no longer strip composer images as if the model were blind.
 - SSH sessions no longer claim that a promoted run can survive TUI exit: the SSH stdio channel owns

@@ -41,9 +41,9 @@ import {
  * Open tag of the pinned block a `session_start` hook contributes.
  *
  * @remarks
- * Declared on the {@link Capability} rather than the activation, so a stale
- * block left in a continuation is stripped even on a later run where hooks are
- * configured away entirely.
+ * Declared on the {@link Capability} rather than the activation, so a carried
+ * block is recognized even when hooks are inactive. Continuations retain that
+ * historical block and avoid adding a duplicate when hooks are active again.
  */
 export const HOOKS_SEED_MARKER = "<workspace-hooks>";
 

@@ -2,8 +2,7 @@
 
 > Implemented at `packages/kernel/src/sessions/session-service.ts`,
 > `packages/kernel/src/runs/map-events.ts`, `packages/code/src/adapters/session.ts` and
-> `packages/code/src/adapters/session-store.ts`, plus their tests. Every claim below is anchored to
-> a file and line. Open questions are collected in the final section.
+> `packages/code/src/adapters/session-store.ts`, plus their tests. Claims cite source symbols and tests.
 
 ## 1. Purpose
 
@@ -530,11 +529,12 @@ without a cache split removes the previously numeric cache total when input is p
 `createFileRunHost` composes the coordinator with the registry and immutable execution preparation.
 Code uses a presentation shadow of run history and adopts canonical revisions after reconciliation.
 
-An operator's old-generation recovery adds a `HostedRecoveryResolution` to the affected turn and
-archives that conversation. Unfinished turns become `interrupted` without an invented result,
+An operator's old-generation recovery adds a `HostedRecoveryResolution` to the affected turn.
+An `archive` disposition closes that conversation to later inference; `continue` permits a
+successor without replaying uncertain effects. Unfinished turns become `interrupted` without an invented result,
 end time or usage. Existing terminal data remains intact. The audit survives discovery acknowledgement
-and the Code `metaToSession` / `sessionToMeta` round trip. Later inference must use a new conversation;
-the hosted coordinator rejects both continuation and fresh execution in an archived conversation.
+and the Code `metaToSession` / `sessionToMeta` round trip. The hosted coordinator rejects both
+continuation and fresh execution in an archived conversation.
 The two-write recovery ordering is owned by [hosted runs](hosted-runs.md#explicit-operator-recovery).
 Production: `archiveRecovery` and `prepare` in
 [sessions.ts](../../packages/kernel/src/hosting/sessions.ts), `SessionTurn` in
@@ -755,10 +755,8 @@ persisted trace", `packages/kernel/src/runs/map-events.ts`). Concretely, in this
   `message`, via `engineEventToProto`'s mapping of `run_ended`
   (`packages/kernel/src/runs/map-events.ts`). The message is what keeps the two paths saying the
   same thing: `reason` is the *category* — every capability-declared guard code collapses into
-  `guard_trip` — so a restored run that fell back to it explained itself with a word that says
-  nothing about this failure, while the live path had the real message from the envelope. A trace
-  written before the field existed falls back to the code, which is at least specific, and no
-  compatibility reader reads it back (`packages/code/src/adapters/store.ts`).
+  `guard_trip` — while `code` identifies the failure more specifically
+  (`packages/code/src/adapters/store.ts`).
 - Any event a mapper does not recognize is dropped with a rate-limited `debug` log
   (`reportUnmapped`, `packages/kernel/src/runs/map-events.ts`) rather than surfaced to the client at all — the doc
   comment on `reportUnmapped` names this "the documented rehydration hazard made visible": a format skew
@@ -1167,7 +1165,7 @@ continuation base.
   `deleteRun` and `sessions` bindings are supplied by `packages/code/src/run-host.ts` and
   `packages/code/src/runtime.tsx`, which is how a remote kernel would need no change to this file: it
   never imports a kernel type, only protocol DTOs (`Message`, `RunDetail`, `RunEvent`, `RunResult`,
-  `ActiveTaskBindingDto`, `PlanRef`, `RunRecovery`, from `@clarvis/protocol`, in that file's import
+  `PlanRef`, `RunRecovery`, from `@clarvis/protocol`, in that file's import
   declarations).
 - **`packages/code/src/adapters/session-store.ts`'s `SessionStore` is the only thing `deleteSession`
   and `resumeSession`'s callers hand a persisted `SessionMeta` through** — its own write-coalescing
@@ -1192,33 +1190,6 @@ continuation base.
   (`@clarvis/trace`) directly — the coupling to what a `RunDetail` even contains is entirely through
   the `RunDetail`/`ResumeDeps.getRun` boundary, enforced by TypeScript's structural typing on
   `ResumeDeps` rather than by any import.
-
-## 8. Open questions
-
-- **Whether `save`'s unlink-then-write ordering (invariant 11) is exercised by a crash-injection
-  test anywhere in the repository.** No such test was found in
-  `packages/kernel/tests/integration/session-service.test.ts`; the ordering is asserted only by the
-  production doc comment on `save` in `packages/kernel/src/sessions/session-service.ts`.
-- **Whether `packages/code/src/adapters/store.ts`'s plan-retention-across-replay logic
-  (`endReconcile`, cited in §4.12/§5 invariant 17) has a dedicated unit test.** This document's scope
-  is `session-service.ts`, `map-events.ts`, `session.ts` and `session-store.ts`; `store.ts` itself
-  belongs to a different document (likely [hosts/code-run-host.md](code-run-host.md)), and no test file within this
-  item's own scope exercises it — its evidence here is the production code and comments only.
-- **What determines `opts.owner`/`opts.projectId`/`opts.workspaceId` at the call site** (i.e. how a
-  connection's `scope.owner` is derived) is [hosts/kernel-composition.md](kernel-composition.md)'s scope
-  (`file-kernel.ts`/`kernel.ts` construction), not re-derived here beyond the two
-  citations in §7 showing *where* `createSessionService` is invoked.
-- **The exact wire/DTO validation the kernel's transport layer applies to a `sessions.save`
-  payload before calling `services.sessions.save`** (i.e. whether malformed wire JSON is rejected
-  before or only inside the service) is [hosts/kernel-transport.md](kernel-transport.md)'s scope; this document only
-  describes what the service itself does once called.
-- **Whether a session's `pending` messages (`Session.pending`) are ever pruned or capped
-  independent of the whole-document `SESSION_MAX_BYTES` cap.** No code path in this document's scope
-  applies a bound to `pending` specifically; it is charged only as part of the full document's
-  8 MiB ceiling (`save` in `packages/kernel/src/sessions/session-service.ts`) and, on resume, as part
-  of the same character/message budget as everything else (`resumeSession` in
-  `packages/code/src/adapters/session.ts`). Whether this is deliberate or simply
-  undifferentiated is not stated anywhere in the code.
 
 Host-owned `Session.operator_intents` retains bounded accepted submissions separately from executed
 turns, and `operator_sequence` survives pruning of admitted receipts. Client saves cannot modify
@@ -1266,3 +1237,17 @@ Test: preparation and recovery cases in
 [goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts), and lost-write
 acknowledgement recovery in
 [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+## 8. Open questions
+
+- **Whether `save`'s unlink-then-write ordering (invariant 11) is exercised by a crash-injection
+  test anywhere in the repository.** No such test was found in
+  `packages/kernel/tests/integration/session-service.test.ts`; the ordering is asserted only by the
+  production doc comment on `save` in `packages/kernel/src/sessions/session-service.ts`.
+- **Whether a session's `pending` messages (`Session.pending`) are ever pruned or capped
+  independent of the whole-document `SESSION_MAX_BYTES` cap.** No code path in this document's scope
+  applies a bound to `pending` specifically; it is charged only as part of the full document's
+  8 MiB ceiling (`save` in `packages/kernel/src/sessions/session-service.ts`) and, on resume, as part
+  of the same character/message budget as everything else (`resumeSession` in
+  `packages/code/src/adapters/session.ts`). Whether this is deliberate or simply
+  undifferentiated is not stated anywhere in the code.

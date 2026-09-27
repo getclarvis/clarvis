@@ -147,9 +147,10 @@ export interface Capability {
   readonly grants?: readonly CapabilityGrantDeclaration[];
   /**
    * Static open-tag of this capability's pinned seed block, if it emits one.
-   * Collected from every REGISTERED capability (active or not) so a stale
-   * block in a continuation is stripped even when the capability is gated off
-   * on the current run.
+   * Collected from every registered capability (active or not) to identify
+   * carried blocks in a continuation. A carried block stays byte-for-byte
+   * stable even when its capability is inactive on the current run; a fresh
+   * block with the same marker is omitted.
    */
   readonly seedMarker?: string;
   /**

@@ -1,6 +1,6 @@
 /**
  * Barrel for the runtime tool-call layer: the built-in single tools (`ask_user`,
- * `load_skill`, `submit_result`), MCP dispatch, the result contract, argument
+ * `submit_result`), MCP dispatch, the result contract, argument
  * validation, and the canonical wire names.
  */
 export * from "./ask-user-call.ts";

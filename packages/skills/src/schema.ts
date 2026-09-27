@@ -47,8 +47,7 @@ export const skillDescriptionSchema = z
  * these hints are conventionally written in: `argument-hint: [file, directory]`
  * is a flow sequence, not the bracketed text its author typed. A `z.string()`
  * rejected it, and because a frontmatter failure is not local to the field the
- * whole skill vanished from the catalog, taking its slash command with it. Nine
- * skills in a public catalog of 196 plugins were lost to exactly that.
+ * whole skill vanished from the catalog, taking its slash command with it.
  *
  * A hint is display text and nothing else, so it earns the same `.catch` the
  * `agent` field beside it already carries: no purely presentational field may

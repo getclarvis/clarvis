@@ -53,10 +53,9 @@ place beside the server's tools.
 `@clarvis/kernel` consumes this package for native MCP composition. This package does not depend
 on the kernel.
 
-`@clarvis/loop` depends on this package, never the reverse. The one edge that
-used to point the wrong way was `buildRegistry` importing the engine's built-in
-wire names to keep an MCP tool from shadowing `submit_result` or `read_file`.
-Those names are now a **required argument**: required rather than defaulted,
+`@clarvis/loop` depends on this package, never the reverse. `buildRegistry` receives the engine's
+built-in wire names to keep an MCP tool from shadowing `submit_result` or `read_file`.
+Those names are a **required argument**: required rather than defaulted,
 because a host that forgot them would silently reintroduce the shadowing the
 parameter exists to prevent, and nothing would report it.
 

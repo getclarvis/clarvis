@@ -16,8 +16,7 @@ There are two deliberate entry modes:
 - its home exposes internal Extension Profiles, Plugins, and MCP surfaces for focused inspection and
   maintenance. They are return-stack children, not public `/extensions/...` commands.
 
-The Plugins surface replaces the former split Marketplace, installed Plugins, and Hook approval
-screens. A plugin is an atomic extension: its agents, skills, MCP servers, hooks, and capability
+A plugin is an atomic extension: its agents, skills, MCP servers, hooks, and capability
 executables are selected and consented together.
 
 - **Production:** `ExtensionsHub`, `MarketplaceBrowser`, `ExtensionProfileBrowser`, and `McpBrowser` in

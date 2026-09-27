@@ -1,7 +1,6 @@
 # The run loop: iterations, model calls, steering, cancellation and termination
 
 > Implemented at `packages/loop/src/runtime/**`. Every claim below is anchored to a file and a named symbol or test.
-> Open questions are collected in the final section.
 
 ## 1. Purpose
 
@@ -108,8 +107,8 @@ role and settings from here rather than re-deriving them:
 `entryProfile.default_spawn`, or else the first spawnable profile's model; for a non-lead, the entry
 profile's own model. `resolveConfig` is the sibling function that produces the
 run's hard `ResolvedConfig`: `max_tokens`, bounded only when
-`request.budget.on_exceed === "stop"`, and `timeout_ms`. It carries no iteration cap — it declared a
-`max_iterations` fixed at `Number.POSITIVE_INFINITY` for every run, and that field has been removed.
+`request.budget.on_exceed === "stop"`, and `timeout_ms`. Iteration limits belong to
+the agent profile and loop controls.
 
 ### 2.6 The agent-layer contract
 
@@ -237,12 +236,10 @@ wire-visible.
 ### 3.5 `run_started` / `run_ended` trace detail
 
 `deriveRunStartedDetail` (`packages/loop/src/runtime/run-trace.ts`) emits
-`{ mode, lead_model?, subagent_model, max_tokens? }` — the token cap only when finite. It also emitted
-a `max_iterations`, which `resolveConfig` fixed at `Number.POSITIVE_INFINITY` for every run, so the
-finiteness test was always false and the field never reached a trace; it is gone from `ResolvedConfig`
-and from both trace-detail types. `ResolvedConfig` is now `max_tokens` + `timeout_ms`
-(`packages/loop/src/runtime/run-shape.ts`). The run's real iteration cap is `entryMax`, resolved
-from the agent profile in the orchestrator.
+`{ mode, lead_model?, subagent_model, max_tokens? }` — the token cap only when finite.
+`ResolvedConfig` carries `max_tokens` and `timeout_ms`
+(`packages/loop/src/runtime/run-shape.ts`). The iteration cap is `entryMax`, resolved from the
+agent profile in the orchestrator.
 
 `deriveRunEndedDetail` (`packages/loop/src/runtime/run-trace.ts`):
 
@@ -1010,7 +1007,7 @@ names the streak (`packages/loop/src/runtime/run-trace.ts`).
     `packages/loop/tests/integration/empty-response.test.ts`.
 26. **Both soft convergence warnings of one iteration are joined into a single runtime note.** —
     `packages/loop/src/runtime/loop/loop.ts`, with the reason stated.
-    ~~**Unpinned** by any test naming this behaviour.~~ **Pinned**:
+    Pinned by:
     `packages/loop/tests/integration/convergence-warning-join.test.ts`. Making both guards warn in
     one iteration is the hard part and is not incidental — the stagnation guard ignores errors
     outright and any success clears the doom guard's counters, so it takes one batch holding a
@@ -1020,7 +1017,7 @@ names the streak (`packages/loop/src/runtime/run-trace.ts`).
     `packages/loop/tests/integration/guard-escalation.test.ts` (guard escalation is owned by
     [loop-budgets-clocks-and-guards](budgets-and-guards.md)).
 28. **An escalation that returns a result of its own does *not* record a `terminate` reason; only a
-    genuine guard termination does.** — `packages/loop/src/runtime/loop/loop.ts`, reason stated. ~~**Unpinned.**~~ **Pinned**:
+    genuine guard termination does.** — `packages/loop/src/runtime/loop/loop.ts`, reason stated. Pinned by:
     `packages/loop/tests/component/guard-trip-terminate.test.ts`, with both controls — a declining
     escalation and no escalation at all both *do* record it.
 29. **`fastAcceptSubmit` is refused whenever anything downstream could have ruled on the call**: a
@@ -1051,7 +1048,7 @@ names the streak (`packages/loop/src/runtime/run-trace.ts`).
     `packages/loop/src/runtime/loop/loop.ts`. **Unpinned by a direct loop test**;
     `packages/capability/tests/unit/compute-clock.test.ts` owns the clock's own truth table.
 35. **`onTeardown` fires on every exit path from the iteration loop and is awaited.** —
-    `packages/loop/src/runtime/loop/loop.ts`. ~~**Unpinned.**~~ **Pinned**:
+    `packages/loop/src/runtime/loop/loop.ts`. Pinned by:
     `packages/loop/tests/component/lifecycle-finalize-wiring.test.ts` — a completed run, a
     no-progress termination, and a provider throwing out of the loop, each asserting the count is
     exactly one, plus that an async teardown has settled before the run returns.
@@ -1338,87 +1335,3 @@ declared on `WorkflowCtx` and the function is supplied by the host, so `workflow
 | Image routing and model capability gating | [vision-routing](vision-routing.md) |
 | Request validation and settings schemas | [loop-request-and-settings-schema](request-and-settings-schema.md) |
 | The journal's on-disk format and `recoverOrphans` | [trace-recording-and-persistence](../foundations/trace.md) |
-
-## 8. Open questions
-
-1. ~~**Why the run shape is derived twice.**~~ **Resolved.** These are two different functions sharing
-   one exported name across two modules, not one computation done twice for no reason, and a data
-   constraint makes calling the heavier one from `executeRun` impossible.
-
-   `execute-run.ts` imports `deriveRunShape` from `../validation/request-schema.ts` — a
-   **validation-layer** function returning only `{ entry, isLead, userInputEnabled, askUserGranted,
-   softMode }`. `orchestrator.ts` imports a **different** `deriveRunShape`, from `./run-shape.ts`,
-   returning the full `RunShape` (`entryResolved`, `spawnableRegistry`, `fullRegistry`,
-   `primarySubagentModel`, …) — and that richer function's own body (`packages/loop/src/runtime/run-shape.ts`) calls the
-   validation-layer one *again* internally, aliased as `deriveRequestShape` (`packages/loop/src/runtime/run-shape.ts`), to get
-   the same `{ entry, isLead, … }` shape before building the rest of `RunShape` around it. So the
-   validation-layer computation — including its `requiresUserInput` sweep over
-   `allCapabilities` — genuinely runs twice per request that goes through `executeRun`: once directly
-   (`execute-run.ts`), once indirectly inside `orchestrator.ts`'s call to the full
-   `deriveRunShape` (`orchestrator.ts` → `run-shape.ts`). Both sweeps read the same
-   `requestView` object (`execute-run.ts` passes its own `requestView` through as
-   `OrchestratorDeps.requestView`, and `orchestrator.ts` reuses it — `deps.requestView ??
-   createCapabilityRequestView(request)` — rather than recreating it), so the two sweeps' *inputs* are
-   identical; only a capability whose `requiresUserInput` reads something besides `requestView` (or is
-   otherwise impure) could see the two calls disagree.
-
-   `executeRun` cannot call the full, `run-shape.ts` version of `deriveRunShape` in its place: that
-   function requires a `SubagentProfileRegistry` as its second argument (`packages/loop/src/runtime/run-shape.ts`), and
-   `execute-run.ts` never builds one — `resolveSubagentProfiles` is called only inside
-   `runOrchestrator` (`orchestrator.ts`), after `execute-run.ts`'s own check has already run. This
-   is a genuine data-availability constraint, not a style choice: the lighter function is the *only*
-   one `execute-run.ts` has the inputs to call.
-
-   Conversely, `runOrchestrator` cannot simply accept an injected `shape` and skip its own derivation:
-   `OrchestratorDeps` has no such field, and three test files
-   (`packages/loop/tests/integration/orchestrator.test.ts`,
-   `packages/loop/tests/integration/soft-default-iteration-limit.test.ts`,
-   `packages/loop/tests/component/lifecycle-observers-wiring.test.ts`) call `runOrchestrator` directly,
-   bypassing `execute-run.ts` entirely — so `runOrchestrator` must always be able to derive its own
-   full shape from just a `RunRequest` and `OrchestratorDeps`, regardless of caller.
-
-   Finally, the double sweep is inert even if a capability's `requiresUserInput` **were** impure:
-   `execute-run.ts`'s own (first) `shape` is consumed only by the `elicitation_not_supported` fail-fast
-   throw and to compute `runMode`, which is used solely as a `logger` binding
-   field (`mode: runMode`) — never anything that reaches the model or governs dispatch. The
-   run's actual behaviour is driven entirely by `orchestrator.ts`'s own (second, authoritative) shape;
-   a divergence could at most skew that one log field, never execution.
-2. **The in-flight execution-id reservation has no test.** `reserveExecutionId`
-   (`packages/loop/src/runtime/execute-run.ts`) exists specifically for the window before a trace is written, yet `packages/loop/tests/component/execute-run.test.ts` only covers the persisted
-   collision. Nothing pins the concurrent case.
-3. **`raceWithBudget`'s timer semantics vs. detached work.** The doc comment states work that outlives
-   the budget "is not cancelled — it simply stops being waited on" (`packages/loop/src/runtime/execute-run.ts`), but
-   nothing in the code says what should happen to such work if the process exits; the timer being
-   `unref`'d means a pending budget never keeps the process alive, which is the only stated
-   guarantee.
-4. **`MAX_CONSECUTIVE_EMPTY_RESPONSES = 2` and the `CACHE_PREFIX_LOSS = 0.1` tolerance** are bare
-   constants (`packages/loop/src/runtime/loop/loop.ts`, `packages/loop/src/runtime/loop/iteration-metrics.ts`). The latter carries a stated *purpose*
-   ("absorbs the block rounding every provider reports in", `packages/loop/src/runtime/loop/iteration-metrics.ts`) but not a
-   derivation for the specific figure.
-5. **Whether `computeRegion` is ever set for the entry agent.** `LoopCore.computeRegion`
-   (`packages/loop/src/runtime/loop/loop.ts`) is documented as "Present only for a child spawned in the background", and
-   `createEntryInput` never sets it (`packages/loop/src/runtime/entry-inputs.ts`). Confirming that only the delegation
-   path populates it requires reading [loop-delegation-and-subagents](delegation-and-subagents.md)' sources.
-6. **`LoopDerived.beforeCheckpoint` has exactly one producer** —
-    `RunAgentInput.buildBeforeCheckpoint` (`packages/loop/src/runtime/loop/run-agent.ts`, invoked) — and no caller
-    inside the files in this document's scope supplies it. Which capability or persona builds it is outside
-    this document.
-7. **The `interrupted` status is unreachable from this subsystem.**
-    `packages/capability/src/execution-status.ts` states it is produced only by
-    `TraceStore.recoverOrphans`. `loopResultToResponse` has no arm for it
-    (`packages/loop/src/runtime/run-response-mapping.ts`), so a record carrying it can only come from the journal
-    recovery path owned by [trace-recording-and-persistence](../foundations/trace.md).
-8. ~~**No test names the joined-convergence-warning rule, the one-shot forced choice, the
-    `onTeardown` guarantee, or the escalation's `terminate` suppression** (invariants 26, 28, 30, 35).
-    Each is asserted only by an in-source comment. These are the highest-value gaps in this document's
-    test coverage.~~ **Resolved.** All four now carry tests; see the invariants themselves
-    for where. Two were harder to reach than the claim suggests, and the difficulty is the finding:
-
-    - **26** needs both guards warning in the *same* iteration, which a batch of only-failing or
-      only-succeeding calls can never produce — the stagnation guard returns early on any error, and
-      any success clears the doom guard's counters. It takes a batch holding a repeated failing call
-      beside a repeatedly-identical successful one. Reverting the join shows exactly the predicted
-      damage: the doom warning disappears and only the stagnation one reaches the model.
-    - **28** is reached only when the escalation is *cancelled mid-prompt* — the one branch where
-      `onGuardTrip` answers with an `AgentResult` instead of `undefined`. An ask that declines, and no
-      ask at all, both still record `terminate`, and both are asserted beside it.

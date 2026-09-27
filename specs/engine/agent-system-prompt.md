@@ -155,7 +155,3 @@ than inferred usefulness` in `packages/loop/tests/unit/shared-agent-prompt.test.
 - `@clarvis/code` edits the document in Settings → Agents.
 - `@clarvis/skills` owns skill-loading guidance in its own section.
 - Prompt-cache: Environment stays first because it is dynamic. The shared prompt is static for the run and sits immediately after it. Compaction does not duplicate the shared prompt into the summarizer.
-
-## 8. Open questions
-
-None. `append` is deliberately out of scope for this contract.

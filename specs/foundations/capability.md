@@ -151,7 +151,7 @@ Test: `composes dispatch policies with first refusal winning` in
 | --- | --- | --- |
 | `BUILTIN_RUN_ENDED_REASONS`, `isBuiltinRunEndedReason` | 8-item tuple + guard | `packages/capability/src/run.ts` |
 | `BUILTIN_ERROR_CODES`, `isBuiltinErrorCode` | 42-item tuple + guard | `packages/capability/src/run.ts` |
-| `BUILTIN_AGENT_ERROR_CODES` | 7-item tuple | `packages/capability/src/agent-result.ts` |
+| `BUILTIN_AGENT_ERROR_CODES` | built-in error codes | `packages/capability/src/agent-result.ts` |
 | `partialStructOf` | `(lastSubmitAttempt) => {partialStructured} \| {}` | `packages/capability/src/agent-result.ts` |
 | `EXECUTION_STATUSES` | 6-item tuple | `packages/capability/src/execution-status.ts` |
 | `ProviderError` | class, `code = "provider_error"` | `packages/capability/src/llm-port.ts` |
@@ -171,6 +171,16 @@ Everything else re-exported from `index.ts` is either type-only or belongs to a 
 `model-ref` / `provider-resolver` /
 `reasoning-budget` (model-catalog-and-provider-resolution), and the trace modules
 (trace-recording-and-persistence).
+
+### Execution disclosure vocabulary
+
+`ExecutionVisibility` is the neutral `public | internal` discriminator required by `ExecutionRecord`.
+The host chooses it; agent identity and request content cannot imply a class. Storage, summaries,
+journal versioning and recovery validation are owned by [trace](trace.md).
+Production: `ExecutionVisibility` and `ExecutionRecord` in
+[trace-events.ts](../../packages/capability/src/trace-events.ts).
+Test: both classes and invalid writes in
+[trace-store-conformance.ts](../../packages/trace/tests/contract/physical/trace-store-conformance.ts).
 
 ### 2.5 Settings-spec declaration surface
 
@@ -259,10 +269,9 @@ this union". `ReasoningSummary`
 
 **Per-agent overrides and `AgentProfile`.** `CompactionConfigInput`, `RetryConfigInput`
  and `OrchestrationConfigInput` are the
-three per-agent override blocks. The last is now an **open, empty** bag (`Record<string, never>`,
-`packages/capability/src/api.ts`): the engine owns no key in it, and a hand-written agent file that
-still names a retired key keeps parsing while the request schema drops the key, so nothing can
-re-arm a policy from there. `AgentProfile` is the full agent definition: `name`,
+three per-agent override blocks. The last is an **open, empty** bag (`Record<string, never>`,
+`packages/capability/src/api.ts`): the engine owns no key in it; request parsing drops
+unrecognized keys from that block. `AgentProfile` is the full agent definition: `name`,
 `description?`, `model`, `base_prompt?`, `tools`, `grants?`, `can_spawn?`/`default_spawn?` (delegation),
 `iteration_limit?`/`stagnation_threshold?`/`call_timeout_ms?`, and the three override blocks above.
 
@@ -657,11 +666,9 @@ The doc-comment states `interrupted` is "the one variant no live run produces" �
 record rebuilt from a journal after the process died, where `result` is necessarily absent (echoed at `packages/capability/src/execution-status.ts`, §3.4). `WireRunResponse` stamps a `RunResponse` with
 `execution_id` for transport.
 
-`ResolvedConfig` (`packages/capability/src/run.ts`) is the effective per-run limits:
-`max_tokens` and `timeout_ms`, and deliberately **no** iteration cap — it declared a `max_iterations`
-that `resolveConfig` fixed at `Number.POSITIVE_INFINITY` for every run, which is why `run_started`'s
-finite-only emission of it never fired. The run's real iteration cap is `entryMax`, resolved from the
-agent profile. `MutableUsage` is a running tally: `iterations` + a `TokenCounts`
+`ResolvedConfig` (`packages/capability/src/run.ts`) carries the effective per-run token and time
+limits: `max_tokens` and `timeout_ms`. The iteration cap is `entryMax`, resolved from the agent
+profile. `MutableUsage` is a running tally: `iterations` + a `TokenCounts`
 accumulator. `MCPStatus` is `connected | lost | unavailable`. `ToolResult` is
 `ok` + `data?` on success, or `error` (`code`, `message`, optional `kind`/`outcome: "unknown"` — the
 doc-comment states a sent request whose effect cannot be proved must never be retried automatically) on
@@ -1124,9 +1131,9 @@ while `isBuiltinErrorCode` still reports it as not the engine's. Production:
 no case folding. Production: `packages/capability/src/run.ts` (Set-backed lookups). Test:
 `packages/capability/tests/unit/open-vocabularies.test.ts`.
 
-**INV-C33.** `BUILTIN_ERROR_CODES` no longer declares the plans capability's codes
-(`plan_review_unreviewed`, `plan_review_revision_limit`, `pending_tasks_unfinished`). Production:
-`packages/capability/src/run.ts` (absent from the tuple). Test: `packages/capability/tests/unit/open-vocabularies.test.ts`.
+**INV-C33.** `BUILTIN_ERROR_CODES` contains only engine-owned error codes; contributed capability
+codes remain in the open vocabulary. Production: `packages/capability/src/run.ts`. Test:
+`packages/capability/tests/unit/open-vocabularies.test.ts`.
 
 **INV-C34.** `EXECUTION_STATUSES` is exactly `completed, budget_exhausted, error, cancelled,
 soft_limit_declined, interrupted`, in that order, with no duplicates. Production:
@@ -1268,12 +1275,10 @@ capability can live in its own package (`packages/capability/src/index.ts`).
 
 ### 7.2 What depends on this package
 
-Fifteen of the other nineteen packages carry a static value edge to `@clarvis/capability` from their
-own `src/`; the four that do not are
-`@clarvis/paths` and `@clarvis/protocol` (both leaves), `@clarvis/tools` (which reaches only
-`@clarvis/paths`) and `@clarvis/code` (which reaches only `@clarvis/kernel` and
-`@clarvis/protocol` — `packages/code/package.json`).
-Verified samples of the forcing edge:
+The engine and kernel import this contract directly. Independent filesystem, tool and protocol
+surfaces keep their narrower dependency edges; the generated
+[package graph](../package-coupling-analysis.md) is the authority for the complete package inventory.
+Representative forcing edges:
 
 | Consumer | Edge | Cite |
 | --- | --- | --- |
@@ -1282,7 +1287,7 @@ Verified samples of the forcing edge:
 | `@clarvis/loop` | reads `Capability.reservedWireNames` and `.toolEffects` off the registered list | `packages/loop/src/runtime/capability-tool-metadata.ts` |
 | `@clarvis/loop` | sorts by `RunCapability.order`, defaulting `0` | `packages/loop/src/runtime/capability-order.ts` |
 | `@clarvis/loop` | type-only import of `ToolEffect`/`ToolEffectPort` to implement the port | `packages/loop/src/runtime/tools/tool-effect.ts` |
-| `@clarvis/kernel` | value import of `createCapabilityRegistry`, registering five out-of-engine specs at module load | `packages/kernel/src/config/capability-registry.ts` |
+| `@clarvis/kernel` | value import of `createCapabilityRegistry`, registering capability settings specs at module load | `packages/kernel/src/config/capability-registry.ts` |
 | `@clarvis/kernel` | reads `CapabilityEvent.wire` when mapping to the protocol | `packages/kernel/src/runs/map-events.ts` |
 
 The direction is forced structurally in one further way: `services.ts`'s docstring states that a
@@ -1305,9 +1310,6 @@ widening of the contract, preferring a port over exposing an engine type
 
 ## 8. Open questions
 
-- **Why the timeouts are 5000 ms and 2000 ms.** `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS`
-  (`packages/capability/src/env.ts`) and `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` carry
-  those defaults and a 60000 ms ceiling on the first, with no comment or test explaining the numbers.
 - **A `projected()` event with no detail is dropped by the kernel.** `projected` deliberately omits
   the `detail` key when the event has none (`packages/capability/src/contract.ts`; pinned by
   `packages/capability/tests/unit/capability-ports.test.ts`), while `capabilityEventToProto` returns `null` when
@@ -1321,30 +1323,3 @@ widening of the contract, preferring a port over exposing an engine type
   `src` today.
 - **`INV-C9` is half-pinned.** `packages/capability/tests/unit/registry.test.ts` proves `specs()` returns a fresh
   array; nothing asserts the same for `grants()`, though `packages/capability/src/registry.ts` implements it identically.
-- **`RunCapability.order` semantics are declared here but enforced elsewhere.** The default of `0` and
-  the "lower runs first, registration order breaks ties" rule are stated at `packages/capability/src/contract.ts`; the
-  only sort is `packages/loop/src/runtime/capability-order.ts`. No test in this package pins it.
-  Delegated to [loop-capability-composition](../engine/capability-composition.md).
-- **`SubagentCapabilitiesFactory`** (`packages/capability/src/contract.ts`) is exported and typed but has no consumer
-  inside this package; where it is threaded into the spawn path is delegated to
-  [loop-capability-composition](../engine/capability-composition.md).
-- **`Capability.persistedTraceProjectors`** (`packages/capability/src/contract.ts`) is declared on the contract, but the
-  registry that consumes it (`packages/capability/src/trace-projectors.ts`, tested at
-  `tests/unit/trace-projectors.test.ts`) belongs to [trace-recording-and-persistence](trace.md); only the
-  declaration is covered here.
-- **Rationale is generally absent by design.** Where the source carries a `@remarks`
-  block giving a reason, this document quotes it and cites the source. Where it does not, no reason is
-  derivable and none is asserted here — see §2.7 for the two such gaps in `api.ts` itself (why
-  `AgentsParam` has exactly the ten ceilings it has, and why `BudgetConfig` models only
-  `stop`/`escalate`).
-
-
-### Execution disclosure vocabulary
-
-`ExecutionVisibility` is the neutral `public | internal` discriminator required by `ExecutionRecord`.
-The host chooses it; agent identity and request content cannot imply a class. Storage, summaries,
-journal versioning and recovery validation are owned by [trace](trace.md).
-Production: `ExecutionVisibility` and `ExecutionRecord` in
-[trace-events.ts](../../packages/capability/src/trace-events.ts).
-Test: both classes and invalid writes in
-[trace-store-conformance.ts](../../packages/trace/tests/contract/physical/trace-store-conformance.ts).

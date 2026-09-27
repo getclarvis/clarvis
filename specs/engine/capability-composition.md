@@ -31,7 +31,7 @@ The subsystem exists to let three coding-adjacent features — the coding toolse
 (`@clarvis/tools`), skill discovery (`@clarvis/skills`) and workspace hooks (`@clarvis/hooks`) —
 ship as genuinely optional Bun `optionalDependencies` of the engine
 (`packages/loop/package.json`), while feature packages that sit *above* the engine (memory,
-plan, workflows and tasks) register their settings and capabilities into the same
+plan and workflows) register their settings and capabilities into the same
 machinery from the kernel side without the engine ever importing or naming them
 (delegated to [kernel-config-and-agents](../hosts/kernel-config.md)). The mechanism that keeps both directions honest is the
 same: nothing on the engine's **eager** configuration path (the modules reached merely by
@@ -59,12 +59,8 @@ not load the optional tools runtime. Production: `createAgentToolsCapability` in
 | `.` | `src/lib.ts` | Curated main API: `executeRun`, `buildExecuteRunDeps`, `createHostModelCallAdmission`/`createHostExtensionAdmission` (the two host-gate factories, `packages/loop/src/lib.ts`, re-exporting `packages/loop/src/runtime/build-run-deps.ts`), the capability contract types, `createAskUserCapability`, providers, trace/message/error types, `VERSION`. No optional-package value import: the imports of `@clarvis/skills` and `@clarvis/skills/capability` in `packages/loop/src/lib.ts` are type-only and erased at compile time. |
 | `./capabilities/tools` | `src/capabilities-tools.ts` | Opt-in tools capability and `@clarvis/tools` exports (`packages/loop/src/capabilities-tools.ts`). |
 | `./host` | `src/host.ts` | Host-facing re-exports across the groups in §2.1a; the surface `@clarvis/kernel` builds config on top of (`packages/loop/src/host.ts`). |
-| `./workflows` | `src/workflows.ts` | Exactly one export, `createElicitSerializer` — the narrow adapter `@clarvis/workflows` needs; supervision (`registerBackgroundChild` etc.) was deliberately moved out to `@clarvis/supervision` (`packages/loop/src/workflows.ts`). |
+| `./workflows` | `src/workflows.ts` | Exactly one export, `createElicitSerializer` — the narrow adapter `@clarvis/workflows` needs (`packages/loop/src/workflows.ts`). |
 | `./testing` | `src/testing/index.ts` | Mock LLM/MCP, engine-owned real-loop test infrastructure, and `validateBody`, for integration tests (`packages/loop/src/testing/index.ts`, exports). |
-
-`./internal` **does not exist**: no `internal.ts` file, no `exports["./internal"]` entry, and no
-importer anywhere in the monorepo
-(`packages/loop/tests/architecture/no-internal-entrypoint.test.ts`).
 
 The `VERSION` on the `.` row is a module of its own and reports the Clarvis product version, not an
 independent Loop release. `packages/loop/src/version.ts` statically imports the root
@@ -247,10 +243,8 @@ fifth is a local module:
 | `BUILTIN_CAPABILITY_NAMES` | `packages/loop/src/runtime/orchestrator.ts` | `{ tools: "tools", skills: "skills", hooks: HOOKS_CAPABILITY_NAME }` — a hand-duplicated literal (see §5, INV-068) |
 | `foldContributions` | `packages/capability/src/compose.ts` | merges per-agent `AgentLoopContribution[]` into tools/handlers/gates/anchor/outputBudget/hooks — owned by `@clarvis/capability`, delegated to [capability-contract-and-vocabulary](../foundations/capability.md) |
 
-`collectCapabilityToolMetadata`'s last-wins effect merge is a deliberate contrast, not an
-inconsistency, with the first-match handler-dispatch order the rest of this document describes: its
-own doc comment states "Effect declarations retain registration-order, last-wins behavior to match
-the former inline composition in the orchestrator" (`packages/loop/src/runtime/capability-tool-metadata.ts`), i.e. a
+`collectCapabilityToolMetadata`'s last-wins effect merge differs from the first-match
+handler-dispatch order the rest of this document describes: a
 **later**-registered capability's `toolEffects` entry for a wire name silently overwrites an
 **earlier** one's (`Object.assign(toolEffects, capability.toolEffects ?? {})`,
 `packages/loop/src/runtime/capability-tool-metadata.ts`) — the opposite tie-break from handler dispatch, where an
@@ -338,12 +332,10 @@ never travels the `settingsScopes` path), and is not part of the plugin's execut
 ### 3.3 Registration-vs-activation identity: `Capability` vs `RunCapability`
 
 `Capability` (registration level, `packages/capability/src/contract.ts`) carries
-`seedMarker?: string`, `reservedWireNames?`, `toolEffects?`, all **collected from every registered
-capability regardless of whether it activates this run**:
-
-> "Collected from every REGISTERED capability (active or not) so a stale block in a continuation is
-> stripped even when the capability is gated off on the current run." — `packages/capability/src/contract.ts`
-> (`seedMarker`); the identical rationale repeats for `reservedWireNames` at `packages/capability/src/contract.ts`.
+`seedMarker?: string`, `reservedWireNames?`, `toolEffects?`, all collected from every registered
+capability regardless of whether it activates this run. A registered marker identifies carried
+seed entries even when its capability is inactive; reserved wire names continue to block MCP
+shadowing.
 
 `RunCapability` (activation level, `packages/capability/src/contract.ts`) carries `order?`, `seedBlock?()`,
 `systemSection?(id)`, `lifecycle?`, `forAgent(scope)`, `onRunEnd?`, `finalizeRun?`,
@@ -355,9 +347,10 @@ capability regardless of whether it activates this run**:
 (`<cap-block>`) rather than importing a real capability's, because the rule is capability-agnostic.
 Given `seedMarkers: ["<cap-block>"]`:
 
-- A continuation-restored entry whose content starts with the marker and whose marker is **not**
-  in this run's `seedBlocks` set is dropped (`packages/loop/tests/unit/entry-seed-markers.test.ts`, "still drops a
-  block whose capability is no longer active").
+- A continuation-restored entry whose content starts with a registered marker remains in its
+  historical position even when the capability is inactive. Test:
+  `packages/loop/tests/unit/entry-seed-markers.test.ts` ("retains historical blocks when their
+  capability is no longer active").
 - A continuation-restored entry whose marker **is** live is kept byte-for-byte; the freshly
   rendered block for that marker is **discarded**, not appended (`packages/loop/tests/unit/entry-seed-markers.test.ts`).
 - A newly-active capability's block (marker not carried by the continuation) is appended **after**
@@ -408,7 +401,8 @@ Given `seedMarkers: ["<cap-block>"]`:
    host monitoring before verification, and consults only `available(skill)` thereafter. An idle
    host-published trust event may replace the whole exact provider, but it never rescans at run
    admission. Function forms retain memoized-by-signature rescanning and last-good degradation.
-   Exact `skillRoots` are used as-is; only the additional-root form receives the four standard roots
+   Exact `skillRoots` are used as-is; only the additional-root form receives the two standard user
+   and workspace roots
    (`SkillRootSnapshotProvider`, `snapshotSkills`, `dynamicSkills`, and `buildExecuteRunDeps` in
    `packages/loop/src/runtime/build-run-deps.ts`). An exact empty root set yields an intentional
    empty provider without a discovery warning (`emptySkillsProvider`; test `treats an exact empty
@@ -498,14 +492,14 @@ Production: `buildEntrySeed` in
    [orchestrator.ts](../../packages/loop/src/runtime/orchestrator.ts), and `capabilitiesForScope` in
    [compose.ts](../../packages/capability/src/compose.ts). Test: mandatory setup and saturation in
    [host-capability.test.ts](../../packages/loop/tests/integration/host-capability.test.ts).
-7. `seedMarkers = allCapabilities.map(c => c.seedMarker).filter(...)` — over the **registered**
+8. `seedMarkers = allCapabilities.map(c => c.seedMarker).filter(...)` — over the **registered**
    set, not the activated one (`packages/loop/src/runtime/orchestrator.ts`) — matching the contract's own rationale
    (§3.3).
-8. `reportRunComposition` logs `run.composed` at `info` (§3.5).
-9. `buildEntrySeed` (`packages/loop/src/runtime/entry-seed.ts`) consumes `seedBlocks`/`seedMarkers` to compose the
+9. `reportRunComposition` logs `run.composed` at `info` (§3.5).
+10. `buildEntrySeed` (`packages/loop/src/runtime/entry-seed.ts`) consumes `seedBlocks`/`seedMarkers` to compose the
    entry agent's opening messages (§3.4).
 
-MCP initialize instructions are necessarily composed later than those nine steps: the engine must
+MCP initialize instructions are necessarily composed later than those ten steps: the engine must
 first open the run's MCP pool. `createMcpInstructionsRunCapability` groups the connected servers'
 bounded instructions under exact server names and appends that prompt-only run capability to the
 already-activated list passed to `runEntryAgent`. It contributes no tools or lifecycle hooks and is
@@ -565,12 +559,7 @@ only identity — `FinalizeGate` carries no name, `packages/loop/src/runtime/loo
   count. A nudge **never** changes the next model call's tool choice. The loop answers it by
   iterating with the gate's own note appended — `ctx.appendNote` on a text attempt, the failed
   tool envelope on a submit — and the catalog exposed, so the model decides which call was
-  missing; the note says what was wrong, and only the model can say which tool fixes it. Forcing
-  the choice answered a wrong-*tool* problem with a *different* wrong tool, and against a provider
-  that refuses a forced choice outright (a thinking model, for one) it turned the nudge into an
-  HTTP 400 that ended the run instead of recovering it. There is no profile field and no
-  environment default that can re-arm it: `OrchestrationConfigInput` owns no key
-  (`packages/capability/src/api.ts`). Production: `noteGateNudged` in
+  missing; the note says what was wrong, and the model decides which tool fixes it. Production: `noteGateNudged` in
   [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts). Test: "a finalize-gate nudge
   never forces a tool call" in
   [lifecycle-finalize-wiring.test.ts](../../packages/loop/tests/component/lifecycle-finalize-wiring.test.ts).
@@ -581,7 +570,7 @@ only identity — `FinalizeGate` carries no name, `packages/loop/src/runtime/loo
 
 ### 4.5 Host-isolated Goal agents
 
-`@clarvis/goal` may invoke the ordinary `executeRun` contract for its legacy semantic formulation agent,
+`@clarvis/goal` may invoke the ordinary `executeRun` contract for its semantic formulation agent,
 and Goal Steward, but the loop remains generic and contains no Goal branch. The Kernel supplies a copied
 `ExecuteRunDeps` whose capability list replaces the ordinary host list with exactly the canonical
 Tools capability. The fixed Goal profile grants only `read_workspace`, so Tools derives its effective
@@ -611,11 +600,6 @@ name for name: `.tools` = `AGENT_TOOLS_CAPABILITY_NAME` (`packages/loop/src/runt
 `.skills` = `SKILLS_CAPABILITY_NAME` (loaded dynamically from `@clarvis/skills/capability`), `.hooks`
 = `HOOKS_CAPABILITY_NAME` (from `@clarvis/capability`, never optional).
 Test: `packages/loop/tests/architecture/builtin-capability-names.test.ts`.
-
-**INV-074.** The removed `@clarvis/loop/internal` entrypoint is absent from the package's export map
-and its `src/internal.ts` file does not exist, and is imported from **no** package's source, test, or
-script anywhere in the monorepo (scan of 100+ files).
-Test: `packages/loop/tests/architecture/no-internal-entrypoint.test.ts`.
 
 **INV-075.** No package the engine depends on (every `@clarvis/*` name in
 `packages/loop/package.json`'s `dependencies` **and** `optionalDependencies`) imports `@clarvis/loop`
@@ -652,7 +636,7 @@ by its own doc comment's account "the whole point of this module is that nothing
 eager configuration path loads the optional `@clarvis/skills` package, and a value import would."
 Test: `packages/loop/tests/architecture/optional-package-loading.test.ts`.
 
-**INV-081.** The engine (`@clarvis/loop`'s `src/`, 250+ files together with `tests/`) never names
+**INV-081.** The engine's `src/` and `tests/` never name
 `@clarvis/memory` or its vocabulary (`MEMORY_`, `Memory[A-Z]`, "memory"/"memories") in production or
 test source, outside one dedicated boundary audit (`optional-package-loading.test.ts`); English
 senses ("in-memory", `process.memoryUsage`) are excluded from the match.
@@ -679,9 +663,8 @@ Test: `packages/loop/tests/architecture/optional-package-loading.test.ts`.
 
 **INV-CC-02.** (Locally derived; the number `INV-085` is likewise already taken by
 [prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md), `specs/cross-cutting/prompt-cache.md`.) The `settings-specs.ts` walk that proves INV-076 is not vacuous: it actually reaches
-`hooks.ts` and `skills-settings.ts`, and crosses **into** `@clarvis/capability`'s
-own source (more than 5 files under `capability/`) and `@clarvis/supervision`'s own source (more than
-1 file under `supervision/`) rather than stopping at either package's barrel — the direct structural
+`hooks.ts` and `skills-settings.ts`, and crosses **into** the source of `@clarvis/capability`
+and `@clarvis/supervision` rather than stopping at either package's barrel — the direct structural
 analog of INV-078's non-vacuousness pin for the memory-capability walk.
 Test: `packages/loop/tests/architecture/optional-package-loading.test.ts`.
 
@@ -775,7 +758,7 @@ their own:**
   package specifier (INV-081, INV-082). `@clarvis/workflows` is the one sanctioned exception because
   the engine itself publishes `./workflows` as a named adapter (INV-083).
 - **The kernel is the actual host that registers non-built-in capabilities** (memory, plan,
-  workflows and tasks) onto `settingsSchemaFor`'s registry and onto
+  and workflows) onto `settingsSchemaFor`'s registry and onto
   `BuildRunDepsOptions.capabilities` — this coupling is one-directional (kernel imports loop; loop
   never imports kernel) and is fully delegated to [kernel-config-and-agents](../hosts/kernel-config.md).
 - **`foldContributions`, the `Capability`/`RunCapability`/`AgentCapability`/`AgentLoopContribution`
@@ -784,22 +767,6 @@ their own:**
   static, type- and value-level dependency in the direction `loop → capability` (never the reverse);
   deep contract semantics are delegated to [capability-contract-and-vocabulary](../foundations/capability.md).
 
-## 8. Open questions
-
-- **No test in this document's scope exercises `importOptional`'s thrown-error path directly**
-  (e.g. by simulating a failed `import()` of `@clarvis/tools`) — its behavior is verified by direct
-  reading of `packages/loop/src/runtime/build-run-deps.ts` rather than by a dedicated negative test.
-- **Per-capability behavior of `tools`, `skills`, `hooks`, `ask-user`, `agents`/supervision, and
-  `delegation`** is intentionally not detailed here beyond what is needed to explain the composition
-  machinery — their own `RunCapability`/`AgentCapability` semantics and tool schemas belong to
-  [execution/tools-contract.md](../execution/tools-contract.md), [execution/skills.md](../execution/skills.md),
-  [execution/hooks.md](../execution/hooks.md), [cross-cutting/elicitation.md](../cross-cutting/elicitation.md),
-  [foundations/supervision.md](../foundations/supervision.md) and
-  [loop-delegation-and-subagents](delegation-and-subagents.md), and grant gating to
-  [grants-and-tool-exposure](../cross-cutting/grants.md).
-- **The kernel-side half of settings/capability registration** (which specs the kernel actually
-  registers, in what order, and how `settingsSchemaFor`'s registry is populated at boot) is not
-  covered here; it belongs to [kernel-config-and-agents](../hosts/kernel-config.md).
 ### Host-owned execution visibility
 
 `ExecuteRunDeps.executionVisibility` is required and validated before activation. The engine copies
@@ -810,3 +777,8 @@ Production: `executeRun` in [execute-run.ts](../../packages/loop/src/runtime/exe
 Persistence and recovery semantics belong to [trace](../foundations/trace.md).
 Test: host classification and preflight rejection cases in
 [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).
+
+## 8. Open questions
+
+The negative `importOptional` path in `packages/loop/src/runtime/build-run-deps.ts` is
+implemented but has no focused test that simulates a failed optional-package import.

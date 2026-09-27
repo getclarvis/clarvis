@@ -923,6 +923,37 @@ describe("file kernel behind the hosted RPC", () => {
     expect(f.entered).toEqual(["after-shell"]);
   });
 
+  test("local activity can save an observation after a hosted turn reorders projected fields", async () => {
+    const f = await fixture();
+    const started = await f.client.hosting!.start(await f.input("first-turn"));
+    await until(() => f.entered.length === 1);
+    f.released.resolve();
+    await started.handle.done;
+    await started.handle.closed;
+
+    const lease = await f.client.hosting!.reserveActivity("conversation", "shell");
+    const canonical = (await f.client.sessions.get("conversation"))!;
+    expect(canonical.turns).toHaveLength(1);
+    const reordered = {
+      ...canonical,
+      turns: canonical.turns.map(
+        (turn) => Object.fromEntries(Object.entries(turn).reverse()) as typeof turn,
+      ),
+      totals: Object.fromEntries(
+        Object.entries(canonical.totals).reverse(),
+      ) as typeof canonical.totals,
+      pending: [{ role: "user" as const, content: "Local command completed" }],
+    };
+    expect(JSON.stringify(reordered.turns)).not.toBe(JSON.stringify(canonical.turns));
+    expect(JSON.stringify(reordered.totals)).not.toBe(JSON.stringify(canonical.totals));
+    await f.client.sessions.save(reordered);
+    const saved = (await f.client.sessions.get("conversation"))!;
+    expect(saved.pending).toEqual(reordered.pending);
+    expect(saved.turns).toEqual(canonical.turns);
+    expect(saved.totals).toEqual(canonical.totals);
+    await f.client.hosting!.releaseActivity(lease.lease_id);
+  });
+
   test("executes after disconnect and reconciles the same run into its conversation before reattachment", async () => {
     const f = await fixture();
     const started = await f.client.hosting!.start(await f.input("background-run"));

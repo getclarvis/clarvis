@@ -1955,11 +1955,22 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           terminalContent.endReconcile(execId);
           return;
         }
-        setState("nodes", next);
-        const survivingKeys = new Set(next.map((node) => node.key));
-        for (const key of foldDefaults.keys())
-          if (!survivingKeys.has(key)) foldDefaults.delete(key);
-        for (const key of [...hydratedTools]) if (!survivingKeys.has(key)) forgetHydrated(key);
+        const retained = new Set(next.map((node) => node.key));
+        const removed = new Set(
+          state.nodes
+            .filter((node) => node.key.startsWith(prefix) && !retained.has(node.key))
+            .map((node) => node.key),
+        );
+        batch(() => {
+          setState("nodes", next);
+          if (removed.size > 0)
+            setSealedRecords(
+              (current) => new Map([...current].filter(([key]) => !removed.has(key))),
+            );
+        });
+        terminalContent.forgetDiscarded(removed);
+        for (const key of foldDefaults.keys()) if (!retained.has(key)) foldDefaults.delete(key);
+        for (const key of [...hydratedTools]) if (!retained.has(key)) forgetHydrated(key);
         reindex();
         rebuildProseAccounting();
         terminalContent.endReconcile(execId);

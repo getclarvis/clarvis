@@ -19,6 +19,10 @@ the global preference captured at admission. Production: `createFileKernel` in
 
 ## Scope
 
+"Hosted run" names the host-owned execution of an ordinary conversation turn. The product does
+not expose a separate hosted-task entity; `/background` changes how an existing local run is
+observed while it continues.
+
 The hosted-run boundary distinguishes execution identity, conversation identity, host generation
 and interactive control epoch. `HostingService` describes admission, observation, explicit handoff,
 receipt lookup and local-activity leases. Its DTOs contain no provider credentials or configuration
@@ -228,7 +232,9 @@ chooser before waiting for a live hosted observation` in
 `!` shell commands reserve their conversation through `HostingService.reserveActivity` before
 spawning in the TUI. A refusal settles the visible command without spawning. The owner persists and
 reads back its pending observation before releasing the lease; unrelated clients cannot save into
-that reserved conversation. `stopLocalWork` cancels and waits for the shell and release before normal
+that reserved conversation. Host-owned turns and totals are compared by value when the TUI saves an
+observation, so a different property order in its session projection does not reject the save.
+`stopLocalWork` cancels and waits for the shell and release before normal
 TUI disconnect. Clear/switch invalidates pending admission and cannot append output to a new session.
 An abrupt connection loss without release preserves conservative host occupancy, since it does not
 prove that a local process ended. These commands cannot be detached. Offline compaction already
@@ -238,7 +244,7 @@ Production: `runBangCommand`, `stopLocalWork` and `closeWorkspace` in Code; `sav
 the session coordinator and `HostedRegistry.ownsActivity`. Test: the hosted shell admission,
 persistence/shutdown and refused-spawn cases in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts), plus the competing-client
-case in [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+and reordered-field cases in [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
 
 Removing an application-selected worktree first stops local shell work and obtains the host's
 `requestRestart` retirement acknowledgement. Physical work or an unknown outcome refuses removal

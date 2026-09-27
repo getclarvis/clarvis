@@ -2475,6 +2475,48 @@ test("a getRun that returns the stored trace replays its events into the transcr
   dispose();
 });
 
+test("a cancelled run trace without a response removes its live-only partial response", async () => {
+  const { host, store, runs, getRunImpl, dispose } = mount();
+  const turn = host.submitTurn("long response");
+  await flush();
+  const executionId = runs[0]!.handle.executionId;
+  host.onEvent(ev({ type: "run_started", at: 1 }), "live");
+  host.onEvent(
+    ev({ type: "iteration_started", agent: "lead", iteration: 1, model: "m", at: 2 }),
+    "live",
+  );
+  host.onEvent(
+    ev({
+      type: "text_delta",
+      agent: "lead",
+      iteration: 1,
+      channel: "text",
+      text: "PARTIAL_CANCELLED_RESPONSE",
+      reset: true,
+      at: 3,
+    }),
+    "live",
+  );
+  expect(store.nodes.some((node) => node.text?.includes("PARTIAL_CANCELLED_RESPONSE"))).toBe(true);
+  const result: RunResult = { execution_id: executionId, status: "cancelled" };
+  getRunImpl.fn = () =>
+    Promise.resolve({
+      ...persisted(executionId, result),
+      events: [
+        ev({ type: "run_started", at: 1 }),
+        ev({ type: "iteration_started", agent: "lead", iteration: 1, model: "m", at: 2 }),
+        ev({ type: "run_ended", status: "cancelled", reason: "cancelled", at: 4 }),
+      ],
+    });
+  runs[0]!.resolve(result);
+  await turn;
+  expect(store.nodes.some((node) => node.text?.includes("PARTIAL_CANCELLED_RESPONSE"))).toBe(false);
+  expect(
+    store.committedNodes().some((node) => node.text?.includes("PARTIAL_CANCELLED_RESPONSE")),
+  ).toBe(false);
+  dispose();
+});
+
 test("getRun failure after a completed run keeps the turn done and settles spinners ok", async () => {
   const { host, store, runs, getRunImpl, dispose } = mount();
   getRunImpl.fn = () => Promise.reject(new Error("connection lost"));

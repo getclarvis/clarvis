@@ -2,6 +2,8 @@
 
 The flagship Clarvis terminal UI. It connects to an independently owned workspace host through
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
+In this package, a "hosted run" is an ordinary conversation turn executed by that host, including
+one that continues after `/background`; it is not a separate user-facing task type.
 
 The UI programs against the `@clarvis/protocol` service contract, so the same
 shell uses the same typed kernel RPC over a private local socket.
@@ -1091,7 +1093,8 @@ a directory outside the global `exports/` tree.
   at most 80 rows; long projections normally mount 40 with 20-row paging and an 80-row transition
   ceiling. Resident-list changes are coalesced to native frames. The reader can leave the tail while
   data continues; prepend, folds and width changes preserve the row reference after native layout.
-  End explicitly restores tail follow. Lead and children share this viewport, never hidden trees.
+  Layout-driven native scroll corrections do not count as reader navigation, so later turns remain
+  visible after a cancelled stream. End explicitly restores tail follow. Lead and children share this viewport, never hidden trees.
   Each projection retains independent reading and expansion state. The contract is in
   [code-transcript-stability.md](../../specs/hosts/code-transcript-stability.md).
 - The transcript retains the latest 20 complete turns, live and after resume. Retention replaces

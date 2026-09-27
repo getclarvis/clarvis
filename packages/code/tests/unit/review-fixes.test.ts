@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import { applyManualBindingEdit } from "../../src/keys/keyboard-profile.ts";
-import { createTranscriptStore } from "../../src/adapters/store.ts";
+import { applyManualBindingEdit } from "#src/keys/keyboard-profile.ts";
+import { createTranscriptStore } from "#src/adapters/store.ts";
 
 const known = new Set(["agent.picker", "app.escape", "mcp.prompt.gone"]);
 

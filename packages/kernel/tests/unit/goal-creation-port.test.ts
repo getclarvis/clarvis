@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import type { GoalCreationInput, GoalRepository, GoalState } from "@clarvis/goal";
 import type { Session } from "@clarvis/protocol";
-import type { GoalEvidenceSource } from "../../src/goals/evidence.ts";
-import { createGoalCreationPort } from "../../src/goals/creation-port.ts";
-import { createCreationLifecycle } from "../../src/goals/creation-port-lifecycle.ts";
+import type { GoalEvidenceSource } from "#src/goals/evidence.ts";
+import { createGoalCreationPort } from "#src/goals/creation-port.ts";
+import { createCreationLifecycle } from "#src/goals/creation-port-lifecycle.ts";
 
 const session: Session = {
   id: "session",

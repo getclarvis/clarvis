@@ -4,14 +4,14 @@ import { describe, it, expect } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSettingsRunAssembler } from "../../src/runs/settings-assembler.ts";
-import { createConfigService } from "../../src/config/config-service.ts";
-import { createFileConfigStore } from "../../src/config/file-config-store.ts";
-import { createMemoryConfigStore } from "../../src/config/memory-config-store.ts";
+import { createSettingsRunAssembler } from "#src/runs/settings-assembler.ts";
+import { createConfigService } from "#src/config/config-service.ts";
+import { createFileConfigStore } from "#src/config/file-config-store.ts";
+import { createMemoryConfigStore } from "#src/config/memory-config-store.ts";
 import { loadEnv } from "@clarvis/capability";
 import { type AgentProfile, type SkillsProvider } from "@clarvis/loop";
 import { validateBody } from "@clarvis/loop/testing";
-import type { SettingsAssemblerOptions } from "../../src/runs/settings-assembler.ts";
+import type { SettingsAssemblerOptions } from "#src/runs/settings-assembler.ts";
 
 interface RawBody {
   entry: string;

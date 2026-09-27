@@ -1,6 +1,6 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { contentToText } from "../../src/message-content.ts";
-import type { ContentPart } from "../../src/api.ts";
+import { contentToText } from "#src/message-content.ts";
+import type { ContentPart } from "#src/api.ts";
 
 describe("contentToText", () => {
   it("returns a plain string unchanged", () => {

@@ -1,17 +1,17 @@
 import { expect, test } from "bun:test";
 import { createRoot, createSignal, type Accessor } from "solid-js";
-import type { SettingsAdapter } from "../../src/adapters/settings.ts";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
-import type { AgentsStore } from "../../src/adapters/agents-store.ts";
-import type { AgentFile, EnvView } from "../../src/adapters/agent-files.ts";
-import type { Scope } from "../../src/adapters/settings.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { AgentsStore } from "#src/adapters/agents-store.ts";
+import type { AgentFile, EnvView } from "#src/adapters/agent-files.ts";
+import type { Scope } from "#src/adapters/settings.ts";
 import {
   createAgentsController,
   grantTier,
   sanitizeAgentName,
   type AgentsControllerDeps,
-} from "../../src/features/agents/controller.ts";
-import { presentAgentsEvent } from "../../src/features/agents/events.ts";
+} from "#src/features/agents/controller.ts";
+import { presentAgentsEvent } from "#src/features/agents/events.ts";
 
 const ENV: EnvView = {
   budgetOnExceed: "escalate",

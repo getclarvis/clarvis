@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ExecutionSessionManager } from "../../../src/lib/execution-session.ts";
+import { ExecutionSessionManager } from "#src/lib/execution-session.ts";
 import { callTool, cleanup, makeConfig, makeWorkspace } from "../../helpers/fixtures.ts";
 
 function command(root: string, source: string): string {

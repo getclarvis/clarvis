@@ -13,19 +13,19 @@ import {
 import { basename, join } from "node:path";
 import { PLUGIN_RESOURCE_LIMITS, readPluginAgentFiles } from "@clarvis/loop/host";
 import type { PluginRef, PluginSource, Scope } from "@clarvis/protocol";
-import { kernelError } from "../../core/errors.ts";
+import { kernelError } from "#src/core/errors.ts";
 import type {
   InstalledPlugin,
   StagedPlugin,
   PluginRepository,
   PreparedPlugin,
-} from "../../ports/plugin-repository.ts";
-import { readPluginManifestSource } from "../../plugins/plugin-manifest.ts";
+} from "#src/ports/plugin-repository.ts";
+import { readPluginManifestSource } from "#src/plugins/plugin-manifest.ts";
 import {
   PLUGIN_INSTALL_RECORD,
   readPluginInstallRecord,
   type PluginInstallRecord,
-} from "../../plugins/plugin-install-record.ts";
+} from "#src/plugins/plugin-install-record.ts";
 import { agentsPluginsDirs } from "@clarvis/paths";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
 

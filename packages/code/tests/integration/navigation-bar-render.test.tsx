@@ -6,10 +6,10 @@ import { registerTimedLeader } from "@opentui/keymap/addons";
 import type { Keymap } from "@opentui/keymap";
 import { TextRenderable, type KeyEvent, type Renderable } from "@opentui/core";
 import { openRender } from "../helpers/tracked-render.ts";
-import { registerUiActionFields, uiCommand } from "../../src/keys/actions.ts";
-import { LAYER } from "../../src/keys/keyspec.ts";
-import type { KeyboardEnvironment } from "../../src/keys/keyboard-profile.ts";
-import { NavigationBar } from "../../src/ui/patterns/navigation-bar.tsx";
+import { registerUiActionFields, uiCommand } from "#src/keys/actions.ts";
+import { LAYER } from "#src/keys/keyspec.ts";
+import type { KeyboardEnvironment } from "#src/keys/keyboard-profile.ts";
+import { NavigationBar } from "#src/ui/patterns/navigation-bar.tsx";
 
 const ENVIRONMENT: KeyboardEnvironment = {
   transport: "local",

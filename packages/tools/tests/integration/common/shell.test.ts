@@ -4,9 +4,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { constants as osConstants } from "node:os";
 import path from "node:path";
 import { isSpillFile, workspacePaths } from "@clarvis/paths";
-import type { ServerConfig } from "../../../src/config.ts";
-import { createShell } from "../../../src/tools/shell.ts";
-import { isAlive } from "../../../src/lib/process-owner.ts";
+import type { ServerConfig } from "#src/config.ts";
+import { createShell } from "#src/tools/shell.ts";
+import { isAlive } from "#src/lib/process-owner.ts";
 
 const {
   makeWorkspace,
@@ -444,7 +444,7 @@ describe("shell", () => {
     });
 
     it("rejects with io_error when finalizing captured output fails", async () => {
-      const { createShell } = await import("../../../src/tools/shell.ts");
+      const { createShell } = await import("#src/tools/shell.ts");
       const tool = createShell({
         finalizeOutput: async () => {
           throw new Error("finalize boom");

@@ -8,17 +8,17 @@ import {
   releaseRuntimeExecutableName,
   releaseTarget,
   type ReleaseTarget,
-} from "../../src/update-contract.ts";
-import type { ReleaseFetch } from "../../src/update/github-releases.ts";
-import { runUpdateCommand } from "../../src/update/index.ts";
+} from "#src/update-contract.ts";
+import type { ReleaseFetch } from "#src/update/github-releases.ts";
+import { runUpdateCommand } from "#src/update/index.ts";
 import {
   activateStagedRelease,
   extractReleaseArchive,
   managedInstallation,
   verifyStagedRelease,
   withUpdateLock,
-} from "../../src/update/installation.ts";
-import { CLARVIS_DOCS_FIRST_VERSION, manifestFiles } from "../../src/update/release-manifest.ts";
+} from "#src/update/installation.ts";
+import { CLARVIS_DOCS_FIRST_VERSION, manifestFiles } from "#src/update/release-manifest.ts";
 
 function output(): { stream: { write(value: string): boolean }; text: () => string } {
   let value = "";

@@ -4,8 +4,8 @@
  */
 
 import type { JSX } from "solid-js";
-import type { ViewHost } from "../../keys/commands.ts";
-import { LevelHost as UiLevelHost, type LevelView } from "../../ui/patterns/level-host.tsx";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { LevelHost as UiLevelHost, type LevelView } from "#src/ui/patterns/level-host.tsx";
 import { CatalogPicker, type CatalogPickerSpec } from "./CatalogPicker.tsx";
 import type { FieldEditor } from "./field-editor.tsx";
 
@@ -32,9 +32,9 @@ export {
   DetailLines,
   Dash,
   type DetailRow,
-} from "../../ui/primitives/index.ts";
+} from "#src/ui/primitives/index.ts";
 
-export { bindLevelKeys, SelectableList, ViewFrame } from "../../ui/patterns/index.ts";
+export { bindLevelKeys, SelectableList, ViewFrame } from "#src/ui/patterns/index.ts";
 
 export type { LevelView };
 

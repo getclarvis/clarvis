@@ -3,7 +3,7 @@ import {
   createRunTraceProjectors,
   deriveRunEndedDetail,
   traceBridge,
-} from "../../src/runtime/run-trace.ts";
+} from "#src/runtime/run-trace.ts";
 import type { RunResponse, Usage } from "@clarvis/capability";
 import type { TraceEntry } from "@clarvis/capability";
 import type { TraceEvent } from "@clarvis/capability";

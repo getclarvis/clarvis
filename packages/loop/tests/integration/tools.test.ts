@@ -13,7 +13,7 @@ import { basename, dirname, join } from "node:path";
 import { workspaceStatePaths } from "@clarvis/paths";
 import { ExecutionSessionManager } from "@clarvis/tools";
 import { isAlive, killTree } from "@clarvis/tools/shell";
-import { createAgentToolsCapability } from "../../src/runtime/capabilities/tools.ts";
+import { createAgentToolsCapability } from "#src/runtime/capabilities/tools.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { GateLLM } from "./_gate-llm.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";

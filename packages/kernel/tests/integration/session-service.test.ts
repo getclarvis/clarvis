@@ -9,7 +9,7 @@ import {
   createSessionService,
   referencedSessionExecutionIds,
   retainSessionSummary,
-} from "../../src/sessions/session-service.ts";
+} from "#src/sessions/session-service.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
 function session(id: string, updatedAt: number): Session {

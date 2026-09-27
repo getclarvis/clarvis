@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
-import { loadExecutionRules, writeExecutionRules } from "../../src/execution/execpolicy-loader.ts";
+import { loadExecutionRules, writeExecutionRules } from "#src/execution/execpolicy-loader.ts";
 
 const roots: string[] = [];
 afterEach(async () => {

@@ -1,8 +1,8 @@
-import type { Commands, CommandEntryView } from "../../keys/commands.ts";
-import { GROUP_LABEL, GROUP_ORDER, isTopLevelCommand } from "../../keys/command-groups.ts";
-import { glyph } from "../../theme/glyphs.ts";
+import type { Commands, CommandEntryView } from "#src/keys/commands.ts";
+import { GROUP_LABEL, GROUP_ORDER, isTopLevelCommand } from "#src/keys/command-groups.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 import { slashTokenMatches, type CompleteItem, type CompleteProvider } from "./autocomplete.ts";
-import type { ItemMatch } from "../../core/fuzzy.ts";
+import type { ItemMatch } from "#src/core/fuzzy.ts";
 
 type CommandItem = CompleteItem & { match?: ItemMatch; exact?: boolean };
 

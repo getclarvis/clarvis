@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { selectSurface, tools } from "../../../src/tools/registry.ts";
-import { dispatch } from "../../../src/core.ts";
+import { selectSurface, tools } from "#src/tools/registry.ts";
+import { dispatch } from "#src/core.ts";
 import {
   makeWorkspace,
   cleanup,
@@ -10,7 +10,7 @@ import {
   read,
   resultText,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 import { EXPECTED_TOOL_DESCRIPTORS, expectedToolNames } from "../../helpers/tool-surface.ts";
 
 const HIDDEN_TOOLS = EXPECTED_TOOL_DESCRIPTORS.filter(({ readOnly }) => !readOnly).map(

@@ -47,7 +47,7 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
 | `check:bun-version` | `bun run tooling/checks/bun-version.ts` | `package.json` (`scripts.check:bun-version`) |
 | `check:bun-sources` | `bun run tooling/checks/bun-sources.ts` | `package.json` (`scripts.check:bun-sources`) |
-| `knip` | `knip` | `package.json` (`scripts.knip`) |
+| `knip` | `knip --tsConfig tsconfig.build.json` | `package.json` (`scripts.knip`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
 | `test` | `test:tooling` followed by all package suites chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
@@ -744,6 +744,7 @@ and `packages/code/src/adapters/stream-metrics.ts` (`createStreamMetricsCounter`
 | `imports runtime dependency X … declared only for development` | a **`src`** value import of a devDependency-only workspace | `package-graph.ts` |
 | `X is not exported by Y` | the requested subpath is absent from the target's `exports`, evaluated under runtime vs type-only condition sets | `package-graph.ts` |
 | `relative import crosses into X` | a `./…` specifier resolving inside another package's directory | `package-graph.ts` |
+| `#src/` mapping or resolution error | a private source import lacks an owner mapping, resolves outside its package, or diverges from the declared source | `module-resolution-policy.ts` |
 | `declares unknown workspace dependency X` / `declares unused internal dependency X` | manifest vs actual usage | `package-graph.ts` |
 | `dependency without project reference X` / `project reference without runtime dependency X` | `tsconfig.build.json` references vs runtime deps | `package-graph.ts` |
 | `root tsconfig missing/unknown project reference X` | root solution file vs the set of packages with a `tsconfig.build.json` | `package-graph.ts` |
@@ -1128,7 +1129,8 @@ only the owner-specific default").
 
 16. **INV-309 (a) — no `src` file imports its own package's public entrypoint.** Rule:
     `tooling/lib/package-graph.ts` (by specifier) (by resolved target).
-    Pinned by `tooling/tests/architecture/package-graph.test.ts`.
+    Pinned by `tooling/tests/architecture/package-graph.test.ts`, including a private alias
+    that resolves to the root entry.
 
 17. **INV-309 (b) — a `src` value import may only name a workspace declared in `dependencies` or
     `optionalDependencies`; a devDependency-only workspace may be imported from `tests`/`scripts`
@@ -1151,7 +1153,7 @@ only the owner-specific default").
 20. **INV-309 (e) — no declared cycle, no compilation cycle, and no intra-package runtime module
     cycle.** Rule:
     `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/architecture/package-graph.test.ts`
-    (module cycles, and the type-only back edge that dissolves one) (declared and
+    (relative and private module cycles, and the type-only back edge that dissolves one) (declared and
     compilation cycles). Currently satisfied: `errors: []` over the real tree.
 
 21. **INV-309 (f) — a deep import must be a subpath the target's `exports` actually publishes, evaluated under the
@@ -1290,7 +1292,10 @@ lets these four repository-tooling modules import it from the repository root.
 A precise boundary, derived from the manifest and config globs, is shown below.
 `check-bun-sources` inventories every tracked or unignored path in all of these trees (and elsewhere
 in the repository), but rejects only Python source extensions. `check:imports` uses the same
-inventory and parses every TypeScript file's module specifiers.
+inventory and parses every TypeScript file's module specifiers. It rejects long same-package
+source imports even when a new package has not declared its private mapping
+(`tooling/checks/import-extensions.ts`, `invalidPrivateImportConvention`;
+`tooling/tests/unit/import-extensions.test.ts`, missing-mapping case).
 
 | Tree | `format:check` | `lint:eslint` | `typecheck` | `source-policy` | `package-graph` | `check:imports` | `knip` |
 | --- | --- | --- | --- | --- | --- | --- | --- |

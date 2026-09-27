@@ -9,8 +9,8 @@ import {
   readLocalHostConnection,
   resolveLocalHostIdentity,
   type LocalHostState,
-} from "../../src/hosting/local-state.ts";
-import { readPrivateHostJson } from "../../src/hosting/private-files.ts";
+} from "#src/hosting/local-state.ts";
+import { readPrivateHostJson } from "#src/hosting/private-files.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

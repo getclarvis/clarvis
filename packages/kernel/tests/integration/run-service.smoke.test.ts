@@ -11,8 +11,8 @@ import { MockLLM, type MockLLMScriptStep } from "@clarvis/loop/testing";
 import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import { createAskUserCapability, type ExecuteRunDeps } from "@clarvis/loop";
 import type { RunEvent, StartRunParams } from "@clarvis/protocol";
-import { createInProcessKernel as rawCreateInProcessKernel } from "../../src/index.ts";
-import { createMemoryConfigStore } from "../../src/config.ts";
+import { createInProcessKernel as rawCreateInProcessKernel } from "#src/index.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 import { agentsPluginsDir } from "@clarvis/paths";
 

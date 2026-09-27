@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { findCascadeMatch, scanLineBlocks } from "../../src/lib/match-cascade.ts";
+import { findCascadeMatch, scanLineBlocks } from "#src/lib/match-cascade.ts";
 
 describe("scanLineBlocks", () => {
   const eq = (a: string, b: string): boolean => a === b;

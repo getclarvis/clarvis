@@ -8,7 +8,7 @@ import {
   SPINNER_FRAMES,
   tickNow,
   useSpinnerClock,
-} from "../../src/views/spinner.ts";
+} from "#src/views/spinner.ts";
 
 function fakeClock(): {
   clock: Parameters<typeof useSpinnerClock>[1];

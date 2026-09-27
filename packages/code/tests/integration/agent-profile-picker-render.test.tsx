@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex } from "@opentui/core";
-import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { AgentProfileView } from "../../src/adapters/agents.ts";
-import { overlayBg, selectionBg } from "../../src/theme/surfaces.ts";
+import { AgentProfilePicker } from "#src/views/overlays/AgentProfilePicker.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { AgentProfileView } from "#src/adapters/agents.ts";
+import { overlayBg, selectionBg } from "#src/theme/surfaces.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { createSignal } from "solid-js";
 import type { Scope } from "@clarvis/protocol";
-import type { AgentDefaults } from "../../src/views/overlays/AgentProfilePicker.tsx";
+import type { AgentDefaults } from "#src/views/overlays/AgentProfilePicker.tsx";
 
 function fakeInteraction(): { interaction: Interaction; press: (key: string) => void } {
   const { keymap, press } = createFakeKeymap();

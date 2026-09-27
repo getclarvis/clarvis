@@ -5,13 +5,13 @@ import {
   type CommandEffects,
   type CommandUi,
   type Commands,
-} from "../../src/keys/commands.ts";
+} from "#src/keys/commands.ts";
 import { createRoot, createSignal } from "solid-js";
-import { createMcpCapabilities } from "../../src/adapters/mcp-capabilities-bridge.ts";
-import { classifySlashSubmit, parseSlashCommand } from "../../src/views/input/autocomplete.ts";
-import { commandKeyLabel } from "../../src/ui/patterns/level-keys.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createCommandCompletionProvider } from "../../src/views/input/command-completion.ts";
+import { createMcpCapabilities } from "#src/adapters/mcp-capabilities-bridge.ts";
+import { classifySlashSubmit, parseSlashCommand } from "#src/views/input/autocomplete.ts";
+import { commandKeyLabel } from "#src/ui/patterns/level-keys.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createCommandCompletionProvider } from "#src/views/input/command-completion.ts";
 
 interface FakeCmd {
   name: string;

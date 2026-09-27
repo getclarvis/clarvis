@@ -6,7 +6,7 @@ import {
   segmentMarkdown,
   SEGMENT_MIN,
   TAIL_PLAIN_CAP,
-} from "../../src/core/transcript/segment.ts";
+} from "#src/core/transcript/segment.ts";
 
 const para = (n: number): string => `Paragraph ${n}. ${"word ".repeat(40).trim()}\n\n`;
 

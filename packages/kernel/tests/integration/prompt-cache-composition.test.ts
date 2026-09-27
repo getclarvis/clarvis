@@ -17,11 +17,11 @@ import {
 import { createPlanStore, type PlanDocument } from "@clarvis/plan";
 import { createInMemoryPlanRepository } from "@clarvis/plan/testing";
 import { globalPaths } from "@clarvis/paths";
-import { createFileKernel, type FileKernel } from "../../src/file-kernel.ts";
+import { createFileKernel, type FileKernel } from "#src/file-kernel.ts";
 import { createHash } from "node:crypto";
 import { composePromptCacheKey } from "@clarvis/capability";
-import { createOpenAICodexAdapter } from "../../src/subscriptions/openai-codex.ts";
-import { subscriptionRegistration } from "../../src/subscriptions/registrations.ts";
+import { createOpenAICodexAdapter } from "#src/subscriptions/openai-codex.ts";
+import { subscriptionRegistration } from "#src/subscriptions/registrations.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

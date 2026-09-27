@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
-import { resolveConfig } from "../../../src/config.ts";
-import { NOOP_TOOLS_LOGGER, setWarnSink, warn, type ToolsLogger } from "../../../src/lib/log.ts";
-import { fsError, serializeError } from "../../../src/errors.ts";
-import { killTree } from "../../../src/lib/process.ts";
-import { bestEffort } from "../../../src/lib/tasks.ts";
+import { resolveConfig } from "#src/config.ts";
+import { NOOP_TOOLS_LOGGER, setWarnSink, warn, type ToolsLogger } from "#src/lib/log.ts";
+import { fsError, serializeError } from "#src/errors.ts";
+import { killTree } from "#src/lib/process.ts";
+import { bestEffort } from "#src/lib/tasks.ts";
 import { cleanup, makeWorkspace } from "../../helpers/fixtures.ts";
 
 interface Record_ {

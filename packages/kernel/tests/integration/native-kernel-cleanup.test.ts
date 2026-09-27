@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { envSchema } from "@clarvis/capability";
 import * as loopHost from "@clarvis/loop/host";
-import { WorkspaceHousekeeping } from "../../src/application/workspace-housekeeping.ts";
-import { createFileKernel } from "../../src/file-kernel.ts";
+import { WorkspaceHousekeeping } from "#src/application/workspace-housekeeping.ts";
+import { createFileKernel } from "#src/file-kernel.ts";
 
 test("native close drains every resource despite a collector failure and retries only failed disposal", async () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-native-close-"));

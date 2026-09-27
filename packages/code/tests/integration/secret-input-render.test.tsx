@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { Show } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
-import { createFieldEditor } from "../../src/views/config/view-host.tsx";
-import { applyAsciiMode } from "../../src/theme/glyphs.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
+import { createFieldEditor } from "#src/views/config/view-host.tsx";
+import { applyAsciiMode } from "#src/theme/glyphs.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 function fakeKeymap(): { keymap: Interaction; press: (this: void, key: string) => void } {

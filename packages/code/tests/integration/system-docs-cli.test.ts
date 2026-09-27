@@ -4,18 +4,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { productVersion } from "../../src/cli-args.ts";
-import { productRootForEntry } from "../../src/cli-entry.ts";
-import {
-  parseSystemDocsArgs,
-  publishSelectedSystemDocs,
-} from "../../src/bootstrap/system-docs-cli.ts";
+import { productVersion } from "#src/cli-args.ts";
+import { productRootForEntry } from "#src/cli-entry.ts";
+import { parseSystemDocsArgs, publishSelectedSystemDocs } from "#src/bootstrap/system-docs-cli.ts";
 import {
   CLARVIS_DOCS_FIRST_VERSION,
   CLARVIS_DOCS_PUBLISHER_FILE,
   CLARVIS_DOCS_RELEASE_FILES,
   manifestFiles,
-} from "../../src/update/release-manifest.ts";
+} from "#src/update/release-manifest.ts";
 
 test("standalone publisher accepts one selected root and rejects ambiguous arguments", () => {
   expect(

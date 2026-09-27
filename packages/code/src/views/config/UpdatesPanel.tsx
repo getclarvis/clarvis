@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { bindLevelKeys, LevelHost, ToggleRow } from "./view-host.tsx";
 
 export interface UpdatesPanelDeps {

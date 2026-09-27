@@ -5,8 +5,8 @@ import {
   DEFAULT_STRICT,
   StartupError,
   resolveConfig,
-} from "../../src/config.ts";
-import { MAX_SKILL_ROOTS } from "../../src/limits.ts";
+} from "#src/config.ts";
+import { MAX_SKILL_ROOTS } from "#src/limits.ts";
 
 describe("resolveConfig", () => {
   it("fills defaults and preserves the given roots in order", () => {

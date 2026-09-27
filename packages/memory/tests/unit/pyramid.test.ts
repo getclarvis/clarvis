@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildPyramidGate, createTouchedLedger, pyramidIssue } from "../../src/indexer/pyramid.ts";
+import { buildPyramidGate, createTouchedLedger, pyramidIssue } from "#src/indexer/pyramid.ts";
 
 describe("memory pyramid closure", () => {
   test("an empty ledger fast-accepts and passes", async () => {

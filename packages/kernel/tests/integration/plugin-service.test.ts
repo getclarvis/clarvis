@@ -11,14 +11,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPluginService, validateGitUrl } from "../../src/plugins/plugin-service.ts";
+import { createPluginService, validateGitUrl } from "#src/plugins/plugin-service.ts";
 import type { PluginRef } from "@clarvis/protocol";
-import { createKernelLifecycle } from "../../src/application/lifecycle.ts";
+import { createKernelLifecycle } from "#src/application/lifecycle.ts";
 import type {
   InstalledPlugin,
   PluginFetcher,
   PluginRepository,
-} from "../../src/ports/plugin-repository.ts";
+} from "#src/ports/plugin-repository.ts";
 import {
   agentsPluginsDir,
   agentsPluginsDirs,

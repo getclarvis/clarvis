@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
-import { createFileKernel } from "../../src/bootstrap.ts";
-import { createPluginService } from "../../src/plugins/plugin-service.ts";
+import { createFileKernel } from "#src/bootstrap.ts";
+import { createPluginService } from "#src/plugins/plugin-service.ts";
 import type { SkillSummary } from "@clarvis/protocol";
 import { agentsPluginsDir, globalPaths } from "@clarvis/paths";
 

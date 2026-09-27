@@ -11,8 +11,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { dispatch } from "../../src/core.ts";
-import type { ToolCallHooks } from "../../src/tools/types.ts";
+import { dispatch } from "#src/core.ts";
+import type { ToolCallHooks } from "#src/tools/types.ts";
 import {
   DEFAULT_MAX_OUTPUT_BYTES,
   DEFAULT_MAX_SHELL_OUTPUT_BYTES,
@@ -27,11 +27,11 @@ import {
   DEFAULT_MAX_SESSIONS,
   DEFAULT_REGEX_SCAN_BUDGET_MS,
   type ServerConfig,
-} from "../../src/config.ts";
-import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
-import { contentText, type ContentPart } from "../../src/tools/content.ts";
+} from "#src/config.ts";
+import { NOOP_TOOLS_LOGGER } from "#src/lib/log.ts";
+import { contentText, type ContentPart } from "#src/tools/content.ts";
 import { workspaceStatePaths } from "@clarvis/paths";
-import { ExecutionSessionManager } from "../../src/lib/execution-session.ts";
+import { ExecutionSessionManager } from "#src/lib/execution-session.ts";
 
 const fixtureGlobals = new Map<string, string>();
 const fixtureSessions = new Map<string, Set<ExecutionSessionManager>>();

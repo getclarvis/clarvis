@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { buildSubagentInputPersona } from "../../src/runtime/subagents/build-subagent-input.ts";
+import { buildSubagentInputPersona } from "#src/runtime/subagents/build-subagent-input.ts";
 import { createTrace } from "@clarvis/trace";
 import type { NamespacedRegistry } from "@clarvis/mcp-client";
 

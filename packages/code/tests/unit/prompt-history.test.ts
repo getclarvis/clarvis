@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createPromptHistory } from "../../src/core/prompt-history.ts";
+import { createPromptHistory } from "#src/core/prompt-history.ts";
 
 test("resetCursor abandons a history walk and starts the next walk from a fresh live draft", () => {
   const history = createPromptHistory(10);

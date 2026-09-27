@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { delayOrAbort } from "../../src/dispatch.ts";
+import { delayOrAbort } from "#src/dispatch.ts";
 
 test("capacity polling settles on its timer or an earlier abort", async () => {
   const normal = new AbortController();

@@ -1,14 +1,14 @@
 import type { JSX } from "solid-js";
 import { createSignal, Show } from "solid-js";
-import { detachObserved } from "../../../core/tasks.ts";
-import { tokens } from "../../../theme/tokens.ts";
-import { glyph } from "../../../theme/glyphs.ts";
-import { truncateEnd } from "../../truncate.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { truncateEnd } from "#src/views/truncate.ts";
 import { catalogReady, providerRows, recommendedProviderRows } from "../catalog-pick.ts";
 import { SelectableList, SelectableRow } from "../view-host.tsx";
-import { verb, type LevelSpec } from "../../../ui/patterns/level-keys.ts";
-import type { ProviderKeyStatus } from "../../../features/providers/controller.ts";
-import type { ProviderConfig } from "../../../adapters/settings.ts";
+import { verb, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
+import type { ProviderKeyStatus } from "#src/features/providers/controller.ts";
+import type { ProviderConfig } from "#src/adapters/settings.ts";
 import type { ProvidersViewContext } from "./context.ts";
 
 /** Owns the provider list/default-model screen (L0). */

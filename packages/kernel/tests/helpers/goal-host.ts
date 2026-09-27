@@ -10,11 +10,11 @@ import {
   type GoalControl,
   type GoalCriterion,
 } from "@clarvis/goal";
-import { createGoalEvidenceSource } from "../../src/goals/evidence.ts";
-import { createGoalRepository } from "../../src/goals/repository.ts";
-import { createGoalRuntimePort, type GoalRuntimeChange } from "../../src/goals/runtime-port.ts";
-import { createHostedSessionCoordinator } from "../../src/hosting/sessions.ts";
-import { createSessionService, type HostSessionStore } from "../../src/sessions/session-service.ts";
+import { createGoalEvidenceSource } from "#src/goals/evidence.ts";
+import { createGoalRepository } from "#src/goals/repository.ts";
+import { createGoalRuntimePort, type GoalRuntimeChange } from "#src/goals/runtime-port.ts";
+import { createHostedSessionCoordinator } from "#src/hosting/sessions.ts";
+import { createSessionService, type HostSessionStore } from "#src/sessions/session-service.ts";
 import { recordingLogger } from "./logger.ts";
 
 /** Real private session persistence and runtime authority, with explicit manual admission for tests. */

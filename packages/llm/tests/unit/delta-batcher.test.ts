@@ -3,7 +3,7 @@ import {
   makeDeltaBatcher,
   makeToolInputReporter,
   TOOL_INPUT_REPORT_MS,
-} from "../../src/ai-sdk/streaming.ts";
+} from "#src/ai-sdk/streaming.ts";
 
 type Delta = { channel: "text" | "reasoning"; text: string; reset: boolean };
 

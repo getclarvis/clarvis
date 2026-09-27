@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "../../bun-test.ts";
 import { MockLLM, mockMCPFactory } from "../../integration/_fixtures.ts";
 import { makeHarness, type TestHarness } from "../../integration/_helpers.ts";
-import { createAjv } from "../../../src/validation/index.ts";
+import { createAjv } from "#src/validation/index.ts";
 
 let harness: TestHarness | null = null;
 afterEach(async () => {

@@ -1,8 +1,8 @@
 import { createEffect, createRoot, createSignal, on, type Accessor } from "solid-js";
-import { detachObserved } from "../../core/tasks.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import type { Interaction } from "../../keys/interaction.ts";
-import type { ConfirmRequest, Scope, ViewHost } from "../../keys/commands.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { ConfirmRequest, Scope, ViewHost } from "#src/keys/commands.ts";
 import { useArmedConfirm, type ArmedConfirm } from "../confirm.ts";
 
 /** Imperative controls the shell around a config view uses to drive it (save-on-close, escape, teardown). */

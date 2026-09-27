@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { serializeError, setWarnSink } from "../../src/index.ts";
+import { serializeError, setWarnSink } from "#src/index.ts";
 
 function spyStderr(): { writes: string[]; restore: () => void } {
   const writes: string[] = [];

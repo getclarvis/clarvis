@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { createToolInterruptChannel } from "../../src/runs/tool-interrupt-channel.ts";
-import { KernelException } from "../../src/core/errors.ts";
+import { createToolInterruptChannel } from "#src/runs/tool-interrupt-channel.ts";
+import { KernelException } from "#src/core/errors.ts";
 import type { ToolInterruptDelivery } from "@clarvis/loop";
 
 describe("tool interrupt channel", () => {

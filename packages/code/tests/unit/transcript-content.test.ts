@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { batch, createRoot } from "solid-js";
 import type { RunEvent } from "@clarvis/protocol";
-import { applyEvent, createTranscriptStore } from "../../src/adapters/store.ts";
-import { snapshotTranscriptNode } from "../../src/core/transcript/records.ts";
+import { applyEvent, createTranscriptStore } from "#src/adapters/store.ts";
+import { snapshotTranscriptNode } from "#src/core/transcript/records.ts";
 import { transcriptToolEvents } from "../helpers/transcript-fixtures.ts";
 
 test("terminal records are bounded, frozen, and strip all incremental buffers", () => {

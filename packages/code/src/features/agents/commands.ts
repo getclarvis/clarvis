@@ -1,12 +1,12 @@
-import type { CommandScope, ViewHost } from "../../keys/commands.ts";
-import type { SettingsAdapter } from "../../adapters/settings.ts";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
-import type { EnvView } from "../../adapters/agent-files.ts";
-import type { AgentsStore } from "../../adapters/agents-store.ts";
-import type { HintTone } from "../../views/hint.ts";
-import type { ModelsCatalog } from "../../adapters/models-catalog.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import { lazyView } from "../../views/config/lazy-view.tsx";
+import type { CommandScope, ViewHost } from "#src/keys/commands.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { EnvView } from "#src/adapters/agent-files.ts";
+import type { AgentsStore } from "#src/adapters/agents-store.ts";
+import type { HintTone } from "#src/views/hint.ts";
+import type { ModelsCatalog } from "#src/adapters/models-catalog.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import { lazyView } from "#src/views/config/lazy-view.tsx";
 
 /** Dependencies for registering the Agents settings view. */
 export interface AgentsCommandDeps {
@@ -22,7 +22,7 @@ export interface AgentsCommandDeps {
 /** Registers the Agents settings view on the shared command registry. */
 export function registerAgentsCommands(commands: CommandScope, deps: AgentsCommandDeps): void {
   const view = lazyView(async () => {
-    const { AgentsPanel } = await import("../../views/cold-surfaces.ts");
+    const { AgentsPanel } = await import("#src/views/cold-surfaces.ts");
     return (host: ViewHost) => {
       if (deps.loadCatalog !== undefined) detachObserved("models_catalog_load", deps.loadCatalog);
       return AgentsPanel(host, {

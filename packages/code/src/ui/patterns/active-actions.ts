@@ -1,8 +1,8 @@
 import type { ActiveKey, CommandEntry } from "@opentui/keymap";
 import type { KeyEvent, Renderable } from "@opentui/core";
-import { compactKey } from "../../keys/keyspec.ts";
-import type { ActionHintGroup, ActionSurface } from "../../keys/actions.ts";
-import type { ClientPlatform } from "../../keys/keyboard-profile.ts";
+import { compactKey } from "#src/keys/keyspec.ts";
+import type { ActionHintGroup, ActionSurface } from "#src/keys/actions.ts";
+import type { ClientPlatform } from "#src/keys/keyboard-profile.ts";
 
 /** One named action as seen from the current focus and pending key sequence. */
 export interface ActiveAction {

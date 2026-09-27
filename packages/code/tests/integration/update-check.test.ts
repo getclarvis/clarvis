@@ -7,14 +7,14 @@ import {
   createUpdateChecker,
   UPDATE_CHECK_TTL_MS,
   type UpdateCheckOptions,
-} from "../../src/update/check.ts";
+} from "#src/update/check.ts";
 import {
   RELEASE_REPOSITORY,
   releaseAssetName,
   releaseTarget,
   type ReleaseTarget,
-} from "../../src/update-contract.ts";
-import type { ReleaseFetch } from "../../src/update/github-releases.ts";
+} from "#src/update-contract.ts";
+import type { ReleaseFetch } from "#src/update/github-releases.ts";
 
 interface ManagedFixture {
   root: string;

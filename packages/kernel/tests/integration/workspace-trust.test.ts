@@ -7,11 +7,11 @@ import {
   createConfigService,
   createFileConfigStore,
   stripWorkspaceRiskFields,
-} from "../../src/config.ts";
+} from "#src/config.ts";
 import { globalPaths } from "@clarvis/paths";
-import { stripWorkspaceSubscriptionProviders } from "../../src/config/workspace-trust.ts";
-import { settingsDocumentRevision } from "../../src/config/config-store.ts";
-import { kernelError } from "../../src/core/errors.ts";
+import { stripWorkspaceSubscriptionProviders } from "#src/config/workspace-trust.ts";
+import { settingsDocumentRevision } from "#src/config/config-store.ts";
+import { kernelError } from "#src/core/errors.ts";
 
 const HOOK = {
   event: "session_start",

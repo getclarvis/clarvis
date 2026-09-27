@@ -1,7 +1,7 @@
-import { glyph } from "../../theme/glyphs.ts";
-import { errorText } from "../../adapters/errors.ts";
-import type { Scope } from "../../adapters/settings.ts";
-import type { Notice } from "../../ui/notice.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { errorText } from "#src/adapters/errors.ts";
+import type { Scope } from "#src/adapters/settings.ts";
+import type { Notice } from "#src/ui/notice.ts";
 
 /** Structured events emitted by the Agents controller. */
 export type AgentsEvent =

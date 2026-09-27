@@ -1,6 +1,6 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { openCallEnvelope, handlerBaseOf } from "../../src/index.ts";
-import type { AgentBuildContext, LLMToolCall, TracePort } from "../../src/index.ts";
+import { openCallEnvelope, handlerBaseOf } from "#src/index.ts";
+import type { AgentBuildContext, LLMToolCall, TracePort } from "#src/index.ts";
 
 interface Recorded {
   kind: string;

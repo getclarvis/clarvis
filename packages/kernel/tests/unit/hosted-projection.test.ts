@@ -4,7 +4,7 @@ import {
   createHostedProjection,
   type HostedProjection,
   type ProjectionStorage,
-} from "../../src/hosting/projection.ts";
+} from "#src/hosting/projection.ts";
 
 const identity = { host_generation: "generation-one", execution_id: "run-one" };
 

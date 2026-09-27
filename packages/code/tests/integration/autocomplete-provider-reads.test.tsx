@@ -4,12 +4,12 @@ import { useRenderer } from "@opentui/solid";
 import { openRender } from "../helpers/tracked-render.ts";
 import type { TextareaRenderable } from "@opentui/core";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import { InputDock } from "../../src/views/InputDock.tsx";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { Platform } from "../../src/adapters/platform.ts";
-import { registerWhenField } from "../../src/keys/when-dsl.ts";
-import { createPromptHistory } from "../../src/core/prompt-history.ts";
-import type { CompleteProvider } from "../../src/views/input/autocomplete.ts";
+import { InputDock } from "#src/views/InputDock.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { Platform } from "#src/adapters/platform.ts";
+import { registerWhenField } from "#src/keys/when-dsl.ts";
+import { createPromptHistory } from "#src/core/prompt-history.ts";
+import type { CompleteProvider } from "#src/views/input/autocomplete.ts";
 
 const provider: CompleteProvider = {
   id: "command",

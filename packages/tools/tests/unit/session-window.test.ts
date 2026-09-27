@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { SessionWindow, decodeCursor, encodeCursor } from "../../src/lib/session-window.ts";
+import { SessionWindow, decodeCursor, encodeCursor } from "#src/lib/session-window.ts";
 
 describe("SessionWindow", () => {
   it("replays retained UTF-8 bytes from an opaque two-stream cursor", () => {

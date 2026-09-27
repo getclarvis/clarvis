@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { reasoningOutputFloor } from "../../src/reasoning-budget.ts";
+import { reasoningOutputFloor } from "#src/reasoning-budget.ts";
 
 const ANSWER_HEADROOM = 8192;
 

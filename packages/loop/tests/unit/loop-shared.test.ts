@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { toLlmTarget } from "../../src/runtime/loop/loop-shared.ts";
+import { toLlmTarget } from "#src/runtime/loop/loop-shared.ts";
 import type { LLMProvider } from "@clarvis/capability";
 
 const fakeLlm = {} as unknown as LLMProvider;

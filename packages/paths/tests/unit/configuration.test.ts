@@ -8,7 +8,7 @@ import {
   configurationRoots,
   globalPaths,
   workspacePaths,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 test("configuration roots preserve an explicit global override and both shared-agent scopes", () => {
   const home = resolve("operator-home");

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import type { HostedRunAttachment, HostedRunFrame, RunEvent, RunResult } from "@clarvis/protocol";
-import { createHostedExecution, type HostedExecutionOptions } from "../../src/hosting/execution.ts";
+import { createHostedExecution, type HostedExecutionOptions } from "#src/hosting/execution.ts";
 import {
   createHostedProjection,
   type ProjectionStorage,
   type HostedProjectionOptions,
-} from "../../src/hosting/projection.ts";
-import { createManagedRun, type ManagedRunContext } from "../../src/runs/managed-run.ts";
+} from "#src/hosting/projection.ts";
+import { createManagedRun, type ManagedRunContext } from "#src/runs/managed-run.ts";
 
 const completed: RunResult = {
   execution_id: "hosted-run",

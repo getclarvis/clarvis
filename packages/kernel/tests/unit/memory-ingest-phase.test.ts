@@ -6,7 +6,7 @@ import {
   ingestPendingAfter,
   isIngestPending,
   MAX_INGEST_CLOSE_WAIT_MS,
-} from "../../src/runs/memory-ingest-phase.ts";
+} from "#src/runs/memory-ingest-phase.ts";
 
 describe("isIngestPending", () => {
   it("is pending for started and queued, terminal for done/failed/blocked", () => {

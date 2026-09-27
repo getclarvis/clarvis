@@ -4,7 +4,7 @@ import {
   capabilityEventToProto,
   engineEventToProto,
   MAX_CAPABILITY_EVENT_DETAIL_BYTES,
-} from "../../src/runs/map-events.ts";
+} from "#src/runs/map-events.ts";
 
 describe("engineEventToProto (TraceEvent → engine-independent RunEvent projection)", () => {
   it("maps physical shell control release to its original call and token", () => {

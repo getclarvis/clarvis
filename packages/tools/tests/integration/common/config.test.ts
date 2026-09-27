@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { resolveConfig, StartupError } from "../../../src/config.ts";
+import { resolveConfig, StartupError } from "#src/config.ts";
 import { cleanup, makeWorkspace, write } from "../../helpers/fixtures.ts";
 
 describe("runtime config", () => {

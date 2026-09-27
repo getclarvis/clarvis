@@ -1,10 +1,10 @@
 import { describe, expect, it } from "../bun-test.ts";
 import type { ProviderConfig } from "@clarvis/capability";
-import { providerConfigSchema } from "../../src/validation/request/provider-schemas.ts";
+import { providerConfigSchema } from "#src/validation/request/provider-schemas.ts";
 import {
   rejectProviderConfigIssues,
   requireResolvableModelProviders,
-} from "../../src/validation/request/provider-rules.ts";
+} from "#src/validation/request/provider-rules.ts";
 import { parsedRequest, validationCode, VALID_REQUEST } from "../helpers/request.ts";
 
 describe("request provider schema", () => {

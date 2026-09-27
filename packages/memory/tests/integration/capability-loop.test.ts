@@ -13,19 +13,19 @@ import { loadEnv, type CapabilityRegistry, createCapabilityRegistry } from "@cla
 import { executeRun, type ExecuteRunDeps } from "@clarvis/loop";
 import { createTestRunInfrastructure, MockLLM } from "@clarvis/loop/testing";
 
-import type { Memory, MemoryToolDef, RunSnapshot } from "../../src/index.ts";
+import type { Memory, MemoryToolDef, RunSnapshot } from "#src/index.ts";
 import {
   createMemoryCapability,
   MEMORY_READ_TOOL_NAMES,
   MEMORY_WRITE_TOOL_NAMES,
   type MemoryFactory,
-} from "../../src/capability.ts";
-import { memorySettingsSpec } from "../../src/settings.ts";
+} from "#src/capability.ts";
+import { memorySettingsSpec } from "#src/settings.ts";
 import {
   MEMORY_TOOL_CONTRACTS,
   memoryToolParameters,
   type MemoryToolName,
-} from "../../src/tool-contract.ts";
+} from "#src/tool-contract.ts";
 
 const BODY = {
   memory: "on",

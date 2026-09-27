@@ -5,13 +5,13 @@ import {
   freshLeaderProgress,
   isLeaderEntryIteration,
   reconcileRunningWorkflowRecord,
-} from "../../src/workflows/workflows-service.ts";
+} from "#src/workflows/workflows-service.ts";
 import {
   WORKFLOW_PERSIST_DELAY_MS,
   createWorkflowSaveQueue,
   type WorkflowEdge,
   type WorkflowRecord,
-} from "../../src/workflows/workflow-store.ts";
+} from "#src/workflows/workflow-store.ts";
 
 describe("isLeaderEntryIteration", () => {
   it("never attributes a delegated child's turns to the entry, regardless of arrival order", () => {

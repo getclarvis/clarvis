@@ -1,12 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { NOOP_LOGGER } from "@clarvis/capability";
-import {
-  causeOf,
-  closeQuietly,
-  DEFAULT_DIAGNOSTICS,
-  defaultWarnSink,
-  warn,
-} from "../../src/lib/log.ts";
+import { causeOf, closeQuietly, DEFAULT_DIAGNOSTICS, defaultWarnSink, warn } from "#src/lib/log.ts";
 import { recordingLogger } from "../helpers/logging.ts";
 
 describe("warn", () => {

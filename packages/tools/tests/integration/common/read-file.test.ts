@@ -10,7 +10,7 @@ import {
   write,
   writeUtf16,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 
 const mkfifo = executableOnPath("mkfifo");
 

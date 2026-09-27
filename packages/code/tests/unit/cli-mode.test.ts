@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { RunEvent } from "@clarvis/protocol";
-import { createPrintStream, drainPrintEvents, resolveResumeMeta } from "../../src/cli-mode.ts";
-import type { SessionMeta, SessionStore } from "../../src/adapters/session-store.ts";
+import { createPrintStream, drainPrintEvents, resolveResumeMeta } from "#src/cli-mode.ts";
+import type { SessionMeta, SessionStore } from "#src/adapters/session-store.ts";
 
 function meta(id: string, workspace: string): SessionMeta {
   return {

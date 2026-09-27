@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { filterHookEnv as filterFull, interpolatedNames } from "../../src/env.ts";
+import { filterHookEnv as filterFull, interpolatedNames } from "#src/env.ts";
 
 /** The environment half, for the many cases that assert only on the result. */
 function filterHookEnv(

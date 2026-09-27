@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import type { WorkflowDefinition } from "../../src/artifact.ts";
-import { buildRunWorkflowTool, explainWorkflow } from "../../src/run-workflow.ts";
+import type { WorkflowDefinition } from "#src/artifact.ts";
+import { buildRunWorkflowTool, explainWorkflow } from "#src/run-workflow.ts";
 import { WORKFLOW_DEFINITIONS } from "../helpers/definitions.ts";
 
 const WORKFLOWS: readonly WorkflowDefinition[] = WORKFLOW_DEFINITIONS;

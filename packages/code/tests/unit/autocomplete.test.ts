@@ -9,9 +9,9 @@ import {
   parseSlashCommand,
   slashCompletion,
   splitSlashArgs,
-} from "../../src/views/input/autocomplete.ts";
-import { createSkillMentionProvider } from "../../src/views/input/skill-completion.ts";
-import { windowGroupedRows, windowRows } from "../../src/ui/patterns/windowed-list.tsx";
+} from "#src/views/input/autocomplete.ts";
+import { createSkillMentionProvider } from "#src/views/input/skill-completion.ts";
+import { windowGroupedRows, windowRows } from "#src/ui/patterns/windowed-list.tsx";
 
 test("parseSlashCommand: splits a slash command into name and trailing args", () => {
   expect(parseSlashCommand("/commit")).toEqual({ name: "commit", args: "" });

@@ -7,7 +7,7 @@ import {
 } from "@clarvis/loop/testing";
 import { loadEnv } from "@clarvis/capability";
 
-import type { IndexerRuntime } from "../../src/types.ts";
+import type { IndexerRuntime } from "#src/types.ts";
 
 /**
  * An {@link IndexerRuntime} driving a real `executeRun` over a scripted model.

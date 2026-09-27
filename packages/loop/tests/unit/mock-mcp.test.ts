@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { mockMCPFactory } from "../../src/testing/mock-mcp.ts";
+import { mockMCPFactory } from "#src/testing/mock-mcp.ts";
 
 describe("mockMCPFactory", () => {
   it("rejects an unconfigured server and supports closing through the client", async () => {

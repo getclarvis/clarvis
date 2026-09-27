@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RunEvent } from "@clarvis/protocol";
-import { createTranscriptStore } from "../../src/adapters/store.ts";
+import { createTranscriptStore } from "#src/adapters/store.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
 
 const ev = runEvent;

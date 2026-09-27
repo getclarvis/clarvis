@@ -27,6 +27,7 @@ test("workspace imports resolve through bun exports with dist hidden", () => {
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
       name: string;
       exports?: Record<string, { bun?: string }>;
+      imports?: Record<string, unknown>;
     };
     return { ...pkg, dir };
   });
@@ -43,6 +44,7 @@ test("workspace imports resolve through bun exports with dist hidden", () => {
     realpath: (path) => realpathSync(path),
   };
   let checked = 0;
+  let privateChecked = 0;
   let hiddenQueries = 0;
   for (const pkg of packages) {
     const parsed = ts.getParsedCommandLineOfConfigFile(
@@ -60,6 +62,25 @@ test("workspace imports resolve through bun exports with dist hidden", () => {
     for (const tree of ["src", "tests", "tooling"]) {
       for (const file of files(join(pkg.dir, tree))) {
         for (const edge of parseModuleEdges(readFileSync(file, "utf8"), file)) {
+          if (edge.specifier.startsWith("#src/")) {
+            if (pkg.name === "@clarvis/code") {
+              expect(pkg.imports?.["#src/*"]).toBe("./src/*");
+            } else {
+              expect(pkg.imports?.["#src/*.ts"]).toEqual({
+                bun: "./src/*.ts",
+                types: "./dist/*.d.ts",
+                default: "./dist/*.js",
+              });
+            }
+            const actual = ts.resolveModuleName(edge.specifier, file, parsed.options, host)
+              .resolvedModule?.resolvedFileName;
+            expect(actual).toBeDefined();
+            expect(realpathSync(actual)).toBe(
+              realpathSync(resolve(pkg.dir, "src", edge.specifier.slice("#src/".length))),
+            );
+            privateChecked++;
+            continue;
+          }
           if (!edge.specifier.startsWith("@clarvis/") || seen.has(edge.specifier)) continue;
           seen.add(edge.specifier);
           const name = edge.specifier.split("/").slice(0, 2).join("/");
@@ -113,5 +134,6 @@ test("workspace imports resolve through bun exports with dist hidden", () => {
     }
   }
   expect(checked).toBeGreaterThan(40);
+  expect(privateChecked).toBeGreaterThan(0);
   expect(hiddenQueries).toBe(0);
 });

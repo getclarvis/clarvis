@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { settingsSchema } from "../../src/settings/settings-schema.ts";
+import { settingsSchema } from "#src/settings/settings-schema.ts";
 
 const happyInfra = {
   providers: [{ name: "anthropic", kind: "anthropic", api_key_env: "ANTHROPIC_API_KEY" }],

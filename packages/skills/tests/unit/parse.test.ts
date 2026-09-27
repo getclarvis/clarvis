@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeTools, parseSkill, splitFrontmatter } from "../../src/parse.ts";
-import { SkillError } from "../../src/errors.ts";
+import { normalizeTools, parseSkill, splitFrontmatter } from "#src/parse.ts";
+import { SkillError } from "#src/errors.ts";
 
 function skillMd(frontmatter: string, body = "Hello."): string {
   return `---\n${frontmatter}\n---\n${body}`;

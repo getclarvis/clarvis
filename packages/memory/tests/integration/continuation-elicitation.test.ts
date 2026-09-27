@@ -24,12 +24,12 @@ import { describe, expect, it } from "bun:test";
 import type { Capability } from "@clarvis/capability";
 import { executeRun, type ExecuteRunDeps } from "@clarvis/loop";
 import { createTestTraceStore } from "@clarvis/loop/testing";
-import { DEFAULT_BUDGETS } from "../../src/config.ts";
-import { indexRun } from "../../src/indexer/run.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
+import { DEFAULT_BUDGETS } from "#src/config.ts";
+import { indexRun } from "#src/indexer/run.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
 import { makeExecutionRecord, run as runSnapshot } from "../helpers/fixtures.ts";
 import { fakeIndexerRuntime } from "../helpers/indexer-runtime.ts";
-import type { IndexerRuntime } from "../../src/types.ts";
+import type { IndexerRuntime } from "#src/types.ts";
 
 const MODEL = "anthropic/x";
 const OWNER = "o";

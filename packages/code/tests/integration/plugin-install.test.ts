@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
-import { gitCloneAsync, validateGitUrl } from "../../src/adapters/plugin-install.ts";
+import { gitCloneAsync, validateGitUrl } from "#src/adapters/plugin-install.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 

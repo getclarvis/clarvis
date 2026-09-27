@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { MAX_SKILL_CATALOG_CHARS, renderSkillCatalog } from "../../src/catalog/index.ts";
+import { MAX_SKILL_CATALOG_CHARS, renderSkillCatalog } from "#src/catalog/index.ts";
 import { makeInfo } from "../helpers/skill-fixtures.ts";
 
 describe("renderSkillCatalog", () => {

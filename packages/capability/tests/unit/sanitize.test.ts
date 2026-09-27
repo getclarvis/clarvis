@@ -4,7 +4,7 @@ import {
   sanitizeErrorMessage,
   sanitizeText,
   sanitizeToolPayload,
-} from "../../src/sanitize.ts";
+} from "#src/sanitize.ts";
 
 describe("sanitizeErrorMessage — named secret patterns", () => {
   it("redacts a Bearer token", () => {

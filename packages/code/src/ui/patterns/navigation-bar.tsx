@@ -2,13 +2,13 @@ import type { Accessor, JSX } from "solid-js";
 import { createMemo, Show, For } from "solid-js";
 import { KeymapProvider, useKeymapSelector } from "@opentui/keymap/solid";
 import { useTerminalDimensions } from "@opentui/solid";
-import type { Interaction } from "../../keys/interaction.ts";
-import type { KeyboardEnvironment } from "../../keys/keyboard-profile.ts";
-import { effectiveClientPlatform } from "../../keys/keyboard-profile.ts";
-import { compactSequence } from "../../keys/keyspec.ts";
-import { liveSequenceOwners, sequenceKey } from "../../keys/sequence-owner.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tokens } from "../../theme/tokens.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { KeyboardEnvironment } from "#src/keys/keyboard-profile.ts";
+import { effectiveClientPlatform } from "#src/keys/keyboard-profile.ts";
+import { compactSequence } from "#src/keys/keyspec.ts";
+import { liveSequenceOwners, sequenceKey } from "#src/keys/sequence-owner.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import {
   actionListSpans,
   bandWidthFor,

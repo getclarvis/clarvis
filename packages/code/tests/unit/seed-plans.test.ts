@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { PLANS_DEFAULTS } from "@clarvis/kernel/config";
-import type { Scope, SettingsAdapter } from "../../src/adapters/settings.ts";
-import { seedPlansBlock } from "../../src/onboarding/seed-plans.ts";
+import type { Scope, SettingsAdapter } from "#src/adapters/settings.ts";
+import { seedPlansBlock } from "#src/onboarding/seed-plans.ts";
 
 function fakeSettings(opts: {
   files?: Partial<Record<Scope, Record<string, unknown>>>;

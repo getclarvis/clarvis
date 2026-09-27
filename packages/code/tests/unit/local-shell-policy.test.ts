@@ -5,7 +5,7 @@ import {
   runLocalBash,
   type LocalBashDependencies,
   type LocalShellChild,
-} from "../../src/adapters/local-shell.ts";
+} from "#src/adapters/local-shell.ts";
 
 function rig() {
   let now = 0;

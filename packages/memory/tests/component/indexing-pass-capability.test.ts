@@ -10,18 +10,18 @@
 import { describe, expect, it } from "bun:test";
 
 import type { AgentLoopContribution, LLMToolCall, ToolHandler } from "@clarvis/capability";
-import { createIndexingPassCapability } from "../../src/indexer/capability.ts";
-import { DEFAULT_BUDGETS } from "../../src/config.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
-import { createTouchedLedger } from "../../src/indexer/pyramid.ts";
+import { createIndexingPassCapability } from "#src/indexer/capability.ts";
+import { DEFAULT_BUDGETS } from "#src/config.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
+import { createTouchedLedger } from "#src/indexer/pyramid.ts";
 import { fakeAgentBuildContext, fakeRunCapabilityContext } from "../helpers/capability.ts";
-import type { MemoryMutationFence, MemoryStore, MemoryToolDef } from "../../src/types.ts";
-import type { MemoryProvider } from "../../src/provider.ts";
+import type { MemoryMutationFence, MemoryStore, MemoryToolDef } from "#src/types.ts";
+import type { MemoryProvider } from "#src/provider.ts";
 import {
   MEMORY_TOOL_CONTRACTS,
   memoryToolParameters,
   type MemoryToolName,
-} from "../../src/tool-contract.ts";
+} from "#src/tool-contract.ts";
 
 function call(name: string, args: unknown = {}, id = "c1"): LLMToolCall {
   return { id, name, arguments: args };

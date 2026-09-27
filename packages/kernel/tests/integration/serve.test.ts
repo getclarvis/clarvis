@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, it, expect } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
-import { createStdioTransport, connectKernelClient } from "../../src/index.ts";
+import { createStdioTransport, connectKernelClient } from "#src/index.ts";
 import {
   createLogger,
   serveFileKernelOverStdio as rawServeFileKernelOverStdio,
-} from "../../src/bootstrap.ts";
+} from "#src/bootstrap.ts";
 import { SERVE_AGENT_TOOLS_PROBE_PATH } from "../fixtures/serve-agent-tools-probe.ts";
 
 const serveFileKernelOverStdio: typeof rawServeFileKernelOverStdio = async (options) => {

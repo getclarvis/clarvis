@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { spawn, type SpawnOptions } from "node:child_process";
 import { join } from "node:path";
-import { ExecutionSessionManager } from "../../../src/lib/execution-session.ts";
-import { shellSessionView } from "../../../src/tools/shell-session.ts";
-import { NOOP_TOOLS_LOGGER } from "../../../src/lib/log.ts";
-import { createAgentTools } from "../../../src/index.ts";
+import { ExecutionSessionManager } from "#src/lib/execution-session.ts";
+import { shellSessionView } from "#src/tools/shell-session.ts";
+import { NOOP_TOOLS_LOGGER } from "#src/lib/log.ts";
+import { createAgentTools } from "#src/index.ts";
 import { callTool, cleanup, makeConfig, makeWorkspace } from "../../helpers/fixtures.ts";
 
 const roots: string[] = [];

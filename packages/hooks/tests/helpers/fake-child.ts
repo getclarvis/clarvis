@@ -9,7 +9,7 @@
  * lack, which is why they pay the real grace period on every run.
  */
 import { EventEmitter } from "node:events";
-import type { HookSpawnOptions, SpawnFn, TimerDeps } from "../../src/subprocess.ts";
+import type { HookSpawnOptions, SpawnFn, TimerDeps } from "#src/subprocess.ts";
 
 class FakeStream extends EventEmitter {
   destroyed = false;

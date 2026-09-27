@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { useTerminalDimensions } from "@opentui/solid";
-import { tokens, type TokenName } from "../../theme/tokens.ts";
+import { tokens, type TokenName } from "#src/theme/tokens.ts";
 import { MINI_WORDMARK } from "../brand.tsx";
 import {
   parseColor,
@@ -14,20 +14,20 @@ import {
   type PresetName,
   type ThemeBackground,
   type ThemeModeConfig,
-} from "../../theme/model.ts";
+} from "#src/theme/model.ts";
 import {
   auditContrast,
   nudgeToAA,
   type ContrastLevel,
   type ContrastResult,
-} from "../../theme/contrast.ts";
-import { tone } from "../../theme/tone.ts";
-import type { Platform } from "../../adapters/platform.ts";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
-import type { ThemePreview } from "../../theme/theme.ts";
-import { applyAsciiMode, borderChars, glyph } from "../../theme/glyphs.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { registerLevel, verb, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+} from "#src/theme/contrast.ts";
+import { tone } from "#src/theme/tone.ts";
+import type { Platform } from "#src/adapters/platform.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { ThemePreview } from "#src/theme/theme.ts";
+import { applyAsciiMode, borderChars, glyph } from "#src/theme/glyphs.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { registerLevel, verb, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import {
   bindLevelKeys,
   createFieldEditor,

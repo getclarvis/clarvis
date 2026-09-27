@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv, type Capability } from "@clarvis/capability";
-import { buildExecuteRunDeps } from "../../src/runtime/build-run-deps.ts";
+import { buildExecuteRunDeps } from "#src/runtime/build-run-deps.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 import { recordingLogger } from "../helpers/logging.ts";

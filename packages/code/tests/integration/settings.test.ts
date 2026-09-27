@@ -11,8 +11,8 @@ import {
   resolveContextWindow,
   type ProviderConfig,
   type SettingsFile,
-} from "../../src/adapters/settings.ts";
-import { createKeysAdapter } from "../../src/adapters/provider-secrets.ts";
+} from "#src/adapters/settings.ts";
+import { createKeysAdapter } from "#src/adapters/provider-secrets.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 import { globalPaths } from "@clarvis/kernel/paths";
 import { parseModelRef } from "@clarvis/kernel/config";

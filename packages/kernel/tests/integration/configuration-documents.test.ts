@@ -10,12 +10,12 @@ import { configurationRoots, globalPaths, type ConfigurationRoot } from "@clarvi
 import { createAgentSkills } from "@clarvis/skills";
 import { loadWorkflow, loadWorkflows } from "@clarvis/workflows/artifact";
 import { resolveWorkflowDefinitions } from "@clarvis/workflows";
-import { createAgentWorkflowPolicy } from "../../src/application/workflow-policy.ts";
-import { createFileConfigStore } from "../../src/config/file-config-store.ts";
-import { createExtensionProfileManager } from "../../src/extension-profiles/extension-profile-manager.ts";
-import { createFileKernel } from "../../src/bootstrap.ts";
-import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
-import { createSettingsRunAssembler } from "../../src/runs/settings-assembler.ts";
+import { createAgentWorkflowPolicy } from "#src/application/workflow-policy.ts";
+import { createFileConfigStore } from "#src/config/file-config-store.ts";
+import { createExtensionProfileManager } from "#src/extension-profiles/extension-profile-manager.ts";
+import { createFileKernel } from "#src/bootstrap.ts";
+import { createPluginContributions } from "#src/plugins/plugin-contributions.ts";
+import { createSettingsRunAssembler } from "#src/runs/settings-assembler.ts";
 import { CONFIGURATION_FIXTURES as EXAMPLES } from "../fixtures/configuration-documents.ts";
 
 const cleanups: (() => void)[] = [];

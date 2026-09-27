@@ -1,4 +1,4 @@
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 import type { RunEvent } from "@clarvis/protocol";
 
 /** Synthetic, public-data-only tool lifecycle shared by renderer and replay tests. */

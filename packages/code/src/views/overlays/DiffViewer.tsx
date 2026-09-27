@@ -8,22 +8,22 @@ import type {
   WorkspaceChangeOperation,
   WorkspaceChangesService,
 } from "@clarvis/protocol";
-import type { Interaction } from "../../keys/interaction.ts";
-import { LAYER } from "../../keys/keyspec.ts";
-import { uiCommand } from "../../keys/actions.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { LAYER } from "#src/keys/keyspec.ts";
+import { uiCommand } from "#src/keys/actions.ts";
 import {
   clampListIndex,
   followSelection,
   registerListNav,
   registerScrollKeys,
-} from "../../ui/patterns/list-navigation.ts";
+} from "#src/ui/patterns/list-navigation.ts";
 import { PageFrame } from "../PageFrame.tsx";
 import { EmptyHint, LoadingHint } from "../config/view-host.tsx";
-import { glyph } from "../../theme/glyphs.ts";
-import { scrollbarOptions, selectionBg } from "../../theme/surfaces.ts";
-import { tokens } from "../../theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { scrollbarOptions, selectionBg } from "#src/theme/surfaces.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import { wrapCells } from "../truncate.ts";
-import { StableDiff } from "../../ui/patterns/stable-syntax.tsx";
+import { StableDiff } from "#src/ui/patterns/stable-syntax.tsx";
 import {
   createWorkspaceChangesController,
   selectedEntry,

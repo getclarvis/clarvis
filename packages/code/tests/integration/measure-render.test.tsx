@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { BlockView, MEASURE_MAX_COLS } from "../../src/views/blocks.tsx";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import { BlockView, MEASURE_MAX_COLS } from "#src/views/blocks.tsx";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 
 const longText = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
 

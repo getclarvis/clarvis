@@ -6,7 +6,7 @@ import {
   runBeforeIteration,
   runVerdictHooks,
   type VerdictSweep,
-} from "../../src/runtime/loop/lifecycle-hooks.ts";
+} from "#src/runtime/loop/lifecycle-hooks.ts";
 
 function hook(verdict: () => GateVerdict | Promise<GateVerdict>): LifecycleHook {
   return { preFinalize: async () => verdict() };

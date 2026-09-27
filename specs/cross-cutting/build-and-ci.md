@@ -78,7 +78,7 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `lint:intent` | `test:tooling`, then source-policy, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
 | `check:graph` | `bun run tooling/checks/package-graph.ts --check-doc` | `package.json` (`scripts.check:graph`) |
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
-| `knip` | `knip` (root only; no package declares a `knip` script) | `package.json` (`scripts.knip`) |
+| `knip` | `knip --tsConfig tsconfig.build.json` (root only) | `package.json` (`scripts.knip`) |
 | `format` / `format:check` | workspace formatting plus root tooling and repository workflows | `package.json` (`scripts.format*`) |
 | `check:pre-commit` | `format:check && build && typecheck && lint:eslint && lint:intent && knip && test:coverage` | `package.json` (`scripts.check:pre-commit`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
@@ -232,13 +232,16 @@ Prettier is one root `.prettierrc.json` — `semi: true`, `singleQuote: false`, 
 `.prettierignore` that excludes `node_modules/`, `dist/`, `coverage/`, `package-lock.json`, and
 `**/specs/` (`.prettierignore`).
 
-Knip runs once from the root (`package.json`, `scripts.knip`). `knip.json` sets
+Knip runs once from the root with each workspace's build tsconfig (`package.json`, `scripts.knip`).
+The build profile supplies the `src`/`dist` relationship so Knip attributes conditional private
+imports selected through `dist` back to their source files; this check runs after build in the
+pre-commit gate. `knip.json` sets
 `ignoreExportsUsedInFile` for `interface` and `type` and adds five workspace overrides. The
 root workspace's entries cover executable TypeScript checks and the Bun preload; its project globs
 cover root tooling.
 `packages/code` explicitly includes
 its `src`, tests, artifact builders and benchmarks,
-`packages/kernel` adds `src/bin.ts` and its Bun-native executable test fixture as entries,
+`packages/kernel` adds its Bun-native executable test fixtures as entries,
 `packages/protocol` adds
 `tests/contract/public-contract.fixture.ts` as an entry; that fixture type-imports 24 protocol names
 (`packages/protocol/tests/contract/public-contract.fixture.ts`), and
@@ -456,6 +459,15 @@ that mask a neighboring TypeScript source (`tooling/checks/import-extensions.ts`
 unambiguous. Real generated artifacts such as `dist/index.js` and lazy chunks remain JavaScript;
 calculated runtime imports are outside this literal-specifier check.
 
+The same AST pass requires an alias when a source import climbs at least two directories within
+its own `src`, or a package test/tooling module imports its own `src`. Short relatives, public
+package imports, fixtures and resource paths stay as written. The check reports the target and
+required mapping even for a new package without `#src/`; every current workspace with eligible
+imports has adopted it (`packages/code/package.json`, `imports`;
+`packages/kernel/package.json`, `imports`;
+`tooling/checks/import-extensions.ts`, `moduleSpecifiers`,
+`invalidPrivateImportConvention`; `tooling/tests/unit/import-extensions.test.ts`).
+
 Declaration emit deliberately retains the source-oriented `.ts`/`.tsx` specifier. Under NodeNext,
 TypeScript resolves that declaration edge to the sibling `.d.ts`; package build audits and the root
 project-reference build verify those consumers. The runtime rewrite claim therefore applies to
@@ -468,6 +480,26 @@ hides `dist` through its resolver host; an isolated two-package canary compiles 
 JavaScript (`tooling/lib/module-resolution-policy.ts`, `moduleResolutionPolicyErrors`;
 `tooling/tests/architecture/module-resolution-contract.test.ts`;
 `tooling/tests/integration/module-resolution.test.ts`).
+
+Private source imports have separate package-owned `imports` mappings: Code declares direct
+`#src/*` to `./src/*`, while emitting libraries use `#src/*.ts` with ordered `bun` source,
+`types` declaration and `default` JavaScript targets. Development selects source without a
+prior build. Library build profiles clear `bun`, and TypeScript remaps their local output
+targets through `rootDir`/`outDir`; emitted aliases remain spelled with `.ts`. The integration
+fixture checks emitted declarations without provider sources and exercises the JavaScript branch
+with `bun` removed from the fixture's mapping (`tooling/lib/module-resolution-policy.ts`,
+`privateImportTarget`; `tooling/tests/integration/module-resolution.test.ts`).
+
+Portable source packaging copies each Clarvis package's complete `package.json` and `src` tree
+into the source checkout and copies the external runtime packages into `node_modules`. Their
+private mappings therefore travel with the source that Bun selects. The distributed bundle keeps
+Tools and Sandbox external; it does not promise a standalone output-only package tree.
+Production: `packages/code/tooling/release/package.ts` (`copySource`) and
+`packages/code/tooling/artifact/build.ts` (`main`, external package list).
+Test: `tooling/tests/architecture/module-resolution-contract.test.ts` (all package aliases
+with output hidden), `packages/code/tests/architecture/artifact-contract.test.ts` (external
+runtime package boundary), and the `release:smoke` command in `packages/code/package.json`
+(portable source and artifact boot).
 
 Project references mirror the runtime dependency edges. `packages/kernel/tsconfig.build.json`
 lists its referenced packages; `packages/loop/tsconfig.build.json` lists nine (including the three optional
@@ -952,6 +984,13 @@ Production: `tsconfig.base.json` and the standalone emitting profiles in
 Test: `tooling/tests/unit/import-extensions.test.ts` (`moduleSpecifiers`,
 `invalidRelativeImportExtensions`) pins supported literal syntax, extensionless imports,
 ambiguous suggestions, real-JavaScript exceptions and source-file selection.
+
+**BUILD-29.** Literal imports of a package's own source use a private
+specifier when a source module climbs two or more parent directories, or a package test/tooling
+module imports that source. The resolved source target determines eligibility even if the package
+has not declared a mapping yet.
+Production: `tooling/checks/import-extensions.ts` (`invalidPrivateImportConvention`).
+Test: `tooling/tests/unit/import-extensions.test.ts` (`invalidPrivateImportConvention`).
 
 **BUILD-30.** `bun run setup` requires the exact Bun version pinned in `mise.toml`, performs a frozen
 root install, and builds the linked installation with `sourcemap: "none"`; no `.map` may exist in

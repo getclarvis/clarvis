@@ -11,17 +11,17 @@ import type {
   PluginRef,
   ResolvedExtensionProfile,
 } from "@clarvis/protocol";
-import { errorText } from "../../adapters/errors.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import { fuzzyFilter } from "../../core/fuzzy.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { tone } from "../../theme/tone.ts";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
-import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import { StableWindowedList } from "../../ui/patterns/windowed-list.tsx";
+import { errorText } from "#src/adapters/errors.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import { fuzzyFilter } from "#src/core/fuzzy.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { tone } from "#src/theme/tone.ts";
+import { scrollbarOptions } from "#src/theme/surfaces.ts";
+import { clampListIndex } from "#src/ui/patterns/list-navigation.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
+import { StableWindowedList } from "#src/ui/patterns/windowed-list.tsx";
 import { formatElapsed, spinnerChar, tickNow, useSpinnerClock } from "../spinner.ts";
 import {
   bindLevelKeys,

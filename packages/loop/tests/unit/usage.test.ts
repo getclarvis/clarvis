@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { finalizeLeadSubagentUsage } from "../../src/runtime/usage.ts";
+import { finalizeLeadSubagentUsage } from "#src/runtime/usage.ts";
 import type { SubagentAggregate } from "@clarvis/capability";
 
 describe("finalizeLeadSubagentUsage", () => {

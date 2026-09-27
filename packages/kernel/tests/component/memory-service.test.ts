@@ -7,7 +7,7 @@ import type {
   MemoryHealthReport,
   MemoryQueryResult,
 } from "@clarvis/memory";
-import { createMemoryService } from "../../src/memory/memory-service.ts";
+import { createMemoryService } from "#src/memory/memory-service.ts";
 
 type StoreOver = Partial<Memory["store"]>;
 

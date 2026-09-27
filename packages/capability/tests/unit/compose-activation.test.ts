@@ -1,7 +1,7 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
 
-import { activationForScope, systemSectionsFor } from "../../src/compose.ts";
-import type { AgentIdentity, AgentScope, RunCapability } from "../../src/contract.ts";
+import { activationForScope, systemSectionsFor } from "#src/compose.ts";
+import type { AgentIdentity, AgentScope, RunCapability } from "#src/contract.ts";
 
 const scope: AgentScope = { agent: "lead", entry: true, grants: [] };
 const identity: AgentIdentity = { agent: "lead", entry: true, grants: [] };

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { HostedRunReceipt } from "@clarvis/protocol";
-import { createBackgroundController } from "../../src/features/background/controller.ts";
+import { createBackgroundController } from "#src/features/background/controller.ts";
 import { hostedAttachment, hostedRef, hostingFixture } from "../helpers/hosted-run.ts";
 
 function fixture() {

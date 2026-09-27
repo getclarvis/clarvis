@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { presentProvidersEvent, type ProvidersEvent } from "../../src/features/providers/events.ts";
+import { presentProvidersEvent, type ProvidersEvent } from "#src/features/providers/events.ts";
 
 test("key_staged points at the pending save", () => {
   const note = presentProvidersEvent({ type: "key_staged", envVar: "ACME_API_KEY" });

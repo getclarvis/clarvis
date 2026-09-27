@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { errorText as kernelErrorText } from "@clarvis/kernel/policy";
-import { errorText } from "../../src/adapters/errors.ts";
+import { errorText } from "#src/adapters/errors.ts";
 
 /**
  * Values chosen to cover both branches and the shapes that reach a catch block:

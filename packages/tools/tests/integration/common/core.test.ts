@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { toolDescriptors, tools } from "../../../src/tools/registry.ts";
-import { dispatch, listTools } from "../../../src/core.ts";
-import { ToolError } from "../../../src/errors.ts";
+import { toolDescriptors, tools } from "#src/tools/registry.ts";
+import { dispatch, listTools } from "#src/core.ts";
+import { ToolError } from "#src/errors.ts";
 import {
   makeWorkspace,
   cleanup,
@@ -10,7 +10,7 @@ import {
   write,
   resultText,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 import { EXPECTED_TOOL_DESCRIPTORS } from "../../helpers/tool-surface.ts";
 
 describe("core / registry", () => {

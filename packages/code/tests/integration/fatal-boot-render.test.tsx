@@ -3,11 +3,11 @@ import { EventEmitter } from "node:events";
 import { render } from "@opentui/solid";
 import type { KeyEvent } from "@opentui/core";
 import { openCoreRenderer } from "../helpers/tracked-core-render.ts";
-import { runFatalBoot } from "../../src/views/FatalBoot.tsx";
+import { runFatalBoot } from "#src/views/FatalBoot.tsx";
 import {
   installBootRendererLifecycle,
   type BootRendererProcess,
-} from "../../src/adapters/renderer-bootstrap.ts";
+} from "#src/adapters/renderer-bootstrap.ts";
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 

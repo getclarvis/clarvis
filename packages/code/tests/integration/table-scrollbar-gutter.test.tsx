@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import { Prose } from "../../src/views/Prose.tsx";
-import { scrollbarOptions, SCROLLBOX_TABLE_GUTTER } from "../../src/theme/surfaces.ts";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import { BlockView } from "#src/views/blocks.tsx";
+import { Prose } from "#src/views/Prose.tsx";
+import { scrollbarOptions, SCROLLBOX_TABLE_GUTTER } from "#src/theme/surfaces.ts";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 
 const WIDE_TABLE = [
   "Texto introdutorio antes da tabela para dar contexto ao leitor.",

@@ -3,7 +3,7 @@ import {
   LOAD_SKILL_TOOL_NAME,
   READ_SKILL_RESOURCE_TOOL_NAME,
   type SkillsProvider,
-} from "../../src/capability.ts";
+} from "#src/capability.ts";
 import { fakeValidateArgs } from "./capability-fakes.ts";
 import { makeContent, makeInfo } from "./skill-fixtures.ts";
 

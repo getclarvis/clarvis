@@ -1,9 +1,9 @@
 import type { JSX } from "solid-js";
 import { createSignal } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { clampListIndex } from "#src/ui/patterns/list-navigation.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { bindLevelKeys, SelectableList, SelectableRow, ViewFrame } from "./view-host.tsx";
 
 /** One selectable row in a {@link HubMenu}. */

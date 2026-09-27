@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { createFileSubscriptionStore } from "../../src/subscriptions/store.ts";
+import { createFileSubscriptionStore } from "#src/subscriptions/store.ts";
 
 const roots: string[] = [];
 

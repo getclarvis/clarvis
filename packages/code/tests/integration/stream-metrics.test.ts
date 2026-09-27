@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openTempDir } from "../helpers/tracked-temp.ts";
-import { createStreamMetrics } from "../../src/adapters/stream-metrics.ts";
+import { createStreamMetrics } from "#src/adapters/stream-metrics.ts";
 
 test("file-backed metrics append a final window and total, tolerating an unwritable path", () => {
   const root = openTempDir("clarvis-stream-metrics-");

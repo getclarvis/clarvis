@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { connectOrLaunchLocalKernel } from "../../src/hosting/launcher.ts";
+import { connectOrLaunchLocalKernel } from "#src/hosting/launcher.ts";
 
 const [workspaceRoot, globalDir] = process.argv.slice(2) as [string, string];
 const { client } = await connectOrLaunchLocalKernel({

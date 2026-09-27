@@ -4,7 +4,7 @@ import { applyGoalControl } from "@clarvis/goal";
 import {
   buildStewardConversationFrame,
   StewardProjectionError,
-} from "../../src/goals/steward-projection.ts";
+} from "#src/goals/steward-projection.ts";
 
 function goal(): GoalRecord {
   return applyGoalControl(

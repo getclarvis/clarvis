@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 
-import { DeviceAttemptManager } from "../../src/subscriptions/attempts.ts";
+import { DeviceAttemptManager } from "#src/subscriptions/attempts.ts";
 import type {
   SubscriptionAccountRecord,
   SubscriptionPollResult,
   SubscriptionSchemeAdapter,
   SubscriptionSchemeRegistration,
-} from "../../src/subscriptions/types.ts";
+} from "#src/subscriptions/types.ts";
 
 const registration: SubscriptionSchemeRegistration = {
   scheme: "openai-codex",

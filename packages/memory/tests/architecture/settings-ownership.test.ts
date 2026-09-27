@@ -13,14 +13,14 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { createMemoryCapability } from "../../src/capability.ts";
-import { memoryConfigSchema } from "../../src/schemas.ts";
+import { createMemoryCapability } from "#src/capability.ts";
+import { memoryConfigSchema } from "#src/schemas.ts";
 import {
   MEMORY_CAPABILITY_NAME,
   MEMORY_INGEST_EVENT,
   MEMORY_REQUEST_PARAMS,
   memorySettingsSpec,
-} from "../../src/settings.ts";
+} from "#src/settings.ts";
 
 describe("memorySettingsSpec", () => {
   test("serves the store's own schema rather than a copy of it", () => {

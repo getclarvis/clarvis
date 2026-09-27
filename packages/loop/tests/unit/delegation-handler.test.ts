@@ -1,10 +1,10 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { buildDelegationContribution, type DelegationDeps } from "../../src/runtime/delegation.ts";
-import type { FakeAgentBuildContext } from "../../src/runtime/capabilities/testing.ts";
-import type { AgentResult } from "../../src/runtime/loop/loop-shared.ts";
-import { resolveSubagentProfiles } from "../../src/runtime/subagents/subagent-profiles.ts";
-import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
-import { createSemaphore } from "../../src/runtime/support/concurrency.ts";
+import { buildDelegationContribution, type DelegationDeps } from "#src/runtime/delegation.ts";
+import type { FakeAgentBuildContext } from "#src/runtime/capabilities/testing.ts";
+import type { AgentResult } from "#src/runtime/loop/loop-shared.ts";
+import { resolveSubagentProfiles } from "#src/runtime/subagents/subagent-profiles.ts";
+import { createTokenLedger, createIterationCounter } from "#src/runtime/budget/index.ts";
+import { createSemaphore } from "#src/runtime/support/concurrency.ts";
 import { createAgentRegistry, type AgentsLimits } from "@clarvis/supervision";
 import { createTrace } from "@clarvis/trace";
 import { loadEnv } from "@clarvis/capability";

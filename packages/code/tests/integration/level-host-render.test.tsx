@@ -1,18 +1,18 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { ViewHost } from "../../src/keys/commands.ts";
-import { registerLevel, type LevelSpec } from "../../src/ui/patterns/level-keys.ts";
-import type { CatalogPickerSpec } from "../../src/views/config/CatalogPicker.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
+import type { CatalogPickerSpec } from "#src/views/config/CatalogPicker.tsx";
 import {
   createFieldEditor,
   createViewHost,
   bindLevelKeys,
   LevelHost,
   type FieldEditor,
-} from "../../src/views/config/view-host.tsx";
-import { tokens } from "../../src/theme/tokens.ts";
+} from "#src/views/config/view-host.tsx";
+import { tokens } from "#src/theme/tokens.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const fakeKeymap = createFakeKeymap;

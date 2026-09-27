@@ -2,11 +2,11 @@ import { expect, test } from "bun:test";
 import { createSignal, type Setter } from "solid-js";
 import { rgbToHex } from "@opentui/core";
 import { openRender } from "../helpers/tracked-render.ts";
-import { AutocompletePopup } from "../../src/views/input/AutocompletePopup.tsx";
-import type { CompleteItem } from "../../src/views/input/autocomplete.ts";
-import type { ItemMatch } from "../../src/core/fuzzy.ts";
-import { overlayBg, selectionBg } from "../../src/theme/surfaces.ts";
-import { tokens } from "../../src/theme/tokens.ts";
+import { AutocompletePopup } from "#src/views/input/AutocompletePopup.tsx";
+import type { CompleteItem } from "#src/views/input/autocomplete.ts";
+import type { ItemMatch } from "#src/core/fuzzy.ts";
+import { overlayBg, selectionBg } from "#src/theme/surfaces.ts";
+import { tokens } from "#src/theme/tokens.ts";
 
 const ITEMS: CompleteItem[] = [
   { label: "/clear", detail: "Start a new session", value: "session.clear" },

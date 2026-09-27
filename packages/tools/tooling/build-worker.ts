@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { WORKER_PROTOCOL_VERSION } from "../src/execution/worker-protocol.ts";
+import { WORKER_PROTOCOL_VERSION } from "#src/execution/worker-protocol.ts";
 
 const root = resolve(import.meta.dir, "..");
 const output = join(root, "assets");

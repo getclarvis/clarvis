@@ -8,7 +8,7 @@ import type {
   ModelExecutionInfo,
   ModelExecutionResolver,
 } from "@clarvis/capability";
-import { rejectCatalogProviders, requireModelExecution } from "../../model-execution.ts";
+import { rejectCatalogProviders, requireModelExecution } from "#src/model-execution.ts";
 import { DEFAULT_COMPACTION_PROMPT } from "../context/compaction-prompt.ts";
 import type { ResolvedProviderConfig } from "@clarvis/capability";
 import type { EnvConfig } from "@clarvis/capability";

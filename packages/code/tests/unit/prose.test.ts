@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { stripDocChrome } from "../../src/views/Prose.tsx";
+import { stripDocChrome } from "#src/views/Prose.tsx";
 
 const DOC = [
   "---",

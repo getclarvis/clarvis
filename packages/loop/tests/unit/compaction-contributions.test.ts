@@ -6,8 +6,8 @@ import {
   buildCompactionMessages,
   CONTRIBUTION_MAX_CHARS,
   CONTRIBUTIONS_BLOCK_MAX_CHARS,
-} from "../../src/runtime/context/index.ts";
-import { collectCompactionContributions } from "../../src/runtime/loop/lifecycle-hooks.ts";
+} from "#src/runtime/context/index.ts";
+import { collectCompactionContributions } from "#src/runtime/loop/lifecycle-hooks.ts";
 
 const BASE = "BASE PROMPT: preserve decisions and file paths.";
 const SPAN: LiveMessage[] = [{ role: "user", content: "hello" }];

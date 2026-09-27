@@ -4,9 +4,9 @@ import {
   createSoftBudget,
   evaluateSoftBudget,
   type SoftCrossing,
-} from "../../src/runtime/budget/index.ts";
-import { ElicitTimeoutError, type Elicit } from "../../src/runtime/tools/index.ts";
-import { createComputeClock, type ComputeClock } from "../../src/runtime/support/index.ts";
+} from "#src/runtime/budget/index.ts";
+import { ElicitTimeoutError, type Elicit } from "#src/runtime/tools/index.ts";
+import { createComputeClock, type ComputeClock } from "#src/runtime/support/index.ts";
 import type { SoftLimitCheckDetail } from "@clarvis/capability";
 
 const CROSSING: SoftCrossing = { dimension: "tokens", used: 100, limit: 100 };

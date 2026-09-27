@@ -4,7 +4,7 @@ import {
   handleReadSkillResourceCall,
   LOAD_SKILL_TOOL_NAME,
   loadSkillTool,
-} from "../../src/capability.ts";
+} from "#src/capability.ts";
 import { makeTrace } from "../helpers/capability-fakes.ts";
 import { call, fakeSkills, resourceCall, validateArgs } from "../helpers/call-fixtures.ts";
 import { makeContent } from "../helpers/skill-fixtures.ts";

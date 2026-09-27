@@ -1,5 +1,5 @@
 import { lazy, Suspense, type JSX } from "solid-js";
-import type { ViewFactory, ViewHost } from "../../keys/commands.ts";
+import type { ViewFactory, ViewHost } from "#src/keys/commands.ts";
 
 interface LazyViewProps {
   host: ViewHost;

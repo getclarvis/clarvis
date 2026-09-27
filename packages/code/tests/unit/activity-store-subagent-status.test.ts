@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import type { RunEvent } from "@clarvis/protocol";
-import { createActivityStore, type SubagentStatus } from "../../src/adapters/activity-store.ts";
+import { createActivityStore, type SubagentStatus } from "#src/adapters/activity-store.ts";
 import { applyRunEvent, runEvent as ev } from "../helpers/run-events.ts";
 
 /** Project one complete protocol stream through the activity store's roster. */

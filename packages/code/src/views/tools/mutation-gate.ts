@@ -1,6 +1,6 @@
-import { isMutationTool, toolIdentity } from "../../adapters/tool-identity.ts";
-import { editsFromArgs, synthesizeUnifiedDiff } from "../../adapters/tool-parsers.ts";
-import { glyph } from "../../theme/glyphs.ts";
+import { isMutationTool, toolIdentity } from "#src/adapters/tool-identity.ts";
+import { editsFromArgs, synthesizeUnifiedDiff } from "#src/adapters/tool-parsers.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 import { moreChip } from "../truncate.ts";
 
 /**

@@ -6,7 +6,7 @@ import {
   WORKFLOWS_MAX_CONCURRENCY,
   WORKFLOWS_MAX_TOTAL_LEADERS,
   WORKFLOWS_SETTINGS_FIELDS,
-} from "../../src/settings.ts";
+} from "#src/settings.ts";
 
 const block = WORKFLOWS_SETTINGS_FIELDS.workflows;
 

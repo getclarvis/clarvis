@@ -13,7 +13,7 @@ import {
   releaseRequiresClarvisDocs,
   restoreReleaseModes,
   verifyReleaseTree,
-} from "../../src/update/release-manifest.ts";
+} from "#src/update/release-manifest.ts";
 
 const earlierCandidate = `${CLARVIS_DOCS_FIRST_VERSION}-rc.1`;
 

@@ -4,7 +4,7 @@ import {
   buildGoalStewardRequest,
   goalStewardResultSchema,
   validateGoalStewardResult,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 const assessment = (
   scope: "definition" | "objective" | "criterion",
@@ -189,7 +189,7 @@ it.each([
 describe("Steward settlement", () => {
   it("charges once, retains bounded reviews and fences stale results", async () => {
     const { applyGoalControl, admitGoalRun, settleStewardEvaluation } =
-      await import("../../src/index.ts");
+      await import("#src/index.ts");
     let state = applyGoalControl(
       undefined,
       {
@@ -279,7 +279,7 @@ describe("Steward settlement", () => {
   });
 
   it("retains measured usage on invalid and failed isolated runs", async () => {
-    const { runGoalSteward } = await import("../../src/index.ts");
+    const { runGoalSteward } = await import("#src/index.ts");
     const input = {
       execution_id: "review",
       session_id: "session",

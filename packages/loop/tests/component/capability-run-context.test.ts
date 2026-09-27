@@ -8,7 +8,7 @@ import type {
   LLMProvider,
   RunCapabilityContext,
 } from "@clarvis/capability";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
 import { MockLLM, mockConnections, mockMCPFactory } from "../helpers/fixtures.ts";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
 import { AGENT_REGISTRY_PORT } from "@clarvis/supervision";

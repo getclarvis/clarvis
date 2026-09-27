@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { deriveRunShape } from "../../src/validation/request-schema.ts";
+import { deriveRunShape } from "#src/validation/request-schema.ts";
 import type { RunRequest } from "@clarvis/capability";
 
 /**

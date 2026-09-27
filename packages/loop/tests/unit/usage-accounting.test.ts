@@ -1,6 +1,6 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { createUsageAccounting } from "../../src/runtime/usage-accounting.ts";
-import type { RunShape } from "../../src/runtime/run-shape.ts";
+import { createUsageAccounting } from "#src/runtime/usage-accounting.ts";
+import type { RunShape } from "#src/runtime/run-shape.ts";
 import type { EnvConfig } from "@clarvis/capability";
 
 function fakeShape(over: Partial<RunShape> = {}): RunShape {

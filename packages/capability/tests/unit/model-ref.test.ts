@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { parseModelRef } from "../../src/model-ref.ts";
+import { parseModelRef } from "#src/model-ref.ts";
 
 describe("parseModelRef without a slash", () => {
   it("returns the whole token as provider with an empty modelId", () => {

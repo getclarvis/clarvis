@@ -2,8 +2,8 @@ import { describe, expect, it } from "../helpers/bun-test.ts";
 import {
   ExtensionCallUnavailableError,
   createExtensionAdmissionController,
-} from "../../src/extension-admission.ts";
-import type { Logger } from "../../src/ports.ts";
+} from "#src/extension-admission.ts";
+import type { Logger } from "#src/ports.ts";
 
 interface Recorded {
   level: string;

@@ -8,8 +8,8 @@ import {
   SKILLS_CAPABILITY_NAME,
   USE_SKILLS_GRANT,
   type SkillsProvider,
-} from "../../src/capability.ts";
-import type { PluginBootstrapSkill } from "../../src/bootstrap.ts";
+} from "#src/capability.ts";
+import type { PluginBootstrapSkill } from "#src/bootstrap.ts";
 import {
   fakeAgentBuildContext,
   fakeAgentScope,

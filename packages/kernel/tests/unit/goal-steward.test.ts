@@ -10,7 +10,7 @@ import {
   type GoalUsage,
 } from "@clarvis/goal";
 import type { TraceEvent } from "@clarvis/capability";
-import { createGoalStewardCoordinator } from "../../src/goals/steward-coordinator.ts";
+import { createGoalStewardCoordinator } from "#src/goals/steward-coordinator.ts";
 
 function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?: number } = {}) {
   let planRevision = "absent";

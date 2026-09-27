@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { NOOP_LOGGER } from "@clarvis/capability";
-import { kernelError } from "../../src/core/errors.ts";
+import { kernelError } from "#src/core/errors.ts";
 import {
   recoverHostedDelivery,
   type HostedDeliveryRecovery,
-} from "../../src/hosting/delivery-recovery.ts";
+} from "#src/hosting/delivery-recovery.ts";
 
 test("reconciles a lost receipt acknowledgement with one canonical effect", async () => {
   let writes = 0;

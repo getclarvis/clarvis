@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseFrontmatter, readDescription, serializeDoc } from "../../src/frontmatter.ts";
+import { parseFrontmatter, readDescription, serializeDoc } from "#src/frontmatter.ts";
 
 describe("frontmatter", () => {
   test("parses description and tags, splitting the body off", () => {

@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { DEFAULT_SHARED_AGENT_PROMPT, renderSharedPromptDocument } from "@clarvis/loop/host";
-import { createConfigService } from "../../src/config/config-service.ts";
-import { createFileConfigStore } from "../../src/config/file-config-store.ts";
-import { createMemoryConfigStore } from "../../src/config/memory-config-store.ts";
-import { createSettingsRunAssembler } from "../../src/runs/settings-assembler.ts";
+import { createConfigService } from "#src/config/config-service.ts";
+import { createFileConfigStore } from "#src/config/file-config-store.ts";
+import { createMemoryConfigStore } from "#src/config/memory-config-store.ts";
+import { createSettingsRunAssembler } from "#src/runs/settings-assembler.ts";
 
 const REPLACE = (body: string) => renderSharedPromptDocument("replace", body);
 

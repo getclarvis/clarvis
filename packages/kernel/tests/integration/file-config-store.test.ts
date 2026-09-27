@@ -13,18 +13,18 @@ import * as fs from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it, expect, spyOn } from "bun:test";
-import { createConfigService, createFileConfigStore } from "../../src/config.ts";
+import { createConfigService, createFileConfigStore } from "#src/config.ts";
 import {
   MAX_AGENT_DOCUMENT_BYTES,
   MAX_AGENT_DOCUMENTS_PER_SCOPE,
   MAX_CONTEXT_DOCUMENT_BYTES,
   MAX_SETTINGS_DOCUMENT_BYTES,
-} from "../../src/config/file-config-store.ts";
+} from "#src/config/file-config-store.ts";
 import {
   settingsDocumentRevision,
   type AgentRecord,
   type ConfigStore,
-} from "../../src/config/config-store.ts";
+} from "#src/config/config-store.ts";
 import { acquireLocalLeaseSync, globalPaths, type LocalLeaseSync } from "@clarvis/paths";
 import type { ExtensionProfilePluginRef } from "@clarvis/protocol";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";

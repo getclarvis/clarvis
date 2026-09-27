@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
-import { moduleResolutionPolicyErrors } from "./module-resolution-policy.ts";
+import { moduleResolutionPolicyErrors, privateImportTarget } from "./module-resolution-policy.ts";
 import {
   PACKAGE_ROLE_ORDER,
   packageDependencyViolation,
@@ -217,8 +217,10 @@ function sourceModuleTarget(candidate) {
   return choices.find((file) => existsSync(file) && statSync(file).isFile());
 }
 
-function localModuleTarget(pkg, importer, specifier) {
+function localModuleTarget(root, pkg, importer, specifier) {
   if (specifier.startsWith(".")) return sourceModuleTarget(resolve(dirname(importer), specifier));
+  if (specifier.startsWith("#src/"))
+    return privateImportTarget(root, pkg, importer, specifier).target;
   if (workspacePackageName(specifier) !== pkg.name) return undefined;
   const subpath = requestedSubpath(specifier, pkg.name);
   const exported = exportForSubpath(pkg.manifest.exports, subpath);
@@ -451,8 +453,18 @@ export function analyzePackageGraph(root: string, options: { enforceArchitecture
               );
             }
           }
+          if (sourceEdge.sourceTree === "src" && edge.specifier.startsWith("#src/")) {
+            const target = localModuleTarget(repoRoot, pkg, file, edge.specifier);
+            const rootEntry = runtimeExportTarget(exportForSubpath(pkg.manifest.exports, "."));
+            const rootTarget =
+              rootEntry === undefined ? undefined : sourceModuleTarget(resolve(pkg.dir, rootEntry));
+            if (target !== undefined && target === rootTarget && file !== rootTarget)
+              errors.push(
+                `${sourceEdge.file}:${edge.line}: source imports its own public entrypoint ${pkg.name}`,
+              );
+          }
           if (sourceEdge.sourceTree === "src" && !edge.typeOnly) {
-            const target = localModuleTarget(pkg, file, edge.specifier);
+            const target = localModuleTarget(repoRoot, pkg, file, edge.specifier);
             if (
               target !== undefined &&
               (target === join(pkg.dir, "src") || target.startsWith(join(pkg.dir, "src") + sep))

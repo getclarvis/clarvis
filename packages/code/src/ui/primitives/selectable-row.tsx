@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { selectionBg } from "../../theme/surfaces.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { selectionBg } from "#src/theme/surfaces.ts";
 
 /**
  * Renders a one-line row with a leading selection chevron and, when selected, a highlighted

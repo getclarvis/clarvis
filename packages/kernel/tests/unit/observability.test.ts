@@ -2,10 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { NOOP_LOGGER } from "@clarvis/capability";
 import { MEMORY_INGEST_EVENT } from "@clarvis/memory/settings";
 import type { CapabilityEvent, TraceEvent } from "@clarvis/capability";
-import { capabilityEventToProto, engineEventToProto } from "../../src/runs/map-events.ts";
-import { storedToDetail } from "../../src/runs/map-result.ts";
-import { createKernelLifecycle } from "../../src/application/lifecycle.ts";
-import { observationSink } from "../../src/core/observed.ts";
+import { capabilityEventToProto, engineEventToProto } from "#src/runs/map-events.ts";
+import { storedToDetail } from "#src/runs/map-result.ts";
+import { createKernelLifecycle } from "#src/application/lifecycle.ts";
+import { observationSink } from "#src/core/observed.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
 describe("runs.event.unmapped", () => {

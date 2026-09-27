@@ -1,6 +1,6 @@
-import type { CommandScope, CommandUi, CommandRouteResult } from "../../keys/commands.ts";
-import type { HintTone } from "../../views/hint.ts";
-import { lazyView } from "../../views/config/lazy-view.tsx";
+import type { CommandScope, CommandUi, CommandRouteResult } from "#src/keys/commands.ts";
+import type { HintTone } from "#src/views/hint.ts";
+import { lazyView } from "#src/views/config/lazy-view.tsx";
 import type { LoopController } from "./controller.ts";
 import { parseLoopCommand } from "./parser.ts";
 

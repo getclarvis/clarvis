@@ -16,10 +16,10 @@ import {
   installCandidate,
   selectCandidateRelease,
 } from "../../tooling/candidate-install.ts";
-import { parseSourceCandidate } from "../../src/adapters/source-candidate.ts";
-import { productVersion } from "../../src/cli-args.ts";
-import { productRootForEntry } from "../../src/cli-entry.ts";
-import { CLARVIS_DOCS_FIRST_VERSION } from "../../src/update/release-manifest.ts";
+import { parseSourceCandidate } from "#src/adapters/source-candidate.ts";
+import { productVersion } from "#src/cli-args.ts";
+import { productRootForEntry } from "#src/cli-entry.ts";
+import { CLARVIS_DOCS_FIRST_VERSION } from "#src/update/release-manifest.ts";
 
 const version = productVersion();
 const tag = `v${version}-rc.4`;

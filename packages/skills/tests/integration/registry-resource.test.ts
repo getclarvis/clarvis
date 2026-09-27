@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "bun:test";
 import { discoverSkills, resolveConfig } from "@clarvis/skills";
-import { SkillError } from "../../src/errors.ts";
+import { SkillError } from "#src/errors.ts";
 import { cleanup, makeWorkspace, writeSkill } from "../helpers/fixtures.ts";
 
 function captureSkillError(run: () => unknown): SkillError {

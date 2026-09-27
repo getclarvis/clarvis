@@ -1,10 +1,10 @@
 import type { JSX } from "solid-js";
 import { For, Show, createSignal, onMount } from "solid-js";
 import type { StorageCategorySummary, StorageService, StorageSnapshot } from "@clarvis/protocol";
-import { detachObserved } from "../../core/tasks.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import { tokens } from "../../theme/tokens.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import type { HintTone } from "../hint.ts";
 import { bindLevelKeys, SectionHeader, StatusRow, ViewFrame } from "./view-host.tsx";
 

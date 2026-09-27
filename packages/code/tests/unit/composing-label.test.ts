@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { composingLabel } from "../../src/views/blocks.tsx";
+import { composingLabel } from "#src/views/blocks.tsx";
 
 test("names the action without claiming byte progress before arguments arrive", () => {
   // The first tool_input_delta carries chars: 0 -- the provider has named the

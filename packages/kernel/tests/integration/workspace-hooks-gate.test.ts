@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { loadEnv, type Logger } from "@clarvis/capability";
-import { createFileKernel } from "../../src/bootstrap.ts";
+import { createFileKernel } from "#src/bootstrap.ts";
 import { globalPaths } from "@clarvis/paths";
 
 let ws: string;

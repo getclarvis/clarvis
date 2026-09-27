@@ -396,3 +396,13 @@ current authenticated operator connection. The Kernel reads canonical receipts a
 idempotent admission queue; it restores no old consent or physical-closure claim. Code requests this
 when reopening an idle conversation and attaches to the admitted run. Recovery failure leaves the
 saved history readable. A restart without a new controller still waits for authority.
+
+## Private source imports
+
+This package owns the `#src/*.ts` mapping in [`package.json`](package.json). Long imports within its
+`src`, and package tests or tooling that access its implementation, use `#src/...ts`. Nearby
+relatives keep their actual source extension; other workspaces use public `@clarvis/protocol`
+exports. Protocol has no Bun test command; its development and declaration contracts are checked by TypeScript. The build profile
+clears the `bun` condition and emits its own JavaScript and declarations under `dist`.
+See [package architecture](../../specs/cross-cutting/package-architecture.md) for ownership and
+[build and CI](../../specs/cross-cutting/build-and-ci.md) for resolution and emit checks.

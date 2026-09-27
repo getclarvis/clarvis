@@ -3,7 +3,7 @@ import {
   EXECUTION_ID_PATTERN,
   EXECUTION_ID_MIN,
   EXECUTION_ID_MAX,
-} from "../../src/types/execution-id.ts";
+} from "#src/types/execution-id.ts";
 import { generateExecutionId } from "@clarvis/trace";
 
 const matchesFormat = (id: string): boolean =>

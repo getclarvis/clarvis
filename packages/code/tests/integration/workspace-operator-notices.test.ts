@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { KernelClient, LocalHostBrowserRequest, LocalHostStatus } from "@clarvis/protocol";
 import type { RuntimePlacementNotice } from "@clarvis/kernel/bootstrap";
-import { WorkspaceClientManager } from "../../src/adapters/workspace-client-manager.ts";
+import { WorkspaceClientManager } from "#src/adapters/workspace-client-manager.ts";
 
 function peer(generation = "generation") {
   let state: LocalHostStatus = {

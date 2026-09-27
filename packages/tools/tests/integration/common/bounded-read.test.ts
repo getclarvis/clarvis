@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import { promises as fs, type Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { ToolError } from "../../../src/errors.ts";
-import { readRawFile } from "../../../src/lib/files.ts";
+import { ToolError } from "#src/errors.ts";
+import { readRawFile } from "#src/lib/files.ts";
 
 afterEach(() => vi.restoreAllMocks());
 

@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { ExecutionSessionManager } from "../../../src/lib/execution-session.ts";
+import { ExecutionSessionManager } from "#src/lib/execution-session.ts";
 import { cleanup, makeConfig, makeWorkspace } from "../../helpers/fixtures.ts";
 
 test("fixture waits for session closure before removing its own roots", async () => {

@@ -8,14 +8,14 @@ import {
   DEFAULT_WHEN,
   resolvedVitalBindings,
   type InteractionEffects,
-} from "../../src/keys/interaction.ts";
+} from "#src/keys/interaction.ts";
 import {
   buildKeyboardEnvironment,
   type KeyboardEnvironment,
   type KeyboardProfile,
-} from "../../src/keys/keyboard-profile.ts";
-import type { Platform } from "../../src/adapters/platform.ts";
-import { uiCommand } from "../../src/keys/actions.ts";
+} from "#src/keys/keyboard-profile.ts";
+import type { Platform } from "#src/adapters/platform.ts";
+import { uiCommand } from "#src/keys/actions.ts";
 
 const find = (bindings: ReturnType<typeof buildVitalBindings>, cmd: string) =>
   bindings.filter((b) => b.cmd === cmd);

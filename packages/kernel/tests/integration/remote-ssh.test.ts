@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { globalPaths } from "@clarvis/paths";
-import { connectRemoteKernelOverSsh } from "../../src/bootstrap.ts";
-import { remoteSshEnvironment } from "../../src/hosting/connect-remote-ssh.ts";
+import { connectRemoteKernelOverSsh } from "#src/bootstrap.ts";
+import { remoteSshEnvironment } from "#src/hosting/connect-remote-ssh.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

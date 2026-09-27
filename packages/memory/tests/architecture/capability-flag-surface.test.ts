@@ -20,10 +20,10 @@
 import { describe, expect, it } from "bun:test";
 
 import type { Capability, NamespacedTool, RunCapability } from "@clarvis/capability";
-import type { MemoryFactory } from "../../src/factory.ts";
-import { createMemory } from "../../src/index.ts";
-import { createMemoryCapability } from "../../src/capability.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
+import type { MemoryFactory } from "#src/factory.ts";
+import { createMemory } from "#src/index.ts";
+import { createMemoryCapability } from "#src/capability.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
 import { fakeAgentBuildContext, fakeRunCapabilityContext } from "../helpers/capability.ts";
 
 const ENTRY_SCOPE = { agent: "lead", entry: true, grants: [] } as const;

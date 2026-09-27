@@ -15,8 +15,8 @@ import {
   pluginSkillRoots,
   readPluginManifestSource,
   resolvePluginManifest,
-} from "../../src/plugins/plugin-manifest.ts";
-import { convertHooksDocument } from "../../src/plugins/hook-dialects.ts";
+} from "#src/plugins/plugin-manifest.ts";
+import { convertHooksDocument } from "#src/plugins/hook-dialects.ts";
 import { mcpServerPluginSchema, mcpServerSettingsSchema } from "@clarvis/loop/host";
 import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
 import { EXTERNAL_HOOK_EVENT_NAMES, hookSchema, MAX_HOOK_TIMEOUT_MS } from "@clarvis/capability";

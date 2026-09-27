@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { borderChars, glyph } from "../../theme/glyphs.ts";
-import { ruleColor } from "../../theme/surfaces.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { borderChars, glyph } from "#src/theme/glyphs.ts";
+import { ruleColor } from "#src/theme/surfaces.ts";
 
 /**
  * A non-interactive section divider for the `/` command popup, rendered above

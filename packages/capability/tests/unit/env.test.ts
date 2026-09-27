@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { loadEnv } from "../../src/env.ts";
+import { loadEnv } from "#src/env.ts";
 
 describe("env loader", () => {
   it("applies documented defaults on an empty environment", () => {

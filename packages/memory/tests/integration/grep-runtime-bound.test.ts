@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { createGrepScanner, GREP_LINE_MAX, GREP_SCAN_MAX_MS } from "../../src/text/grep.ts";
+import { createGrepScanner, GREP_LINE_MAX, GREP_SCAN_MAX_MS } from "#src/text/grep.ts";
 
 test("the admitted regex worst case stays inside the real runtime budget", () => {
   // `[a-z]*[a-z]*[a-z]*9` carries exactly GREP_AMBIGUITY_MAX markers and no

@@ -1,8 +1,8 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { buildLeadInputPersona } from "../../src/runtime/subagents/build-lead-input.ts";
+import { buildLeadInputPersona } from "#src/runtime/subagents/build-lead-input.ts";
 import type { NamespacedRegistry } from "@clarvis/mcp-client";
-import type { LoopAgentBuildContext } from "../../src/runtime/loop/loop-contract.ts";
-import { createLiveContext, DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
+import type { LoopAgentBuildContext } from "#src/runtime/loop/loop-contract.ts";
+import { createLiveContext, DISABLED_COMPACTION } from "#src/runtime/context/index.ts";
 
 const registry = (allUnavailable: boolean, toolCount: number): NamespacedRegistry =>
   ({

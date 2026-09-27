@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { safeStringify } from "../../src/runtime/support/index.ts";
+import { safeStringify } from "#src/runtime/support/index.ts";
 
 describe("safeStringify", () => {
   it("returns strings verbatim", () => {

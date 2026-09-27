@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { createMemo, createRoot } from "solid-js";
 import type { RunEvent } from "@clarvis/protocol";
-import { createActivityStore } from "../../src/adapters/activity-store.ts";
+import { createActivityStore } from "#src/adapters/activity-store.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
-import { contextMeter } from "../../src/views/Sidebar.tsx";
-import { tokens } from "../../src/theme/tokens.ts";
+import { contextMeter } from "#src/views/Sidebar.tsx";
+import { tokens } from "#src/theme/tokens.ts";
 
 const ev = runEvent;
 const iter = (

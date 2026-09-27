@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { installTerminalGuard } from "../../src/adapters/terminal-guard.ts";
+import { installTerminalGuard } from "#src/adapters/terminal-guard.ts";
 
 function captureStderr(): { written: string[]; restore: () => void } {
   const written: string[] = [];

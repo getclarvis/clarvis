@@ -1,10 +1,10 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { contentToText } from "@clarvis/capability";
-import { buildCompactionMessages } from "../../src/runtime/context/llm-compaction.ts";
+import { buildCompactionMessages } from "#src/runtime/context/llm-compaction.ts";
 import {
   COMPACTION_UPDATE_INSTRUCTION,
   DEFAULT_COMPACTION_PROMPT,
-} from "../../src/runtime/context/compaction-prompt.ts";
+} from "#src/runtime/context/compaction-prompt.ts";
 
 describe("compaction model guidance", () => {
   it("preserves authority and unfinished work while keeping the base instructions compact", () => {

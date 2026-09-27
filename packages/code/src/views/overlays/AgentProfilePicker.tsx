@@ -1,10 +1,10 @@
 import { createSignal, Show, type Accessor, type JSX } from "solid-js";
 import type { Scope } from "@clarvis/protocol";
-import { tokens } from "../../theme/tokens.ts";
-import type { AgentProfileView } from "../../adapters/agents.ts";
-import { deriveAgentShape, grantBadges } from "../../adapters/agents.ts";
-import type { Interaction } from "../../keys/interaction.ts";
-import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import type { AgentProfileView } from "#src/adapters/agents.ts";
+import { deriveAgentShape, grantBadges } from "#src/adapters/agents.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { glyph, glyphColWidth } from "#src/theme/glyphs.ts";
 import { ListPicker } from "./ListPicker.tsx";
 
 const ACTIVE_COL_WIDTH = glyphColWidth("radioOn");

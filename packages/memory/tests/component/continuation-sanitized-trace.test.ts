@@ -29,7 +29,7 @@ import { sanitizeDeep } from "@clarvis/capability";
 import type { ProviderConfig } from "@clarvis/capability";
 import type { StoredExecution } from "@clarvis/loop";
 import { providerConfigSchema } from "@clarvis/loop/host";
-import { buildIndexerContinuationRequest } from "../../src/indexer/request.ts";
+import { buildIndexerContinuationRequest } from "#src/indexer/request.ts";
 
 const MODEL = "openrouter/deepseek-v4-pro";
 

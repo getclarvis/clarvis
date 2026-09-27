@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "../helpers/bun-test.ts";
-import { withCallLogging } from "../../src/index.ts";
+import { withCallLogging } from "#src/index.ts";
 import { contentToText } from "@clarvis/capability";
 import type { LLMCallParams, LLMCallResult, LLMProvider } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";

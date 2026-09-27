@@ -1,10 +1,10 @@
 import { For, lazy, Suspense, untrack, type Accessor, type JSX } from "solid-js";
 import type { PlansService, WorkspaceChangesService } from "@clarvis/protocol";
-import type { ActivityStore } from "../../adapters/activity-store.ts";
-import type { Interaction } from "../../keys/interaction.ts";
+import type { ActivityStore } from "#src/adapters/activity-store.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
 import type { MountedView, OverlayHost } from "../overlay-host.ts";
-import { diagnosticCount } from "../../core/diagnostic-events.ts";
-import { SurfaceBoundary, SurfaceOverlay } from "../../ui/patterns/surface-lifecycle.tsx";
+import { diagnosticCount } from "#src/core/diagnostic-events.ts";
+import { SurfaceBoundary, SurfaceOverlay } from "#src/ui/patterns/surface-lifecycle.tsx";
 
 const DiffViewer = lazy(async () => {
   const module = await import("../overlays/DiffViewer.tsx");

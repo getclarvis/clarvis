@@ -14,7 +14,7 @@
  * surface left, which is why the removed names are asserted absent from both.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { dispatch, listTools } from "../../../src/core.ts";
+import { dispatch, listTools } from "#src/core.ts";
 import { cleanup, makeConfig, makeWorkspace, resultText } from "../../helpers/fixtures.ts";
 import { EXPECTED_TOOL_DESCRIPTORS, expectedToolNames } from "../../helpers/tool-surface.ts";
 

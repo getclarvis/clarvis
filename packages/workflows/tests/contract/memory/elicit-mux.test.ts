@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Elicit, ElicitParams } from "@clarvis/capability";
-import { createElicitMux } from "../../../src/elicit-mux.ts";
+import { createElicitMux } from "#src/elicit-mux.ts";
 
 function params(message: string): ElicitParams {
   return { message, requestedSchema: { type: "object", properties: {}, required: [] } };

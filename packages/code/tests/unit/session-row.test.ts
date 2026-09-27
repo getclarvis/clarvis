@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { formatSessionRow, relTime } from "../../src/views/session-row.ts";
-import type { SessionMeta } from "../../src/adapters/session-store.ts";
+import { formatSessionRow, relTime } from "#src/views/session-row.ts";
+import type { SessionMeta } from "#src/adapters/session-store.ts";
 
 const NOW = 1_000_000_000_000;
 

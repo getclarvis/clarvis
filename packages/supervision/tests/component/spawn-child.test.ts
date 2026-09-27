@@ -8,7 +8,7 @@ import type {
   TracePort,
 } from "@clarvis/capability";
 
-import { registerBackgroundChild, type BackgroundChildSpawn } from "../../src/spawn-child.ts";
+import { registerBackgroundChild, type BackgroundChildSpawn } from "#src/spawn-child.ts";
 
 interface Recorded {
   kind: TraceKind;

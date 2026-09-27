@@ -1,14 +1,14 @@
 import { describe, it, expect } from "../bun-test.ts";
 import type { Capability, MCPConnection } from "@clarvis/capability";
 
-import { collectCapabilityToolMetadata } from "../../src/runtime/capability-tool-metadata.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import { createToolEffectPort } from "../../src/runtime/tools/tool-effect.ts";
+import { collectCapabilityToolMetadata } from "#src/runtime/capability-tool-metadata.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import { createToolEffectPort } from "#src/runtime/tools/tool-effect.ts";
 import {
   AGENT_TOOL_WIRE_NAMES,
   BUILTIN_WIRE_NAMES,
   RESERVED_WIRE_NAMES,
-} from "../../src/runtime/tools/wire-names.ts";
+} from "#src/runtime/tools/wire-names.ts";
 
 function fakeConn(name: string): MCPConnection {
   return {

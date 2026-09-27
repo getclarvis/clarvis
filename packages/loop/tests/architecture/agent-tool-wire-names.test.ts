@@ -2,12 +2,12 @@ import { describe, it, expect } from "../bun-test.ts";
 import {
   AGENT_TOOL_WIRE_NAMES,
   READ_ONLY_AGENT_TOOL_WIRE_NAMES,
-} from "../../src/runtime/tools/wire-names.ts";
+} from "#src/runtime/tools/wire-names.ts";
 import {
   AGENT_TOOL_NAMES,
   EDIT_TOOL_NAMES,
   READ_ONLY_TOOL_NAMES,
-} from "../../src/runtime/tools/builtin/names.ts";
+} from "#src/runtime/tools/builtin/names.ts";
 
 describe("AGENT_TOOL_WIRE_NAMES", () => {
   it("stays in sync with the tool names @clarvis/tools actually registers", () => {

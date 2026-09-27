@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { BrandWordmark, gradientStops, WORDMARK } from "../../src/views/brand.tsx";
-import { contrastRatio } from "../../src/theme/contrast.ts";
-import { parseColor } from "../../src/theme/model.ts";
+import { BrandWordmark, gradientStops, WORDMARK } from "#src/views/brand.tsx";
+import { contrastRatio } from "#src/theme/contrast.ts";
+import { parseColor } from "#src/theme/model.ts";
 
 test("gradientStops spans from→to and every stop clears AA against the band bg", () => {
   const bg = "#171433";

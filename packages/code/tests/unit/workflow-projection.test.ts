@@ -4,7 +4,7 @@ import {
   reduceWorkflowProjection,
   workflowLeaderCounts,
   type WorkflowActivity,
-} from "../../src/adapters/workflow-projection.ts";
+} from "#src/adapters/workflow-projection.ts";
 
 function started(
   runId: string,

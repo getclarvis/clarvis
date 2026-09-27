@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { PlanSession } from "../../src/capability/session.ts";
+import { PlanSession } from "#src/capability/session.ts";
 import {
   MAX_PLAN_BATCH_OPERATIONS,
   MAX_PLAN_LOCATOR_CHARS,
   MAX_PLAN_TASKS,
   createPlanStore,
   revisePlanInputSchema,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 import {
   CREATE_PLAN_TOOL_NAME,
   LIST_PLANS_TOOL_NAME,
@@ -15,7 +15,7 @@ import {
   TRANSITION_PLAN_TASK_TOOL_NAME,
   handlePlanRuntimeCall,
   planRuntimeTools,
-} from "../../src/capability/runtime-tools.ts";
+} from "#src/capability/runtime-tools.ts";
 import { createEditablePlanRepository, type EditablePlanRepository } from "../helpers/store.ts";
 
 async function fixture(): Promise<{

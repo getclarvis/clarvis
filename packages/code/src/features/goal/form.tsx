@@ -1,16 +1,16 @@
 import { createSignal, onCleanup, Show, type JSX } from "solid-js";
 import type { GoalLimits } from "@clarvis/protocol";
-import type { ViewHost } from "../../keys/commands.ts";
-import { tokens } from "../../theme/tokens.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import {
   bindLevelKeys,
   createFieldEditor,
   FieldRow,
   SelectableList,
   ViewFrame,
-} from "../../views/config/view-host.tsx";
-import { registerLevel } from "../../ui/patterns/level-keys.ts";
-import { detachObserved } from "../../core/tasks.ts";
+} from "#src/views/config/view-host.tsx";
+import { registerLevel } from "#src/ui/patterns/level-keys.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import type { GoalController } from "./controller.ts";
 import { editGoalCriterion } from "./criterion-editor.ts";
 import { goalDraftAction, type GoalDraft } from "./draft.ts";

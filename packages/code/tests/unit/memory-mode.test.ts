@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import { createMemoryModeStore, saveMemoryMode } from "../../src/adapters/memory-mode.ts";
-import type { SettingsAdapter } from "../../src/adapters/settings.ts";
+import { createMemoryModeStore, saveMemoryMode } from "#src/adapters/memory-mode.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
 
 test("memory starts off on a fresh installation and accepts a saved choice", () => {
   createRoot((dispose) => {

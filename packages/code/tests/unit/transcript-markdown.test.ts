@@ -3,8 +3,8 @@ import {
   renderTranscriptMarkdown,
   renderTranscriptMarkdownChunks,
   transcriptMarkdownHeader,
-} from "../../src/views/transcript-markdown.ts";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+} from "#src/views/transcript-markdown.ts";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 
 test("renderTranscriptMarkdown: prose, quoted reasoning, tool signature (builtin label), run rule", () => {
   const nodes: TranscriptNode[] = [

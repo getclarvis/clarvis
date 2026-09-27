@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "../../bun-test.ts";
 import { MockLLM, mockMCPFactory } from "../../integration/_fixtures.ts";
 import { makeHarness, TEST_PROVIDERS, type TestHarness } from "../../integration/_helpers.ts";
-import { validateBody } from "../../../src/validation/index.ts";
+import { validateBody } from "#src/validation/index.ts";
 import { loadEnv } from "@clarvis/capability";
 
 const env = loadEnv({});

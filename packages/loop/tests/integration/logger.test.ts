@@ -1,6 +1,6 @@
 import { symbols } from "pino";
 import { describe, it, expect, vi } from "../bun-test.ts";
-import { createLogger } from "../../src/logger.ts";
+import { createLogger } from "#src/logger.ts";
 
 /**
  * Destroys the real stdout-bound SonicBoom destination a `destination: 1`

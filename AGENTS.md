@@ -181,7 +181,7 @@ The complete, maintained routing table is [`specs/README.md`](specs/README.md). 
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Capability contract or composition                    | [`specs/foundations/capability.md`](specs/foundations/capability.md), [`specs/engine/capability-composition.md`](specs/engine/capability-composition.md)                      |
 | Paths or filesystem ownership                         | [`specs/foundations/paths.md`](specs/foundations/paths.md)                                                                                                                    |
-| Tools, shell, guards                                   | [`specs/execution/tools-contract.md`](specs/execution/tools-contract.md), then the focused execution spec                                                                     |
+| Tools, shell, guards                                  | [`specs/execution/tools-contract.md`](specs/execution/tools-contract.md), then the focused execution spec                                                                     |
 | Loop lifecycle, budgets, context, delegation          | the focused file under [`specs/engine/`](specs/README.md#engine--the-loop-itself)                                                                                             |
 | Memory, plans, workflows                              | the focused file under [`specs/capabilities/`](specs/README.md#capabilities--features-that-compose-onto-the-engine)                                                           |
 | Kernel, protocol, or TUI                              | the focused file under [`specs/hosts/`](specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade)                                                                |
@@ -349,6 +349,13 @@ TUI and verify that the live settings remain unchanged afterward using read-only
 - Relative module specifiers name the actual TypeScript source extension (`.ts`, `.tsx`, `.mts` or
   `.cts`). Keep `.js`, `.jsx`, `.mjs` and `.cjs` only for real JavaScript files or generated
   artifacts; `bun run check:imports` enforces this and the compiler rewrites emitted JavaScript.
+- Source imports that climb two or more parent directories to another module in the same package's
+  `src`, and package tests or tooling that import its `src`, use package-owned `#src/` imports with
+  the real `.ts` or `.tsx` extension. Keep short relatives and public workspace imports for their
+  distinct roles. Code declares `#src/*` for its non-emitting application profile; emitting
+  libraries declare ordered `bun`, `types` and `default` targets under `#src/*.ts`. A new package
+  with eligible imports must declare its own mapping; `bun run check:imports` enforces this even
+  when the mapping is absent. Packages without eligible imports need no idle mapping.
 - Do not add ad-hoc `//` or plain block comments in `src/`. Keep tooling directives and the minimal
   comment required by an otherwise empty block.
 - Never insert literal NUL, zero-width, BOM, non-breaking, or irregular-whitespace characters. Use an

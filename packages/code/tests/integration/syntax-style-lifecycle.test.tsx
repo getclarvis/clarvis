@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { resolveTokens } from "../../src/theme/model.ts";
-import { applyResolvedTokens, tokens } from "../../src/theme/tokens.ts";
+import { resolveTokens } from "#src/theme/model.ts";
+import { applyResolvedTokens, tokens } from "#src/theme/tokens.ts";
 import {
   bindSyntaxStyleRenderer,
   pendingSyntaxStyleRetirements,
   syntaxStyle,
-} from "../../src/theme/syntax.ts";
+} from "#src/theme/syntax.ts";
 
 test("a superseded native SyntaxStyle survives two real renderer frames, then retires", async () => {
   applyResolvedTokens(resolveTokens(undefined, "dark"));

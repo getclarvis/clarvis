@@ -1,21 +1,21 @@
 import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, on } from "solid-js";
 import type { ModelCatalogService, SubscriptionScheme } from "@clarvis/protocol";
-import { parseModelRef } from "../../adapters/model-policy.ts";
-import type { SettingsAdapter, SettingsFile } from "../../adapters/settings.ts";
+import { parseModelRef } from "#src/adapters/model-policy.ts";
+import type { SettingsAdapter, SettingsFile } from "#src/adapters/settings.ts";
 import {
   normalizeReasoningEfforts,
   recommendedReasoningEffort,
   supportedReasoningEfforts,
   type EffortLevel,
-} from "../../adapters/effort-levels.ts";
-import type { ModelsCatalog } from "../../adapters/models-catalog.ts";
-import { errorText } from "../../adapters/errors.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+} from "#src/adapters/effort-levels.ts";
+import type { ModelsCatalog } from "#src/adapters/models-catalog.ts";
+import { errorText } from "#src/adapters/errors.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import type { HintTone } from "../hint.ts";
 import { configuredModelCapabilities, knownToLackReasoning } from "./catalog-pick.ts";
 import {

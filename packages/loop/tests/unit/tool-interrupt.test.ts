@@ -4,7 +4,7 @@ import {
   isOperatorInterruptedTool,
   OPERATOR_INTERRUPTED_TOOL,
   wasOperatorInterrupted,
-} from "../../src/runtime/tools/tool-interrupt.ts";
+} from "#src/runtime/tools/tool-interrupt.ts";
 
 describe("tool interrupt registry", () => {
   it("accepts the first request, coalesces repeats, and rejects unknown tokens", () => {

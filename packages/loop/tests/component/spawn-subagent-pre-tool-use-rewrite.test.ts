@@ -1,16 +1,16 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { loadEnv, type LifecycleHook } from "@clarvis/capability";
 import { createTrace } from "@clarvis/trace";
-import { runAgent, type AgentBuildContext } from "../../src/runtime/loop/run-agent.ts";
-import type { RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
+import { runAgent, type AgentBuildContext } from "#src/runtime/loop/run-agent.ts";
+import type { RunAgentInput } from "#src/runtime/loop/run-agent.ts";
 import type { AgentCapability, AgentLoopContribution } from "@clarvis/capability";
-import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
-import { createSemaphore } from "../../src/runtime/support/concurrency.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import { compileResultContract } from "../../src/runtime/tools/index.ts";
-import { DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
-import { buildDelegationContribution } from "../../src/runtime/delegation.ts";
-import { resolveSubagentProfiles } from "../../src/runtime/subagents/subagent-profiles.ts";
+import { createTokenLedger, createIterationCounter } from "#src/runtime/budget/index.ts";
+import { createSemaphore } from "#src/runtime/support/concurrency.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import { compileResultContract } from "#src/runtime/tools/index.ts";
+import { DISABLED_COMPACTION } from "#src/runtime/context/index.ts";
+import { buildDelegationContribution } from "#src/runtime/delegation.ts";
+import { resolveSubagentProfiles } from "#src/runtime/subagents/subagent-profiles.ts";
 import { MockLLM } from "../helpers/fixtures.ts";
 
 /**

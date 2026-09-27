@@ -1,10 +1,10 @@
 import { loadEnv } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
-import { createKernelGoalAgentRuntime } from "../../src/goals/agent-runtime.ts";
+import { createKernelGoalAgentRuntime } from "#src/goals/agent-runtime.ts";
 import { expect, it } from "bun:test";
 import type { LLMProvider } from "@clarvis/capability";
 import type { SessionTotals } from "@clarvis/protocol";
-import { addGoalAuxiliaryUsage, createGoalUsageTracker } from "../../src/goals/usage.ts";
+import { addGoalAuxiliaryUsage, createGoalUsageTracker } from "#src/goals/usage.ts";
 
 it("retains model attribution and prices retries exactly once in auxiliary settlement", async () => {
   const tracker = createGoalUsageTracker();

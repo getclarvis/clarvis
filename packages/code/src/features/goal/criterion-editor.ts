@@ -1,5 +1,5 @@
 import type { GoalCriterion } from "@clarvis/protocol";
-import type { FieldEditor, PickItem } from "../../views/config/view-host.tsx";
+import type { FieldEditor, PickItem } from "#src/views/config/view-host.tsx";
 import type { GoalDraft } from "./draft.ts";
 
 type CriterionFieldEditor = Pick<FieldEditor, "start" | "startEnum" | "startMultiline">;

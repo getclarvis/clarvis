@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { stopOwnedProcess, type ProcessOwnerDeps } from "../../src/lib/process-owner.ts";
-import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
+import { stopOwnedProcess, type ProcessOwnerDeps } from "#src/lib/process-owner.ts";
+import { NOOP_TOOLS_LOGGER } from "#src/lib/log.ts";
 
 function policy(runningAfter?: NodeJS.Signals) {
   let time = 0;

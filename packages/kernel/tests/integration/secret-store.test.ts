@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { describe, it, expect } from "bun:test";
-import { createFileSecretStore, createSecretService } from "../../src/index.ts";
+import { createFileSecretStore, createSecretService } from "#src/index.ts";
 import { globalPaths } from "@clarvis/paths";
 
 /** Write a fixture file, creating the scope subdirectory it now lives in. */

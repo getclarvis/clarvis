@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
-import { applyResolvedTokens, tokens } from "../../src/theme/tokens.ts";
-import { resolveTokens } from "../../src/theme/model.ts";
-import { diffColorProps, syntaxStyle } from "../../src/theme/syntax.ts";
+import { applyResolvedTokens, tokens } from "#src/theme/tokens.ts";
+import { resolveTokens } from "#src/theme/model.ts";
+import { diffColorProps, syntaxStyle } from "#src/theme/syntax.ts";
 
 afterAll(() => applyResolvedTokens(resolveTokens(undefined, "dark")));
 

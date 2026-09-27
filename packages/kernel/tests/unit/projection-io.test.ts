@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { recoverProjectionIO } from "../../src/hosting/projection-io.ts";
+import { recoverProjectionIO } from "#src/hosting/projection-io.ts";
 
 test("positional IO recovery has a finite allowance and never retries capacity or identity errors", async () => {
   for (const code of ["EIO", "ENOSPC", "EEXIST", "EACCES", undefined]) {

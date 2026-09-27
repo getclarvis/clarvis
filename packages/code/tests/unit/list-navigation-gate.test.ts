@@ -3,7 +3,7 @@ import { createSignal } from "solid-js";
 import { createTestKeymap } from "@opentui/keymap/testing";
 import type { KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
-import { registerListNav } from "../../src/ui/patterns/list-navigation.ts";
+import { registerListNav } from "#src/ui/patterns/list-navigation.ts";
 
 type TestKeymap = Keymap<Renderable, KeyEvent>;
 

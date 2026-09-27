@@ -4,7 +4,7 @@ import {
   createTokenLedger,
   createIterationCounter,
   runBudgetCheckpoint,
-} from "../../src/runtime/budget/index.ts";
+} from "#src/runtime/budget/index.ts";
 import { createTrace } from "@clarvis/trace";
 
 describe("runBudgetCheckpoint — cancelled outcome", () => {

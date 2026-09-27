@@ -1,13 +1,13 @@
 import { describe, it, expect } from "bun:test";
 import type { RunEvent } from "@clarvis/protocol";
-import { createEventStream } from "../../src/core/event-stream.ts";
+import { createEventStream } from "#src/core/event-stream.ts";
 import {
   coalesceRunEvents,
   inspectCoalescedRunEvent,
   isDroppableRunEvent,
   sizeOfCoalescedRunEvent,
   sizeOfRunEvent,
-} from "../../src/runs/coalesce-events.ts";
+} from "#src/runs/coalesce-events.ts";
 
 async function drain<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];

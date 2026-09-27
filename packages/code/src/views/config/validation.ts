@@ -11,4 +11,4 @@ export {
   type IssueLevel,
   type IssueSet,
   type PanelIssue,
-} from "../../features/issues.ts";
+} from "#src/features/issues.ts";

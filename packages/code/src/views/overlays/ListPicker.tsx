@@ -11,9 +11,9 @@ import {
 } from "solid-js";
 import type { InputRenderable, KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
-import { glyph, type GlyphName } from "../../theme/glyphs.ts";
-import { fuzzyFilter } from "../../core/fuzzy.ts";
-import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
+import { glyph, type GlyphName } from "#src/theme/glyphs.ts";
+import { fuzzyFilter } from "#src/core/fuzzy.ts";
+import { clampListIndex } from "#src/ui/patterns/list-navigation.ts";
 import {
   LAYER,
   registerLevel,
@@ -21,14 +21,14 @@ import {
   type LevelSpec,
   type PanelVerbName,
   type VerbSpec,
-} from "../../ui/patterns/level-keys.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { EmptyHint } from "../../ui/primitives/hints.tsx";
-import { windowRows } from "../../ui/patterns/windowed-list.tsx";
+} from "#src/ui/patterns/level-keys.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { EmptyHint } from "#src/ui/primitives/hints.tsx";
+import { windowRows } from "#src/ui/patterns/windowed-list.tsx";
 import { FLOAT_CHROME_ROWS, floatContentWidth, floatMaxRows, FloatFrame } from "./FloatFrame.tsx";
-import { InteractionNavigationBar } from "../../ui/patterns/navigation-bar.tsx";
-import { useTerminalSize } from "../../ui/patterns/terminal-size.tsx";
-import type { Interaction } from "../../keys/interaction.ts";
+import { InteractionNavigationBar } from "#src/ui/patterns/navigation-bar.tsx";
+import { useTerminalSize } from "#src/ui/patterns/terminal-size.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
 import { FilterField } from "./FilterField.tsx";
 import { PickerRow, type PickerCell } from "./PickerRow.tsx";
 

@@ -7,9 +7,9 @@ import {
   describeQueued,
   type DispatchDeps,
   type DispatchUnit,
-} from "../../src/dispatch.ts";
-import { createWorkflowLedger } from "../../src/ledger.ts";
-import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
+} from "#src/dispatch.ts";
+import { createWorkflowLedger } from "#src/ledger.ts";
+import { createWorkflowLeaderCount } from "#src/leader-count.ts";
 import { makeCtx, recordingBc, requestWithPrompt, workflowRunDeps } from "../helpers/workflow.ts";
 
 const LIMITS: AgentsLimits = {

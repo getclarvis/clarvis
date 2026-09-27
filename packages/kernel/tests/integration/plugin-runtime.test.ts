@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalPaths, workspaceStatePaths } from "@clarvis/paths";
-import { ensurePluginDataDir, pluginDataDir } from "../../src/plugins/plugin-runtime.ts";
+import { ensurePluginDataDir, pluginDataDir } from "#src/plugins/plugin-runtime.ts";
 
 const made: string[] = [];
 

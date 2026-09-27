@@ -5,12 +5,12 @@ import {
   type CommandEffects,
   type CommandUi,
   type Commands,
-} from "../../src/keys/commands.ts";
-import { registerCodeCommands, type CodeCommandDeps } from "../../src/app/command-composition.ts";
-import { readEnvView } from "../../src/adapters/agent-files.ts";
-import type { SettingsAdapter } from "../../src/adapters/settings.ts";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
+} from "#src/keys/commands.ts";
+import { registerCodeCommands, type CodeCommandDeps } from "#src/app/command-composition.ts";
+import { readEnvView } from "#src/adapters/agent-files.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
 import { globalPaths } from "@clarvis/kernel/paths";
 import { fakeDebugSession } from "../helpers/fake-debug-session.ts";
 

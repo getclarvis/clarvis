@@ -12,7 +12,7 @@ import {
   modeBitsEnforced,
   makeSymlink,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
+import type { ServerConfig } from "#src/config.ts";
 
 describe("remove", () => {
   let root: string;

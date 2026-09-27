@@ -1,14 +1,14 @@
 import type { Accessor, JSX } from "solid-js";
-import { detachObserved } from "../../core/tasks.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { tone } from "../../theme/tone.ts";
-import type { Scope, ViewHost } from "../../keys/commands.ts";
-import { agentReadiness } from "../../adapters/agent-files.ts";
-import type { KeysAdapter } from "../../adapters/provider-secrets.ts";
-import type { DoctorCtx, DoctorReport, Gate, GateId, GateResult } from "../../onboarding/doctor.ts";
-import { registerLevel, verb, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { tone } from "#src/theme/tone.ts";
+import type { Scope, ViewHost } from "#src/keys/commands.ts";
+import { agentReadiness } from "#src/adapters/agent-files.ts";
+import type { KeysAdapter } from "#src/adapters/provider-secrets.ts";
+import type { DoctorCtx, DoctorReport, Gate, GateId, GateResult } from "#src/onboarding/doctor.ts";
+import { registerLevel, verb, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { promptForApiKey } from "./key-entry.ts";
 import {
   bindLevelKeys,
@@ -17,7 +17,7 @@ import {
   SelectableRow,
   ViewFrame,
 } from "./view-host.tsx";
-import { errorText } from "../../adapters/errors.ts";
+import { errorText } from "#src/adapters/errors.ts";
 
 /** Data and actions {@link DoctorView} needs from its host. */
 export interface DoctorViewDeps {

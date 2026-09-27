@@ -1,10 +1,10 @@
 import { createMemo, createSignal, type Accessor } from "solid-js";
-import type { ConfirmRequest } from "../../keys/commands.ts";
-import type { Scope } from "../../adapters/settings.ts";
-import type { SettingsAdapter } from "../../adapters/settings.ts";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
-import { GRANT_CATALOG, type GrantId } from "../../adapters/agents.ts";
-import type { AgentsStore } from "../../adapters/agents-store.ts";
+import type { ConfirmRequest } from "#src/keys/commands.ts";
+import type { Scope } from "#src/adapters/settings.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import { GRANT_CATALOG, type GrantId } from "#src/adapters/agents.ts";
+import type { AgentsStore } from "#src/adapters/agents-store.ts";
 import {
   agentReadiness,
   isShippedAgent,
@@ -15,7 +15,7 @@ import {
   type AgentFrontmatter,
   type EnvView,
   type GrantTier,
-} from "../../adapters/agent-files.ts";
+} from "#src/adapters/agent-files.ts";
 import type { AgentWrite } from "@clarvis/protocol";
 import { mapAgentIssues, saveWarningsNote, type PanelIssue } from "../issues.ts";
 import { createDisposeGuard } from "../dispose-guard.ts";

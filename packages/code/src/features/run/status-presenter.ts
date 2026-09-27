@@ -1,13 +1,13 @@
-import { glyph } from "../../theme/glyphs.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 import {
   liveRunStatus,
   memoryNoticeStatus,
   progressStatus,
   type LiveRunLineInput,
   type StatusLine,
-} from "../../core/run-status.ts";
-import type { MemoryIngestNotice, RunProgress } from "../../core/run-types.ts";
-import { scopedUsageText } from "../../ui/presentation.ts";
+} from "#src/core/run-status.ts";
+import type { MemoryIngestNotice, RunProgress } from "#src/core/run-types.ts";
+import { scopedUsageText } from "#src/ui/presentation.ts";
 
 /** Renders a structured run status using the active terminal glyph mode. */
 export function presentStatusLine(line: StatusLine): string {

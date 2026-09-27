@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Usage } from "@clarvis/capability";
-import { createFairShareOutputBudget, createWorkflowLedger } from "../../src/ledger.ts";
+import { createFairShareOutputBudget, createWorkflowLedger } from "#src/ledger.ts";
 
 function usage(outputByAgent: number[]): Usage {
   return {

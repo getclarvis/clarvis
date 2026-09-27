@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { openPublicUrl } from "../../src/adapters/open-public-url.ts";
+import { openPublicUrl } from "#src/adapters/open-public-url.ts";
 
 describe("openPublicUrl", () => {
   test("rejects malformed and non-HTTP destinations before spawning a browser", async () => {

@@ -1,19 +1,19 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { contentToText, loadEnv } from "@clarvis/capability";
-import { runOrchestrator, type OrchestratorDeps } from "../../src/runtime/orchestrator.ts";
-import { runAgent, type RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
-import type { AgentBuildContext } from "../../src/runtime/loop/run-agent.ts";
+import { runOrchestrator, type OrchestratorDeps } from "#src/runtime/orchestrator.ts";
+import { runAgent, type RunAgentInput } from "#src/runtime/loop/run-agent.ts";
+import type { AgentBuildContext } from "#src/runtime/loop/run-agent.ts";
 import type { AgentCapability, AgentLoopContribution, Capability } from "@clarvis/capability";
 import {
   prepareSpawn,
   runPreparedSubagent,
   type SpawnContext,
-} from "../../src/runtime/subagents/spawn-subagent.ts";
-import type { ResolvedSubagentProfile } from "../../src/runtime/subagents/subagent-profiles.ts";
+} from "#src/runtime/subagents/spawn-subagent.ts";
+import type { ResolvedSubagentProfile } from "#src/runtime/subagents/subagent-profiles.ts";
 import { createTrace } from "@clarvis/trace";
-import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import { DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
+import { createTokenLedger, createIterationCounter } from "#src/runtime/budget/index.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import { DISABLED_COMPACTION } from "#src/runtime/context/index.ts";
 import { ProviderError } from "@clarvis/capability";
 import type { RunRequest } from "@clarvis/capability";
 import type {

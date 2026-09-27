@@ -1,7 +1,7 @@
 import { expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import type { TraceEvent } from "@clarvis/capability";
-import { verifyTraceNormativeSources } from "../../src/goals/trace-reads.ts";
+import { verifyTraceNormativeSources } from "#src/goals/trace-reads.ts";
 
 function trace(result: string, path = "first.txt", digest = true): TraceEvent[] {
   return [

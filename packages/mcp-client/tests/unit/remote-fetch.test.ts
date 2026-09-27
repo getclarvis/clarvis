@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { MCPAuthorizationFailedError } from "../../src/oauth.ts";
-import { createMCPRemoteFetch } from "../../src/remote-fetch.ts";
+import { MCPAuthorizationFailedError } from "#src/oauth.ts";
+import { createMCPRemoteFetch } from "#src/remote-fetch.ts";
 
 describe("remote MCP fetch authority", () => {
   it("keeps configured resource credentials out of a different OAuth origin", async () => {

@@ -3,7 +3,7 @@ import type { HostedRunRef } from "@clarvis/protocol";
 import {
   createBackgroundListController,
   type BackgroundController,
-} from "../../src/features/background/controller.ts";
+} from "#src/features/background/controller.ts";
 import { hostedRef } from "../helpers/hosted-run.ts";
 
 function fixture(startup = false) {

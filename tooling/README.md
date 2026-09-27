@@ -18,7 +18,8 @@ artifact builders and performance benchmarks in `packages/code/tooling/`.
 
 Root tooling is TypeScript unless a shell is the behavior under test or the workflow itself requires
 shell control flow. It participates in `bun run typecheck`, `bun run lint:eslint`,
-`bun run format:check`, `bun run knip`, and the supported root `bun run test` command.
+`bun run format:check`, `bun run knip`, and the supported root `bun run test` command. The root Knip
+script reads workspace build tsconfigs to map built private imports back to source.
 
 `lib/test-harness.ts` checks resource-suite composition against discovered test files and
 workspace manifests, including missing or cyclic scripts, timeouts, preload and coverage scoping.
@@ -53,8 +54,12 @@ are private, and runtime reads of the root manifest are allowlisted. `lib/packag
 these policies to manifest and source edges, and `checks/package-graph.ts` verifies the generated
 role table and diagram committed in
 [`../specs/package-coupling-analysis.md`](../specs/package-coupling-analysis.md).
-`lib/module-resolution-policy.ts` rejects effective workspace aliases, verifies source and build
-profiles and checks public export targets. `tests/architecture/module-resolution-contract.test.ts`
+`lib/module-resolution-policy.ts` rejects effective workspace `paths` aliases, verifies source and build
+profiles, public export targets and package-owned `#src/` imports. Emitting libraries use ordered
+`bun` source, `types` declaration and `default` JavaScript targets; Code's application mapping
+points directly to source. `checks/import-extensions.ts` requires private imports for eligible
+same-package source paths, including a package that has not yet declared its mapping. All current
+workspaces with eligible imports use the convention. `tests/architecture/module-resolution-contract.test.ts`
 resolves real workspace imports with `dist` hidden;
 `tests/integration/module-resolution.test.ts` compiles and runs a disposable two-package workspace.
 The editor's `tsconfig.json` inherits source resolution. `tsconfig.check.json` selects declarations

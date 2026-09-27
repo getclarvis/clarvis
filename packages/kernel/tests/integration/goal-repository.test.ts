@@ -5,13 +5,13 @@ import { join } from "node:path";
 import { globalPaths, ownerSegment } from "@clarvis/paths";
 import { admitGoalRun, applyGoalControl, emptyGoalState, type GoalControl } from "@clarvis/goal";
 import type { RunResult, Session } from "@clarvis/protocol";
-import { createGoalRepository } from "../../src/goals/repository.ts";
-import { settleGoalSession } from "../../src/goals/settlement.ts";
-import { createSessionService, type HostSessionStore } from "../../src/sessions/session-service.ts";
+import { createGoalRepository } from "#src/goals/repository.ts";
+import { settleGoalSession } from "#src/goals/settlement.ts";
+import { createSessionService, type HostSessionStore } from "#src/sessions/session-service.ts";
 import {
   createHostedSessionCoordinator,
   type HostedSessionOptions,
-} from "../../src/hosting/sessions.ts";
+} from "#src/hosting/sessions.ts";
 
 const roots: string[] = [];
 afterEach(async () => {

@@ -6,7 +6,7 @@ import {
   toolDisplayLabel,
   toolIdentity,
   toolLabel,
-} from "../../src/adapters/tool-identity.ts";
+} from "#src/adapters/tool-identity.ts";
 
 test("toolIdentity: whichever slot holds the name (builtin vs namespaced)", () => {
   expect(toolIdentity("edit_file", "")).toBe("edit_file");

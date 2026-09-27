@@ -7,7 +7,7 @@ import type {
   Trace,
 } from "@clarvis/capability";
 
-import { buildRecord } from "../../src/record-builder.ts";
+import { buildRecord } from "#src/record-builder.ts";
 
 const REQUEST: RunRequest = {
   messages: [{ role: "user", content: "x" }],

@@ -4,13 +4,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { globalPaths } from "@clarvis/paths";
-import { serveLocalFileKernel } from "../../src/hosting/serve-local.ts";
-import {
-  readLocalHostConnection,
-  resolveLocalHostIdentity,
-} from "../../src/hosting/local-state.ts";
-import { connectKernelClient } from "../../src/transport/client.ts";
-import { connectLocalKernelTransport } from "../../src/transport/local.ts";
+import { serveLocalFileKernel } from "#src/hosting/serve-local.ts";
+import { readLocalHostConnection, resolveLocalHostIdentity } from "#src/hosting/local-state.ts";
+import { connectKernelClient } from "#src/transport/client.ts";
+import { connectLocalKernelTransport } from "#src/transport/local.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

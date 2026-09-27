@@ -1,11 +1,11 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
-import { createAskUserCapability } from "../../src/runtime/capabilities/ask-user.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
+import { createAskUserCapability } from "#src/runtime/capabilities/ask-user.ts";
 import { loadEnv } from "@clarvis/capability";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
 import { MockLLM, mockConnections, mockMCPFactory } from "./_fixtures.ts";
 import { TEST_PROVIDERS } from "./_helpers.ts";
-import type { Elicit } from "../../src/runtime/tools/index.ts";
+import type { Elicit } from "#src/runtime/tools/index.ts";
 
 describe("run cancellation interrupts a pending question", () => {
   it("cancel while the elicitation is pending → cancelled terminal + partial, persisted", async () => {

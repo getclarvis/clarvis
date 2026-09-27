@@ -1,10 +1,10 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { contentToText } from "@clarvis/capability";
-import { runSubagent, toSubagentOutcome } from "../../src/runtime/subagents/run-subagent.ts";
+import { runSubagent, toSubagentOutcome } from "#src/runtime/subagents/run-subagent.ts";
 import { createTrace } from "@clarvis/trace";
-import { createTokenLedger } from "../../src/runtime/budget/index.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import type { CompactionConfig } from "../../src/runtime/context/index.ts";
+import { createTokenLedger } from "#src/runtime/budget/index.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import type { CompactionConfig } from "#src/runtime/context/index.ts";
 import type {
   LLMProvider,
   LLMCallParams,

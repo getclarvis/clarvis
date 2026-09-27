@@ -1,8 +1,8 @@
 import type { Accessor, JSX } from "solid-js";
 import { For, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { GlyphName } from "../../theme/glyphs.ts";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
+import type { GlyphName } from "#src/theme/glyphs.ts";
+import { scrollbarOptions } from "#src/theme/surfaces.ts";
 import { clampListIndex, followSelection } from "./list-navigation.ts";
 import { EmptyHint, ErrorBanner, LoadingHint } from "../primitives/index.ts";
 

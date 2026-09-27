@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { LocalHostStatus } from "@clarvis/protocol";
-import { createLocalHostOperator } from "../../src/hosting/operator.ts";
+import { createLocalHostOperator } from "#src/hosting/operator.ts";
 
 function fixture() {
   let now = 1_000;

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import * as facade from "../../src/index.ts";
+import * as facade from "#src/index.ts";
 import {
   DEFAULT_HEALTH_PING_INTERVAL_MS,
   DEFAULT_TIMEOUT_STREAK_THRESHOLD,
   MCPConnectionFailedError,
   UNAVAILABLE_REPROBE_COOLDOWN_MS,
   openConnection,
-} from "../../src/connection.ts";
+} from "#src/connection.ts";
 
 describe("connection public facade", () => {
   it("keeps the public connection exports identical without exposing internals", () => {

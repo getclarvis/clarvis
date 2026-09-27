@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
-import { scheduleWorkItems, type ScheduleResult, type WorkItem } from "../../src/schedule.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
+import { scheduleWorkItems, type ScheduleResult, type WorkItem } from "#src/schedule.ts";
 
 function item(id: string, over: Partial<WorkItem> = {}): WorkItem {
   return {

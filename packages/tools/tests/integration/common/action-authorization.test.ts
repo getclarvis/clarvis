@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dispatch } from "../../../src/core.ts";
-import { resolveConfig, type ToolActionAuthorization } from "../../../src/config.ts";
-import { prepareToolAction } from "../../../src/execution/action.ts";
+import { dispatch } from "#src/core.ts";
+import { resolveConfig, type ToolActionAuthorization } from "#src/config.ts";
+import { prepareToolAction } from "#src/execution/action.ts";
 import { createExecutionPolicy } from "@clarvis/sandbox";
 
 function fixture(granted: boolean) {

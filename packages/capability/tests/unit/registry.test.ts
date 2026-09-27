@@ -1,8 +1,8 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
 import { z } from "zod";
 
-import { composeCapabilityRegistry, createCapabilityRegistry } from "../../src/registry.ts";
-import { requestParamKeys, type CapabilitySettingsSpec } from "../../src/settings-spec.ts";
+import { composeCapabilityRegistry, createCapabilityRegistry } from "#src/registry.ts";
+import { requestParamKeys, type CapabilitySettingsSpec } from "#src/settings-spec.ts";
 
 function spec(key: string, over: Partial<CapabilitySettingsSpec> = {}): CapabilitySettingsSpec {
   return {

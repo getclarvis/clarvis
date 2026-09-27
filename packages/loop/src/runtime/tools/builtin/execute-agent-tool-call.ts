@@ -7,9 +7,9 @@ import type {
   TracePort,
 } from "@clarvis/capability";
 import { wasOperatorInterrupted } from "../tool-interrupt.ts";
-import type { ConvergenceGuards } from "../../guards/convergence-guards.ts";
+import type { ConvergenceGuards } from "#src/runtime/guards/convergence-guards.ts";
 import type { AgentRole } from "@clarvis/capability";
-import { safeStringify } from "../../support/stringify.ts";
+import { safeStringify } from "#src/runtime/support/stringify.ts";
 import type { ToolResultImage } from "@clarvis/capability";
 import type { AgentToolset } from "./toolset.ts";
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PlanRef, RunDetail, RunEvent, RunResult } from "@clarvis/protocol";
-import { buildRecoveredContext, buildSkillRunDigest } from "../../src/runs/recovered-context.ts";
+import { buildRecoveredContext, buildSkillRunDigest } from "#src/runs/recovered-context.ts";
 
 const plan: PlanRef = {
   provider_key: "plugin:tracker",

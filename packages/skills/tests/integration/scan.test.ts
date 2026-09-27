@@ -1,8 +1,8 @@
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { enumerateResources, findSkillFile, listSkillDirs } from "../../src/scan.ts";
-import { MAX_SKILL_GROUP_DIRECTORIES } from "../../src/limits.ts";
+import { enumerateResources, findSkillFile, listSkillDirs } from "#src/scan.ts";
+import { MAX_SKILL_GROUP_DIRECTORIES } from "#src/limits.ts";
 import { captureWarnings, cleanup, makeWorkspace, writeSkill } from "../helpers/fixtures.ts";
 
 describe("listSkillDirs", () => {

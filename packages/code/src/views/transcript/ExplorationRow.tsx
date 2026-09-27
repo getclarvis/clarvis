@@ -1,8 +1,8 @@
 import { For, Show, createMemo, type JSX } from "solid-js";
-import type { TranscriptProjection } from "../../adapters/transcript-projection.ts";
-import type { TranscriptStore, TranscriptToolNode } from "../../adapters/store.ts";
-import { EXPLORATION_PAGE_MEMBERS } from "../../core/transcript/window.ts";
-import { tokens } from "../../theme/tokens.ts";
+import type { TranscriptProjection } from "#src/adapters/transcript-projection.ts";
+import type { TranscriptStore, TranscriptToolNode } from "#src/adapters/store.ts";
+import { EXPLORATION_PAGE_MEMBERS } from "#src/core/transcript/window.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import type { ActivityDetail } from "../activity-detail.ts";
 import type { TranscriptState } from "../transcript-state.ts";
 import { ToolRow } from "./ToolRow.tsx";

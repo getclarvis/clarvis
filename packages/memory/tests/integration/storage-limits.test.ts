@@ -2,17 +2,17 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 
-import { readUtf8FileBounded, scanDirectoryBounded } from "../../src/bounded-io.ts";
-import { createFileMemoryStore } from "../../src/file-store.ts";
-import { createDocumentRepository } from "../../src/file-store/documents.ts";
-import { encodeRunId, createJobRepository } from "../../src/file-store/jobs.ts";
-import { createJournalRepository } from "../../src/file-store/journal.ts";
-import { createRevisionRepository } from "../../src/file-store/revisions.ts";
-import { health } from "../../src/health.ts";
-import type { MemoryJournalRecord } from "../../src/journal.ts";
-import { loadMemoryPolicy } from "../../src/recording-policy.ts";
-import { MEMORY_STORAGE_LIMITS, MemoryStorageLimitError } from "../../src/storage-limits.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
+import { readUtf8FileBounded, scanDirectoryBounded } from "#src/bounded-io.ts";
+import { createFileMemoryStore } from "#src/file-store.ts";
+import { createDocumentRepository } from "#src/file-store/documents.ts";
+import { encodeRunId, createJobRepository } from "#src/file-store/jobs.ts";
+import { createJournalRepository } from "#src/file-store/journal.ts";
+import { createRevisionRepository } from "#src/file-store/revisions.ts";
+import { health } from "#src/health.ts";
+import type { MemoryJournalRecord } from "#src/journal.ts";
+import { loadMemoryPolicy } from "#src/recording-policy.ts";
+import { MEMORY_STORAGE_LIMITS, MemoryStorageLimitError } from "#src/storage-limits.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
 import { makeRoot } from "../helpers/fs.ts";
 
 const cleanups: Array<() => Promise<void>> = [];

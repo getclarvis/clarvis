@@ -2,9 +2,9 @@ import { expect, test, spyOn } from "../bun-test.ts";
 import * as sdk from "@clarvis/llm";
 import * as mcp from "@clarvis/mcp-client";
 import { loadEnv, NOOP_LOGGER, type ModelExecutionResolver } from "@clarvis/capability";
-import { buildExecuteRunDeps } from "../../src/runtime/build-run-deps.ts";
-import { executeRun } from "../../src/runtime/execute-run.ts";
-import { MockLLM } from "../../src/testing/mock-llm.ts";
+import { buildExecuteRunDeps } from "#src/runtime/build-run-deps.ts";
+import { executeRun } from "#src/runtime/execute-run.ts";
+import { MockLLM } from "#src/testing/mock-llm.ts";
 import { VALID_REQUEST } from "../helpers/request.ts";
 
 const resolver: ModelExecutionResolver = {

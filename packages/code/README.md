@@ -1349,6 +1349,19 @@ Solid components. A `.js` specifier is reserved for a real JavaScript artifact s
 repository-wide `bun run check:imports` pass keeps this convention uniform across `src`, `tooling`
 and tests in every package.
 
+Code's `package.json#imports` maps `#src/*` directly to its own `./src/*`. Source modules use it
+when reaching another source module through two or more parent directories; tests and package
+tooling use it for imports into Code source. Nearby `./` and `../` imports, test helpers, assets,
+and public Kernel or Protocol imports retain their distinct paths. The typecheck selects Code
+source without a prior build, and the application bundle preserves its existing lazy chunks
+(`package.json`, `imports`; `tooling/checks/import-extensions.ts`,
+`invalidPrivateImportConvention`; `tooling/tests/architecture/module-resolution-contract.test.ts`,
+`workspace imports resolve through bun exports with dist hidden`).
+Portable source packaging copies package manifests and source trees for the Clarvis libraries;
+the external Tools and Sandbox runtime packages retain their own `#src/*.ts` mappings alongside
+the source files Bun loads (`packages/code/tooling/release/package.ts`, `copySource`;
+`packages/code/tooling/artifact/build.ts`, `main`).
+
 For live development:
 
 ```bash

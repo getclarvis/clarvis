@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ActionAuthorizationPort, LLMToolCall } from "@clarvis/capability";
-import { authorizeAction } from "../../src/runtime/tools/authorize-action.ts";
+import { authorizeAction } from "#src/runtime/tools/authorize-action.ts";
 
 const call: LLMToolCall = { id: "call", name: "external", arguments: { value: 1 } };
 

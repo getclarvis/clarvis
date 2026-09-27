@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { CodeRenderable, DiffRenderable } from "@opentui/core";
 import { TestRecorder } from "@opentui/core/testing";
-import { applyEvent } from "../../src/adapters/store.ts";
+import { applyEvent } from "#src/adapters/store.ts";
 import { transcriptToolEvents } from "../helpers/transcript-fixtures.ts";
 import { openTranscript, transcriptRenderables } from "../helpers/transcript-render.tsx";
 import { settleSyntaxSurfaces } from "../helpers/tracked-render.ts";

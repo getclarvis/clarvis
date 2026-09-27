@@ -2,13 +2,13 @@ import { describe, it, expect } from "../bun-test.ts";
 import {
   resolveSubagentProfiles,
   findInvalidToolRef,
-} from "../../src/runtime/subagents/subagent-profiles.ts";
+} from "#src/runtime/subagents/subagent-profiles.ts";
 import { loadEnv } from "@clarvis/capability";
 import {
   DEFAULT_COMPACTION_PROMPT,
   deriveMaxResultChars,
   derivePreserveRecentTokens,
-} from "../../src/runtime/context/index.ts";
+} from "#src/runtime/context/index.ts";
 import type { AgentProfile, ProviderConfig } from "@clarvis/capability";
 
 const providers: ProviderConfig[] = [{ name: "anthropic", kind: "anthropic" }];

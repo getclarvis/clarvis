@@ -9,18 +9,18 @@ import type {
   RunResult,
   WorkspaceService,
 } from "@clarvis/protocol";
-import { createRunHost, type RunHost, type RunHostDeps } from "../../src/run-host.ts";
-import { createTranscriptStore, type TranscriptStore } from "../../src/adapters/store.ts";
-import { createActivityStore } from "../../src/adapters/activity-store.ts";
-import { createElicitSlot } from "../../src/adapters/elicit-slot.ts";
-import type { RunHandle, StartRunInput } from "../../src/adapters/run-types.ts";
-import type { SessionMeta, SessionStore } from "../../src/adapters/session-store.ts";
-import type { LocalBashResult } from "../../src/adapters/local-shell.ts";
-import type { SessionId } from "../../src/adapters/session-store.ts";
-import type { PromptHistory } from "../../src/core/prompt-history.ts";
+import { createRunHost, type RunHost, type RunHostDeps } from "#src/run-host.ts";
+import { createTranscriptStore, type TranscriptStore } from "#src/adapters/store.ts";
+import { createActivityStore } from "#src/adapters/activity-store.ts";
+import { createElicitSlot } from "#src/adapters/elicit-slot.ts";
+import type { RunHandle, StartRunInput } from "#src/adapters/run-types.ts";
+import type { SessionMeta, SessionStore } from "#src/adapters/session-store.ts";
+import type { LocalBashResult } from "#src/adapters/local-shell.ts";
+import type { SessionId } from "#src/adapters/session-store.ts";
+import type { PromptHistory } from "#src/core/prompt-history.ts";
 import { runEvent } from "../helpers/run-events.ts";
-import { MAX_COMPOSER_IMAGE_BYTES } from "../../src/core/attachments.ts";
-import type { ScheduledTurnRequest, ScheduledTurnAdmission } from "../../src/core/loop-schedule.ts";
+import { MAX_COMPOSER_IMAGE_BYTES } from "#src/core/attachments.ts";
+import type { ScheduledTurnRequest, ScheduledTurnAdmission } from "#src/core/loop-schedule.ts";
 import { hostingFixture } from "../helpers/hosted-run.ts";
 import { goalRun, goalView } from "../helpers/goals.ts";
 

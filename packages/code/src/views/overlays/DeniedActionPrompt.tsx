@@ -1,12 +1,12 @@
 import type { Accessor, JSX } from "solid-js";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
-import type { Interaction } from "../../keys/interaction.ts";
-import { uiCommand } from "../../keys/actions.ts";
-import { LAYER } from "../../keys/keyspec.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { InteractionNavigationBar } from "../../ui/patterns/navigation-bar.tsx";
-import { useTerminalSize } from "../../ui/patterns/terminal-size.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { uiCommand } from "#src/keys/actions.ts";
+import { LAYER } from "#src/keys/keyspec.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { InteractionNavigationBar } from "#src/ui/patterns/navigation-bar.tsx";
+import { useTerminalSize } from "#src/ui/patterns/terminal-size.tsx";
 import { FloatFrame, floatContentWidth } from "./FloatFrame.tsx";
 
 /** Show the exact denied action and rationale before a scoped new attempt is requested. */

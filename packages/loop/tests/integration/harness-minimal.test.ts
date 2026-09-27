@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "../bun-test.ts";
-import type { Elicit } from "../../src/runtime/tools/ask-user-tool.ts";
+import type { Elicit } from "#src/runtime/tools/ask-user-tool.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 

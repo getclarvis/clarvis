@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createKernelLifecycle } from "../../src/application/lifecycle.ts";
+import { createKernelLifecycle } from "#src/application/lifecycle.ts";
 
 describe("createKernelLifecycle", () => {
   it("releases naturally closed resources and makes shutdown idempotent", async () => {

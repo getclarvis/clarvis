@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { selectGoalEvidence } from "../../src/goals/evidence-window.ts";
-import type { Observation } from "../../src/goals/evidence.ts";
+import { selectGoalEvidence } from "#src/goals/evidence-window.ts";
+import type { Observation } from "#src/goals/evidence.ts";
 
 const receipt = (id: string, subject = id, successful = true): Observation => ({
   id,

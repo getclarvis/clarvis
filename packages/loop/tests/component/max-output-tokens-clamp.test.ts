@@ -9,7 +9,7 @@
 import { describe, expect, it } from "../bun-test.ts";
 
 import { loadEnv } from "@clarvis/capability";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
 import { MockLLM, mockConnections, mockMCPFactory } from "../helpers/fixtures.ts";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
 

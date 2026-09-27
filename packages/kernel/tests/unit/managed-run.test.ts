@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import type { ElicitationRequest, RunEvent, RunResult } from "@clarvis/protocol";
-import { createKernelLifecycle } from "../../src/application/lifecycle.ts";
+import { createKernelLifecycle } from "#src/application/lifecycle.ts";
 import {
   createManagedRunWithRuntime,
   type ManagedRunContext,
   type ManagedRunRuntime,
   type ManagedRunTimer,
-} from "../../src/runs/managed-run.ts";
+} from "#src/runs/managed-run.ts";
 
 interface ScheduledTask {
   at: number;

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isWellFormedHttpUrl } from "../../http-url.ts";
+import { isWellFormedHttpUrl } from "#src/http-url.ts";
 import { boundedRecord, INPUT_LIMITS } from "../input-limits.ts";
 
 const boundedValues = z

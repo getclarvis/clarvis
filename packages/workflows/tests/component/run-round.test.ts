@@ -12,10 +12,10 @@ import type {
 import { TASK_TITLE_MAX } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry } from "@clarvis/supervision";
-import { createWorkflowsCapability } from "../../src/capability.ts";
-import { createWorkflowLedger } from "../../src/ledger.ts";
-import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
+import { createWorkflowsCapability } from "#src/capability.ts";
+import { createWorkflowLedger } from "#src/ledger.ts";
+import { createWorkflowLeaderCount } from "#src/leader-count.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
 import {
   buildRunRoundTool,
   createRoundCoordinator,
@@ -25,8 +25,8 @@ import {
   WORKFLOW_STATUS_TOOL_NAME,
   type RoundCall,
   type RoundInput,
-} from "../../src/run-round.ts";
-import type { LeaderSpec, WorkflowRunDeps, WorkflowSequenceState } from "../../src/types.ts";
+} from "#src/run-round.ts";
+import type { LeaderSpec, WorkflowRunDeps, WorkflowSequenceState } from "#src/types.ts";
 import {
   makeCtx,
   promptFrom,

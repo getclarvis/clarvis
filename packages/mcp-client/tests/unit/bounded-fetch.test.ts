@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createMCPBoundedFetch, MCPHttpResponseLimitError } from "../../src/bounded-fetch.ts";
+import { createMCPBoundedFetch, MCPHttpResponseLimitError } from "#src/bounded-fetch.ts";
 
 describe("bounded MCP HTTP fetch", () => {
   it("rejects declared oversized bodies without awaiting a stuck cancel", async () => {

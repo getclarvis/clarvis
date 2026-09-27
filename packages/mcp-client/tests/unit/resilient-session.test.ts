@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolResult } from "@clarvis/capability";
-import type { MCPClientHandle } from "../../src/client.ts";
-import { MCPAuthorizationPendingError } from "../../src/oauth.ts";
+import type { MCPClientHandle } from "#src/client.ts";
+import { MCPAuthorizationPendingError } from "#src/oauth.ts";
 import {
   createResilientSession,
   DEFAULT_MCP_CLOSE_GRACE_MS,
@@ -12,8 +12,8 @@ import {
   type ResilientSessionOptions,
   type ResilientSessionRuntime,
   type ResilientSessionTimer,
-} from "../../src/resilient-session.ts";
-import { interpretCallResult } from "../../src/tool-results.ts";
+} from "#src/resilient-session.ts";
+import { interpretCallResult } from "#src/tool-results.ts";
 
 interface Deferred<T> {
   promise: Promise<T>;

@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { loadMemoryPolicy } from "../../src/recording-policy.ts";
+import { loadMemoryPolicy } from "#src/recording-policy.ts";
 import { makeRoot } from "../helpers/fs.ts";
 
 const GLOBAL = "Always keep the exact commands, never a paraphrase.";

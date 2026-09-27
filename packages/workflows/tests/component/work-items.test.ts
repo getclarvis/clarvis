@@ -10,13 +10,13 @@ import {
 } from "@clarvis/capability";
 import type { ExecuteRunArgs, ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry } from "@clarvis/supervision";
-import { createWorkflowsCapability } from "../../src/capability.ts";
-import { createWorkflowLedger } from "../../src/ledger.ts";
-import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
-import type { WorkItem } from "../../src/schedule.ts";
-import type { LeaderSpec, WorkflowRunDeps } from "../../src/types.ts";
-import { RUN_WORK_ITEMS_TOOL_NAME } from "../../src/work-items.ts";
+import { createWorkflowsCapability } from "#src/capability.ts";
+import { createWorkflowLedger } from "#src/ledger.ts";
+import { createWorkflowLeaderCount } from "#src/leader-count.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
+import type { WorkItem } from "#src/schedule.ts";
+import type { LeaderSpec, WorkflowRunDeps } from "#src/types.ts";
+import { RUN_WORK_ITEMS_TOOL_NAME } from "#src/work-items.ts";
 import {
   makeCtx,
   promptFrom,

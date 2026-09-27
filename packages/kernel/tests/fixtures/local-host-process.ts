@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { executeRun } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import { NOOP_LOGGER, loadEnv } from "@clarvis/capability";
-import { parseLocalHostArguments } from "../../src/hosting/launcher.ts";
-import { serveLocalFileKernel } from "../../src/hosting/serve-local.ts";
+import { parseLocalHostArguments } from "#src/hosting/launcher.ts";
+import { serveLocalFileKernel } from "#src/hosting/serve-local.ts";
 
 const input = parseLocalHostArguments(process.argv.slice(2))!;
 const host = await serveLocalFileKernel({

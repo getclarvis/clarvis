@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   encodeRemoteKernelArguments,
   parseRemoteKernelArguments,
-} from "../../src/adapters/remote-kernel-arguments.ts";
+} from "#src/adapters/remote-kernel-arguments.ts";
 
 describe("remote kernel launch arguments", () => {
   test("round trips a path and selector through one shell-safe token", () => {

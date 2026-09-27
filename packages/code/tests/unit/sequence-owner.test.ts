@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createTestKeymap } from "@opentui/keymap/testing";
 import type { KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
-import { liveSequenceOwners, sequenceKey } from "../../src/keys/sequence-owner.ts";
+import { liveSequenceOwners, sequenceKey } from "#src/keys/sequence-owner.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 type OpenTuiKeymap = Keymap<Renderable, KeyEvent>;

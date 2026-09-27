@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import type { PlanRef } from "@clarvis/protocol";
-import { planRefFromCapabilityState } from "../../src/runs/plan-ref.ts";
+import { planRefFromCapabilityState } from "#src/runs/plan-ref.ts";
 
 const validRef: PlanRef = {
   id: "p1",

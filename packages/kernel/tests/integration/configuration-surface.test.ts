@@ -6,7 +6,7 @@ import { contentToText, loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { executeRun } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
-import { createFileKernel } from "../../src/bootstrap.ts";
+import { createFileKernel } from "#src/bootstrap.ts";
 
 const roots: string[] = [];
 afterEach(() => {

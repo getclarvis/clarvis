@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { openCoreRenderer } from "../helpers/tracked-core-render.ts";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import { registerUiActionFields, uiCommand } from "../../src/keys/actions.ts";
-import { detailCloseActions, detailStatusColor } from "../../src/ui/patterns/detail-view.tsx";
-import { tokens } from "../../src/theme/tokens.ts";
-import { LAYER, registerLevel, verb } from "../../src/ui/patterns/level-keys.ts";
-import { budgetFooterActions, projectActiveActions } from "../../src/ui/patterns/active-actions.ts";
+import { registerUiActionFields, uiCommand } from "#src/keys/actions.ts";
+import { detailCloseActions, detailStatusColor } from "#src/ui/patterns/detail-view.tsx";
+import { tokens } from "#src/theme/tokens.ts";
+import { LAYER, registerLevel, verb } from "#src/ui/patterns/level-keys.ts";
+import { budgetFooterActions, projectActiveActions } from "#src/ui/patterns/active-actions.ts";
 
 process.setMaxListeners(50);
 

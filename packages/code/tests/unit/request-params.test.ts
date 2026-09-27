@@ -8,7 +8,7 @@ import {
   headersFootnote,
   headerValueProblem,
   headerSuggestions,
-} from "../../src/features/providers/request-params.ts";
+} from "#src/features/providers/request-params.ts";
 
 test("the two routing knobs the cache problem turns on are offered inside `provider`, not at the root", () => {
   const root = bodySuggestions([]).map((s) => s.key);

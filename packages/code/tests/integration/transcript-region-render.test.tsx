@@ -4,22 +4,22 @@ import type { TestRendererSetup } from "@opentui/core/testing";
 import { createSignal } from "solid-js";
 import { createMutable } from "solid-js/store";
 import { MouseEvent, type Renderable, type ScrollBoxRenderable } from "@opentui/core";
-import { TranscriptRegion } from "../../src/views/app/TranscriptRegion.tsx";
-import { createTranscriptState } from "../../src/views/transcript-state.ts";
+import { TranscriptRegion } from "#src/views/app/TranscriptRegion.tsx";
+import { createTranscriptState } from "#src/views/transcript-state.ts";
 import type {
   TranscriptRegionLayout,
   TranscriptRegionProps,
   TranscriptRegionRun,
-} from "../../src/views/app/TranscriptRegion.tsx";
-import type { TranscriptStore, TranscriptNode } from "../../src/adapters/store.ts";
-import type { ActivityStore } from "../../src/adapters/activity-store.ts";
-import type { ElicitRequestParams, ElicitResult } from "../../src/adapters/elicit-types.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { LayoutMode } from "../../src/app/layout.ts";
-import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
+} from "#src/views/app/TranscriptRegion.tsx";
+import type { TranscriptStore, TranscriptNode } from "#src/adapters/store.ts";
+import type { ActivityStore } from "#src/adapters/activity-store.ts";
+import type { ElicitRequestParams, ElicitResult } from "#src/adapters/elicit-types.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { LayoutMode } from "#src/app/layout.ts";
+import type { WorkflowActivity } from "#src/adapters/workflow-projection.ts";
 import type { FoldFixtureToolNode } from "../helpers/transcript-fixtures.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
-import type { TranscriptViewportHandle } from "../../src/views/transcript/TranscriptViewport.tsx";
+import type { TranscriptViewportHandle } from "#src/views/transcript/TranscriptViewport.tsx";
 
 function renderableCount(root: Renderable): number {
   return 1 + root.getChildren().reduce((count, child) => count + renderableCount(child), 0);

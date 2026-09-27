@@ -11,7 +11,7 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "../bun-test.ts";
-import { VERSION } from "../../src/version.ts";
+import { VERSION } from "#src/version.ts";
 
 const product = JSON.parse(
   readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "bun:test";
 
-import type { MemoryToolDef } from "../../src/index.ts";
+import type { MemoryToolDef } from "#src/index.ts";
 
-import { buildMemoryToolsHandler } from "../../src/capability.ts";
-import { buildMemoryToolset } from "../../src/toolset.ts";
+import { buildMemoryToolsHandler } from "#src/capability.ts";
+import { buildMemoryToolset } from "#src/toolset.ts";
 import { makeTrace as createTrace } from "../helpers/capability.ts";
 import type { LLMToolCall } from "@clarvis/capability";
 

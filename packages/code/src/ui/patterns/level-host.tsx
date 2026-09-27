@@ -1,6 +1,6 @@
 import type { Accessor, JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
-import type { ViewHost } from "../../keys/commands.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
 import { ViewFrame, type ViewFrameStatus } from "./view-frame.tsx";
 import { SurfaceBoundary } from "./surface-lifecycle.tsx";
 

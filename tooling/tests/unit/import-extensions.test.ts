@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   invalidRelativeImportExtensions,
+  invalidPrivateImportConvention,
   moduleSpecifiers,
   typescriptSourcePaths,
 } from "../../checks/import-extensions.ts";
@@ -37,6 +38,104 @@ describe("moduleSpecifiers", () => {
         `const example = 'import("./not-an-import.js")'; // from "./also-not.js"`,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("invalidPrivateImportConvention", () => {
+  const pkg = "/repo/packages/example";
+  const imports = { "#src/*": "./src/*" };
+  const files = new Set([
+    `${pkg}/src/shared/value.ts`,
+    `${pkg}/src/nested/deep/item.tsx`,
+    `${pkg}/src/index.ts`,
+    `${pkg}/tests/fixture.ts`,
+    `${pkg}/assets/data.json`,
+  ]);
+  const exists = (file: string) => files.has(file);
+
+  test("suggests source-owned aliases for long imports and tests", () => {
+    expect(
+      invalidPrivateImportConvention(
+        pkg,
+        `${pkg}/src/nested/deep/item.tsx`,
+        'export { value } from "../../shared/value.ts"; type T = import("../../index.ts").T;',
+        exists,
+        imports,
+      ),
+    ).toEqual([
+      {
+        file: `${pkg}/src/nested/deep/item.tsx`,
+        specifier: "../../shared/value.ts",
+        expected: "#src/shared/value.ts",
+        target: `${pkg}/src/shared/value.ts`,
+        manifest: `${pkg}/package.json`,
+        needsMapping: false,
+      },
+      {
+        file: `${pkg}/src/nested/deep/item.tsx`,
+        specifier: "../../index.ts",
+        expected: "#src/index.ts",
+        target: `${pkg}/src/index.ts`,
+        manifest: `${pkg}/package.json`,
+        needsMapping: false,
+      },
+    ]);
+    expect(
+      invalidPrivateImportConvention(
+        pkg,
+        `${pkg}/tests/fixture.ts`,
+        'const value = require("../src/shared/value.ts");',
+        exists,
+        imports,
+      ),
+    ).toEqual([
+      {
+        file: `${pkg}/tests/fixture.ts`,
+        specifier: "../src/shared/value.ts",
+        expected: "#src/shared/value.ts",
+        target: `${pkg}/src/shared/value.ts`,
+        manifest: `${pkg}/package.json`,
+        needsMapping: false,
+      },
+    ]);
+  });
+
+  test("keeps short, public, fixture, resource, and unmapped paths", () => {
+    const source =
+      'import "./item.tsx"; import "@clarvis/example"; import "../fixture.ts"; const asset = new URL("../../../assets/data.json", import.meta.url);';
+    expect(
+      invalidPrivateImportConvention(
+        pkg,
+        `${pkg}/src/nested/deep/item.tsx`,
+        source,
+        exists,
+        imports,
+      ),
+    ).toEqual([]);
+    expect(
+      invalidPrivateImportConvention(pkg, `${pkg}/src/nested/deep/item.tsx`, source, exists, {}),
+    ).toEqual([]);
+  });
+
+  test("requires an alias even when a new package has no mapping", () => {
+    expect(
+      invalidPrivateImportConvention(
+        pkg,
+        `${pkg}/tests/fixture.ts`,
+        'import "../src/shared/value.ts";',
+        exists,
+        {},
+      ),
+    ).toEqual([
+      {
+        file: `${pkg}/tests/fixture.ts`,
+        specifier: "../src/shared/value.ts",
+        expected: "#src/shared/value.ts",
+        target: `${pkg}/src/shared/value.ts`,
+        manifest: `${pkg}/package.json`,
+        needsMapping: true,
+      },
+    ]);
   });
 });
 

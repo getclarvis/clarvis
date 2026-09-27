@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { VERSION } from "@clarvis/loop";
 
-import { createOpenAICodexAdapter } from "../../src/subscriptions/openai-codex.ts";
-import { createXaiGrokAdapter } from "../../src/subscriptions/xai-grok.ts";
-import { readBoundedJson } from "../../src/subscriptions/http.ts";
+import { createOpenAICodexAdapter } from "#src/subscriptions/openai-codex.ts";
+import { createXaiGrokAdapter } from "#src/subscriptions/xai-grok.ts";
+import { readBoundedJson } from "#src/subscriptions/http.ts";
 import type {
   SubscriptionAccountRecord,
   SubscriptionSchemeRegistration,
-} from "../../src/subscriptions/types.ts";
+} from "#src/subscriptions/types.ts";
 
 const account: SubscriptionAccountRecord = {
   access_token: "secret-access-token",

@@ -20,10 +20,10 @@
 import {
   hasMalformedEnvironmentReference,
   isReservedProviderBodyKey,
-} from "../../adapters/provider-request-policy.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import type { MapSuggestion } from "../../ui/patterns/index.ts";
-import type { ProviderKind } from "../../adapters/settings.ts";
+} from "#src/adapters/provider-request-policy.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import type { MapSuggestion } from "#src/ui/patterns/index.ts";
+import type { ProviderKind } from "#src/adapters/settings.ts";
 
 /**
  * The header each SDK actually sends the credential in, which is the only one a

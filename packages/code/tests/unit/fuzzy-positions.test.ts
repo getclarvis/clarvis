@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fuzzyFieldMatch, fuzzyPositions, labelRuns, matchRuns } from "../../src/core/fuzzy.ts";
+import { fuzzyFieldMatch, fuzzyPositions, labelRuns, matchRuns } from "#src/core/fuzzy.ts";
 
 test("fuzzyPositions returns the greedy match indices", () => {
   expect(fuzzyPositions("/clear", "cle")).toEqual([1, 2, 3]);

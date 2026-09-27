@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ActionAuthorizationRequest } from "@clarvis/capability";
-import { createApprovalService } from "../../src/execution/approval-service.ts";
+import { createApprovalService } from "#src/execution/approval-service.ts";
 
 function request(
   command: string,

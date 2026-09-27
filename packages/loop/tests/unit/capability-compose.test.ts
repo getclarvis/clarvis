@@ -8,7 +8,7 @@ import type {
   RunCapability,
 } from "@clarvis/capability";
 import type { NamespacedTool } from "@clarvis/capability";
-import type { FinalizeGate, ToolHandler } from "../../src/runtime/loop/loop-contract.ts";
+import type { FinalizeGate, ToolHandler } from "#src/runtime/loop/loop-contract.ts";
 
 function tool(name: string): NamespacedTool {
   return {

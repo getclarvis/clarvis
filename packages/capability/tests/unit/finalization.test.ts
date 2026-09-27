@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { checkpointMetadataSchema } from "../../src/finalization.ts";
+import { checkpointMetadataSchema } from "#src/finalization.ts";
 
 describe("checkpoint metadata", () => {
   it("keeps a bounded handoff separate from any final output schema", () => {

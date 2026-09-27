@@ -16,7 +16,7 @@ import {
   createExecutionPolicy,
   prepareLaunch,
   SeatbeltBackend,
-} from "../../../src/index.ts";
+} from "#src/index.ts";
 
 test.skipIf(!["linux", "darwin"].includes(process.platform))(
   "host tools resolve symlinks, interpreters and modules without tool-specific grants",

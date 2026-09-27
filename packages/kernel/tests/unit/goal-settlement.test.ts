@@ -13,9 +13,9 @@ import {
   pendingInstant,
   settleGoalSession,
   recoverGoalSettlementSession,
-} from "../../src/goals/settlement.ts";
-import { goalStateFromSession, goalStateToDto } from "../../src/goals/session-state.ts";
-import { createGoalUsageTracker } from "../../src/goals/usage.ts";
+} from "#src/goals/settlement.ts";
+import { goalStateFromSession, goalStateToDto } from "#src/goals/session-state.ts";
+import { createGoalUsageTracker } from "#src/goals/usage.ts";
 
 /**
  * The terminal cause a physically closed goal stage leaves in durable state.

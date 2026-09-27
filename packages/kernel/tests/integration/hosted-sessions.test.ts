@@ -11,14 +11,14 @@ import type {
   HostedRunRef,
   HostedRecoveryResolution,
 } from "@clarvis/protocol";
-import { createSessionService, type HostSessionStore } from "../../src/sessions/session-service.ts";
+import { createSessionService, type HostSessionStore } from "#src/sessions/session-service.ts";
 import {
   createHostedSessionCoordinator,
   type HostedSessionOptions,
-} from "../../src/hosting/sessions.ts";
+} from "#src/hosting/sessions.ts";
 import { applyGoalControl, admitGoalRun, prepareGoalSettlement } from "@clarvis/goal";
-import { goalStateToDto } from "../../src/goals/session-state.ts";
-import { createManagedRun } from "../../src/runs/managed-run.ts";
+import { goalStateToDto } from "#src/goals/session-state.ts";
+import { createManagedRun } from "#src/runs/managed-run.ts";
 
 const cleanup: string[] = [];
 afterEach(async () => {

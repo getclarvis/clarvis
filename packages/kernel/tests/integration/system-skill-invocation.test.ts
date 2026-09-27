@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clarvisSkillRoots, createAgentSkills } from "@clarvis/skills";
-import { dollarSkillSeeds } from "../../src/skills/dollar-mentions.ts";
-import { createSkillsService } from "../../src/skills/skills-service.ts";
+import { dollarSkillSeeds } from "#src/skills/dollar-mentions.ts";
+import { createSkillsService } from "#src/skills/skills-service.ts";
 
 test("all system skill roots remain model-readable but absent from user invocation", async () => {
   const root = await mkdtemp(join(tmpdir(), "clarvis-system-invocation-"));

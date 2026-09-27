@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "bun:test";
 
-import type { Memory, MemoryJobSettlement } from "../../src/index.ts";
+import type { Memory, MemoryJobSettlement } from "#src/index.ts";
 
 import {
   enqueueFinishedRun,
   translateDrainSettlement,
   type MemoryIngestNotice,
-} from "../../src/ingest.ts";
+} from "#src/ingest.ts";
 import type { Logger } from "@clarvis/capability";
 import { makeExecutionRecord } from "../helpers/fixtures.ts";
 

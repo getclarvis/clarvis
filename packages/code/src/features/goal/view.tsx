@@ -1,19 +1,19 @@
 import { createSignal, For, Show, type Accessor, type JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { GoalControlAction, GoalRecord, GoalStewardReview } from "@clarvis/protocol";
-import type { ViewHost } from "../../keys/commands.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
 import {
   detailCloseActions,
   DetailColumn,
   DetailTitle,
   DetailHeading,
-} from "../../ui/patterns/detail-view.tsx";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
-import { bindLevelKeys, createFieldEditor, ViewFrame } from "../../views/config/view-host.tsx";
-import { registerLevel } from "../../ui/patterns/level-keys.ts";
-import { detachObserved } from "../../core/tasks.ts";
+} from "#src/ui/patterns/detail-view.tsx";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { scrollbarOptions } from "#src/theme/surfaces.ts";
+import { bindLevelKeys, createFieldEditor, ViewFrame } from "#src/views/config/view-host.tsx";
+import { registerLevel } from "#src/ui/patterns/level-keys.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import type { GoalController } from "./controller.ts";
 import { createGoalDraft, type GoalDraft } from "./draft.ts";
 import { GoalForm } from "./form.tsx";

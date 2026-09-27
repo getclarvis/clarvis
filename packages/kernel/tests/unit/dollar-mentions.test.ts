@@ -4,7 +4,7 @@ import {
   dollarSkillSeeds,
   extractDollarSkillMentions,
   userMessagesText,
-} from "../../src/skills/dollar-mentions.ts";
+} from "#src/skills/dollar-mentions.ts";
 
 describe("extractDollarSkillMentions", () => {
   it("collects unique $names in appearance order and ignores env tokens", () => {

@@ -1,17 +1,14 @@
 import type { Accessor, Setter } from "solid-js";
-import type { ProviderConfig } from "../../../adapters/settings.ts";
-import type { CatalogProvider, ModelsCatalog } from "../../../adapters/models-catalog.ts";
-import type { ViewHost } from "../../../keys/commands.ts";
-import type {
-  ProvidersController,
-  ProviderMapField,
-} from "../../../features/providers/controller.ts";
-import type { HintTone } from "../../hint.ts";
+import type { ProviderConfig } from "#src/adapters/settings.ts";
+import type { CatalogProvider, ModelsCatalog } from "#src/adapters/models-catalog.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import type { ProvidersController, ProviderMapField } from "#src/features/providers/controller.ts";
+import type { HintTone } from "#src/views/hint.ts";
 import type { CatalogPickerSpec } from "../CatalogPicker.tsx";
 import type { CatalogRow } from "../catalog-pick.ts";
 import type { SubscriptionAccountStatus, SubscriptionScheme } from "@clarvis/protocol";
 import type { FieldEditor } from "../field-editor.tsx";
-import type { createMapEditor } from "../../../ui/patterns/map-editor.tsx";
+import type { createMapEditor } from "#src/ui/patterns/map-editor.tsx";
 
 /**
  * Shared state and transitions used by the three private provider screens.

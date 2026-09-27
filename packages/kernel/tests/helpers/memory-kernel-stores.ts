@@ -1,6 +1,6 @@
 import type { Session } from "@clarvis/protocol";
-import type { HostSessionStore } from "../../src/sessions/session-service.ts";
-import type { WorkflowStore } from "../../src/workflows/workflow-store.ts";
+import type { HostSessionStore } from "#src/sessions/session-service.ts";
+import type { WorkflowStore } from "#src/workflows/workflow-store.ts";
 
 export function memorySessionStore(): HostSessionStore {
   const records = new Map<string, Session>();

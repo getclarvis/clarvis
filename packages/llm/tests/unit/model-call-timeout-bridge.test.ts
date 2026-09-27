@@ -10,7 +10,7 @@ import { describe, expect, it } from "../helpers/bun-test.ts";
 import {
   bridgeModelCallTimeout,
   modelCallTimeoutBridgeOf,
-} from "../../src/model-call-timeout-bridge.ts";
+} from "#src/model-call-timeout-bridge.ts";
 import type { LLMCallParams } from "@clarvis/capability";
 
 function params(): LLMCallParams {

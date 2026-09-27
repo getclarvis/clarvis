@@ -18,7 +18,7 @@ import {
   workspaceStatePaths,
   workspaceStatePathsFromRoot,
   WORKSPACE_ENV,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 const GLOBAL = "/home/alice/.clarvis";
 const WS = "/work/repo";

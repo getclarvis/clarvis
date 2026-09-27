@@ -1,8 +1,8 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { settingsServerToEngine } from "../../src/settings/engine-server.ts";
-import { mcpServerSettingsSchema } from "../../src/settings/settings-schema.ts";
-import { serverSchema } from "../../src/validation/request-schema.ts";
-import type { McpServerSettings } from "../../src/settings/settings-schema.ts";
+import { settingsServerToEngine } from "#src/settings/engine-server.ts";
+import { mcpServerSettingsSchema } from "#src/settings/settings-schema.ts";
+import { serverSchema } from "#src/validation/request-schema.ts";
+import type { McpServerSettings } from "#src/settings/settings-schema.ts";
 
 /** Parse a raw settings entry the way the config store does, so `type` carries its default. */
 function parse(raw: unknown): McpServerSettings {

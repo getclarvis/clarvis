@@ -1,4 +1,4 @@
-import type { SessionClock } from "../../src/lib/execution-session.ts";
+import type { SessionClock } from "#src/lib/execution-session.ts";
 
 /** A test-owned clock that delivers scheduled callbacks in deadline order. */
 export function manualClock() {

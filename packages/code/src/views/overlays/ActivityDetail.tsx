@@ -1,17 +1,17 @@
 import type { Accessor, JSX } from "solid-js";
 import { onCleanup, onMount, Show } from "solid-js";
 import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
-import type { Interaction } from "../../keys/interaction.ts";
-import { uiCommand } from "../../keys/actions.ts";
-import { LAYER } from "../../keys/keyspec.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
-import { InteractionNavigationBar } from "../../ui/patterns/navigation-bar.tsx";
-import { useTerminalSize } from "../../ui/patterns/terminal-size.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { uiCommand } from "#src/keys/actions.ts";
+import { LAYER } from "#src/keys/keyspec.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { scrollbarOptions } from "#src/theme/surfaces.ts";
+import { InteractionNavigationBar } from "#src/ui/patterns/navigation-bar.tsx";
+import { useTerminalSize } from "#src/ui/patterns/terminal-size.tsx";
 import { Prose } from "../Prose.tsx";
 import type { ActivityDetail as ActivityDetailValue } from "../activity-detail.ts";
 import { FloatFrame, floatContentWidth } from "./FloatFrame.tsx";
-import { useOptionalSurfaceLifecycle } from "../../ui/patterns/surface-lifecycle.tsx";
+import { useOptionalSurfaceLifecycle } from "#src/ui/patterns/surface-lifecycle.tsx";
 
 const EMPTY_DETAIL: ActivityDetailValue = { title: "Activity detail", content: "" };
 

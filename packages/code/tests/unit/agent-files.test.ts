@@ -7,8 +7,8 @@ import {
   overlayIsEmpty,
   readEnvView,
   type AgentFile,
-} from "../../src/adapters/agent-files.ts";
-import type { SettingsFile } from "../../src/adapters/settings.ts";
+} from "#src/adapters/agent-files.ts";
+import type { SettingsFile } from "#src/adapters/settings.ts";
 
 test("docToAgentFile: a valid AgentDoc keeps frontmatter + body", () => {
   const f = docToAgentFile({

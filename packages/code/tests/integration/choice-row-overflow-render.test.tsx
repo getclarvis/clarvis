@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { ChoiceRows } from "../../src/views/overlays/ChoiceRows.tsx";
+import { ChoiceRows } from "#src/views/overlays/ChoiceRows.tsx";
 
 const WIDTH = 60;
 

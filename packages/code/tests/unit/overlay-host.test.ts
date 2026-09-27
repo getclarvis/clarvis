@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { ViewFactory } from "../../src/keys/commands.ts";
-import { createOverlayHost, type OverlayHost } from "../../src/views/overlay-host.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { ViewFactory } from "#src/keys/commands.ts";
+import { createOverlayHost, type OverlayHost } from "#src/views/overlay-host.ts";
 
 const view: ViewFactory = () => null;
 

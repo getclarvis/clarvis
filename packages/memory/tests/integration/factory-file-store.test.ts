@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { createMemoryFactory } from "../../src/factory.ts";
+import { createMemoryFactory } from "#src/factory.ts";
 import type { LLMProvider } from "@clarvis/capability";
 import { makeRoot } from "../helpers/fs.ts";
 

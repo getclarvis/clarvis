@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { createCompactionQueue } from "../../src/runs/compaction-queue.ts";
-import { createSteerQueue } from "../../src/runs/steer-queue.ts";
+import { createCompactionQueue } from "#src/runs/compaction-queue.ts";
+import { createSteerQueue } from "#src/runs/steer-queue.ts";
 
 describe("run control queues", () => {
   test("steering acknowledges only drained messages and refuses pending work on close", async () => {

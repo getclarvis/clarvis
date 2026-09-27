@@ -3,7 +3,7 @@ import {
   type DiagnosticDetails,
   type DiagnosticLevel,
   type DiagnosticSession,
-} from "../../src/core/diagnostic-events.ts";
+} from "#src/core/diagnostic-events.ts";
 
 /** One record a {@link recordDiagnostics} session captured. */
 export interface RecordedDiagnostic {

@@ -7,7 +7,7 @@ import {
   INSPECTOR_SPLIT_MIN_WIDTH,
   type LayoutMode,
   type SecondaryOrigin,
-} from "../../src/app/layout.ts";
+} from "#src/app/layout.ts";
 
 function harness(
   initialDims: { w: number; h: number },

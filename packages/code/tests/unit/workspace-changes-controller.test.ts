@@ -6,7 +6,7 @@ import type {
   WorkspaceChangesPage,
   WorkspaceChangesService,
 } from "@clarvis/protocol";
-import { createWorkspaceChangesController } from "../../src/views/overlays/workspace-changes-controller.ts";
+import { createWorkspaceChangesController } from "#src/views/overlays/workspace-changes-controller.ts";
 
 function available(): WorkspaceChangesAvailability {
   return {

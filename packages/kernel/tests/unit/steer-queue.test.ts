@@ -1,5 +1,5 @@
 import { expect, it } from "bun:test";
-import { createSteerQueue } from "../../src/runs/steer-queue.ts";
+import { createSteerQueue } from "#src/runs/steer-queue.ts";
 
 it("observes admitted steers immediately without acknowledging or duplicating delivery", async () => {
   const queue = createSteerQueue();

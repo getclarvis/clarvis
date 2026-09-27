@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import type { SkillsProvider } from "@clarvis/loop";
-import { createSkillsService } from "../../src/skills/skills-service.ts";
+import { createSkillsService } from "#src/skills/skills-service.ts";
 
 type Skill = {
   name: string;

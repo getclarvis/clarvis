@@ -9,7 +9,7 @@ import {
   validateWorkflowDocument,
   WORKFLOW_FILE,
 } from "@clarvis/workflows/artifact";
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
 
 const roots: string[] = [];
 

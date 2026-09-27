@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
-import type { Attachment, AttachmentStore } from "../../core/attachments.ts";
-import { attachmentBytes, checkAttachmentAdmission } from "../../core/attachments.ts";
+import type { Attachment, AttachmentStore } from "#src/core/attachments.ts";
+import { attachmentBytes, checkAttachmentAdmission } from "#src/core/attachments.ts";
 
 export {
   attachmentAdmissionMessage,
@@ -13,7 +13,7 @@ export {
   type AttachmentAdmissionFailure,
   type AttachmentStore,
   type ImageLoader,
-} from "../../core/attachments.ts";
+} from "#src/core/attachments.ts";
 
 /**
  * Creates the Solid-backed {@link AttachmentStore} the input dock uses.

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { TranscriptRows } from "../../src/core/transcript/rows.ts";
+import { TranscriptRows } from "#src/core/transcript/rows.ts";
 
 test("new authoritative rows insert before a known outcome without reordering known owners", () => {
   const rows = new TranscriptRows();

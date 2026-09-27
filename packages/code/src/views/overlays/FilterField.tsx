@@ -1,6 +1,6 @@
 import { createEffect, type Accessor, type JSX } from "solid-js";
 import type { InputRenderable } from "@opentui/core";
-import { tokens } from "../../theme/tokens.ts";
+import { tokens } from "#src/theme/tokens.ts";
 
 /**
  * A single-line text input for filtering a list, auto-focused on mount.

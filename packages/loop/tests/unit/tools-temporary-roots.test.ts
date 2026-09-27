@@ -2,7 +2,7 @@ import { expect, test } from "../bun-test.ts";
 import {
   temporaryRootsForExecution,
   type AgentExecutionBinding,
-} from "../../src/runtime/capabilities/tools.ts";
+} from "#src/runtime/capabilities/tools.ts";
 
 test("sandbox workers receive only mounted temporary roots", () => {
   const roots = ["/run/user/1000/private-tmp", "/tmp", "/private/tmp"];

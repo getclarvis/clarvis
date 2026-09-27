@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { MCPClientHandle } from "../../src/client.ts";
+import type { MCPClientHandle } from "#src/client.ts";
 import {
   appendResourceDescriptors,
   catalogResult,
@@ -8,7 +8,7 @@ import {
   paginate,
   resourceContentsToBlocks,
   resourceReadResult,
-} from "../../src/resources.ts";
+} from "#src/resources.ts";
 
 function handle(client: Record<string, unknown>): MCPClientHandle {
   return { client: client as any, close: async () => {} };

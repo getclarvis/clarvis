@@ -1,7 +1,7 @@
-import type { CommandScope, CommandUi, CommandRouteResult } from "../../keys/commands.ts";
-import { detachObserved } from "../../core/tasks.ts";
-import type { HintTone } from "../../views/hint.ts";
-import { lazyView } from "../../views/config/lazy-view.tsx";
+import type { CommandScope, CommandUi, CommandRouteResult } from "#src/keys/commands.ts";
+import { detachObserved } from "#src/core/tasks.ts";
+import type { HintTone } from "#src/views/hint.ts";
+import { lazyView } from "#src/views/config/lazy-view.tsx";
 import type { BackgroundController } from "./controller.ts";
 
 /** Register the explicit handoff and recovery routes; scheduled/model text never enters this path. */

@@ -1,16 +1,12 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
 
-import {
-  createCapabilityRequestView,
-  createCapabilityServices,
-  portKey,
-} from "../../src/services.ts";
-import type { RunRequest } from "../../src/api.ts";
-import { TOOL_EFFECT_PORT } from "../../src/tool-effect.ts";
-import { SPAWN_GATE_PORT } from "../../src/spawn-gate-port.ts";
-import { RUN_TRACE_PORT } from "../../src/run-trace-port.ts";
-import { partialStructOf } from "../../src/agent-result.ts";
-import { projected, type CapabilityEvent } from "../../src/contract.ts";
+import { createCapabilityRequestView, createCapabilityServices, portKey } from "#src/services.ts";
+import type { RunRequest } from "#src/api.ts";
+import { TOOL_EFFECT_PORT } from "#src/tool-effect.ts";
+import { SPAWN_GATE_PORT } from "#src/spawn-gate-port.ts";
+import { RUN_TRACE_PORT } from "#src/run-trace-port.ts";
+import { partialStructOf } from "#src/agent-result.ts";
+import { projected, type CapabilityEvent } from "#src/contract.ts";
 
 describe("createCapabilityServices", () => {
   it("publishes the run trace under one canonical owner-neutral key", () => {

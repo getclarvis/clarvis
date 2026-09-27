@@ -1,7 +1,7 @@
 import { splitFrontmatterFence } from "@clarvis/capability";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import { INPUT_LIMITS } from "../../validation/input-limits.ts";
+import { INPUT_LIMITS } from "#src/validation/input-limits.ts";
 import { DEFAULT_SHARED_AGENT_PROMPT } from "./shared-agent-prompt.ts";
 
 /** Which layer supplied the effective shared prompt. */

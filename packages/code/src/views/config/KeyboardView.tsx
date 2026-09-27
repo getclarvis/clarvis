@@ -2,27 +2,27 @@ import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { KeyEvent } from "@opentui/core";
 import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
-import type { CodeConfigStore } from "../../adapters/code-config.ts";
-import type { ViewHost } from "../../keys/commands.ts";
-import { resolvedVitalBindings } from "../../keys/interaction.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
+import { resolvedVitalBindings } from "#src/keys/interaction.ts";
 import {
   applyManualBindingEdit,
   type CapabilityState,
   type ClientPlatform,
   type KeyboardEnvironmentConfig,
   type KeyboardProfile,
-} from "../../keys/keyboard-profile.ts";
-import { uiCommand } from "../../keys/actions.ts";
-import { LAYER } from "../../keys/keyspec.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { SelectableRow } from "../../ui/primitives/selectable-row.tsx";
-import { bindLevelKeys } from "../../ui/patterns/bind-level-keys.ts";
-import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import { ViewFrame } from "../../ui/patterns/view-frame.tsx";
+} from "#src/keys/keyboard-profile.ts";
+import { uiCommand } from "#src/keys/actions.ts";
+import { LAYER } from "#src/keys/keyspec.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { SelectableRow } from "#src/ui/primitives/selectable-row.tsx";
+import { bindLevelKeys } from "#src/ui/patterns/bind-level-keys.ts";
+import { registerLevel, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
+import { ViewFrame } from "#src/ui/patterns/view-frame.tsx";
 import { createFieldEditor } from "./field-editor.tsx";
-import { commandKeyLabel } from "../../keys/keyspec.ts";
-import { SelectableList } from "../../ui/patterns/selectable-list.tsx";
+import { commandKeyLabel } from "#src/keys/keyspec.ts";
+import { SelectableList } from "#src/ui/patterns/selectable-list.tsx";
 import { padColumn } from "../truncate.ts";
 
 const PROFILES: { id: KeyboardProfile; label: string; desc: string }[] = [

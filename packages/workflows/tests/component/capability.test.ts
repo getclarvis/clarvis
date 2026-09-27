@@ -5,16 +5,16 @@ import {
   WORKFLOW_GRANT,
   WORKFLOW_GRANT_DECLARATION,
   WORKFLOWS_CAPABILITY_NAME,
-} from "../../src/capability.ts";
-import { createWorkflowLedger } from "../../src/ledger.ts";
-import { RUN_LEADER_TOOL_NAME } from "../../src/tool.ts";
+} from "#src/capability.ts";
+import { createWorkflowLedger } from "#src/ledger.ts";
+import { RUN_LEADER_TOOL_NAME } from "#src/tool.ts";
 import {
   RUN_ROUND_TOOL_NAME,
   WORKFLOW_DECIDE_TOOL_NAME,
   WORKFLOW_STATUS_TOOL_NAME,
-} from "../../src/run-round.ts";
-import { RUN_WORK_ITEMS_TOOL_NAME } from "../../src/work-items.ts";
-import type { LeaderSpec } from "../../src/types.ts";
+} from "#src/run-round.ts";
+import { RUN_WORK_ITEMS_TOOL_NAME } from "#src/work-items.ts";
+import type { LeaderSpec } from "#src/types.ts";
 import { makeCtx, recordingBc, runLeaderCall, scope, testRunCtx } from "../helpers/workflow.ts";
 
 const RUN_CTX = testRunCtx().runCtx;

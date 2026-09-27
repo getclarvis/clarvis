@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { SandboxSetupError } from "@clarvis/sandbox";
-import { fsError, serializeError, ToolError } from "../../src/errors.ts";
+import { fsError, serializeError, ToolError } from "#src/errors.ts";
 
 function errno(code: string | undefined, message: string): NodeJS.ErrnoException {
   return Object.assign(new Error(message), { code }) as NodeJS.ErrnoException;

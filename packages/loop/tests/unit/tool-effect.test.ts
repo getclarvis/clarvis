@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { createToolEffectPort } from "../../src/runtime/tools/tool-effect.ts";
+import { createToolEffectPort } from "#src/runtime/tools/tool-effect.ts";
 import { TOOL_EFFECT_PORT, createCapabilityServices } from "@clarvis/capability";
 
 /**

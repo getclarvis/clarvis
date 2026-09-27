@@ -21,8 +21,8 @@ import { MockLLM } from "@clarvis/loop/testing";
 import { createInMemoryMemoryStore } from "@clarvis/memory/testing";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
 
-import { createMemoryConfigStore } from "../../src/config.ts";
-import { createInProcessKernel } from "../../src/index.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
+import { createInProcessKernel } from "#src/index.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 
 const SEED = "<memory>\nprofile stuff\n</memory>";

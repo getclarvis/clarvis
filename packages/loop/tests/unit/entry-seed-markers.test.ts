@@ -1,12 +1,12 @@
 import { describe, expect, it } from "../bun-test.ts";
 
 import { loadEnv } from "@clarvis/capability";
-import { createLiveContext } from "../../src/runtime/context/context-compaction.ts";
-import { buildEntrySeed, type EntrySeed } from "../../src/runtime/entry-seed.ts";
-import { deriveRunShape } from "../../src/runtime/run-shape.ts";
-import { resolveSubagentProfiles } from "../../src/runtime/subagents/subagent-profiles.ts";
+import { createLiveContext } from "#src/runtime/context/context-compaction.ts";
+import { buildEntrySeed, type EntrySeed } from "#src/runtime/entry-seed.ts";
+import { deriveRunShape } from "#src/runtime/run-shape.ts";
+import { resolveSubagentProfiles } from "#src/runtime/subagents/subagent-profiles.ts";
 import type { ContextSnapshotEntry } from "@clarvis/capability";
-import { validateBody } from "../../src/validation/request-schema.ts";
+import { validateBody } from "#src/validation/request-schema.ts";
 
 const BODY = {
   messages: [{ role: "user", content: "do the thing" }],

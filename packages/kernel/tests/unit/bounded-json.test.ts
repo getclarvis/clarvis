@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { boundJsonValue } from "../../src/core/bounded-json.ts";
+import { boundJsonValue } from "#src/core/bounded-json.ts";
 
 const OPTIONS = { maxDepth: 8, maxNodes: 32, maxChars: 64 } as const;
 

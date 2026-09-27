@@ -11,7 +11,7 @@ import {
   projectActiveActions,
   retainWinningActions,
   type ActiveAction,
-} from "../../src/ui/patterns/active-actions.ts";
+} from "#src/ui/patterns/active-actions.ts";
 
 function key(
   command: string,

@@ -23,12 +23,12 @@ import {
   releaseRuntimeExecutableName,
   releaseTarget,
   type ReleaseTarget,
-} from "../../src/update-contract.ts";
+} from "#src/update-contract.ts";
 import {
   containsInlineSourceMap,
   isReleaseSourceMapPath,
   manifestFiles,
-} from "../../src/update/release-manifest.ts";
+} from "#src/update/release-manifest.ts";
 import { assertRuntimePackageRoot } from "./runtime-package-discovery.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));

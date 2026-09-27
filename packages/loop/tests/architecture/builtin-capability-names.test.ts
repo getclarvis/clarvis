@@ -1,7 +1,7 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { HOOKS_CAPABILITY_NAME } from "@clarvis/capability";
-import { BUILTIN_CAPABILITY_NAMES } from "../../src/runtime/orchestrator.ts";
-import { AGENT_TOOLS_CAPABILITY_NAME } from "../../src/runtime/capabilities/tools.ts";
+import { BUILTIN_CAPABILITY_NAMES } from "#src/runtime/orchestrator.ts";
+import { AGENT_TOOLS_CAPABILITY_NAME } from "#src/runtime/capabilities/tools.ts";
 
 /**
  * `run.composed` reports which built-ins were live, and the orchestrator is on

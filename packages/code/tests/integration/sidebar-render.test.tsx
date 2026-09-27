@@ -14,20 +14,17 @@ import {
   Sidebar,
   subagentProgress,
   workflowProgress,
-} from "../../src/views/Sidebar.tsx";
-import { truncateEnd } from "../../src/views/truncate.ts";
-import { createActivityStore, type ActivityStore } from "../../src/adapters/activity-store.ts";
-import { applyEvent } from "../../src/adapters/store.ts";
-import type {
-  WorkflowActivity,
-  WorkflowNodeActivity,
-} from "../../src/adapters/workflow-projection.ts";
+} from "#src/views/Sidebar.tsx";
+import { truncateEnd } from "#src/views/truncate.ts";
+import { createActivityStore, type ActivityStore } from "#src/adapters/activity-store.ts";
+import { applyEvent } from "#src/adapters/store.ts";
+import type { WorkflowActivity, WorkflowNodeActivity } from "#src/adapters/workflow-projection.ts";
 import { runEvent } from "../helpers/run-events.ts";
-import { tokens } from "../../src/theme/tokens.ts";
-import { selectionBg } from "../../src/theme/surfaces.ts";
-import { glyph } from "../../src/theme/glyphs.ts";
-import { taskTone } from "../../src/views/blocks.tsx";
-import { createGoalController, type GoalController } from "../../src/features/goal/controller.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { selectionBg } from "#src/theme/surfaces.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { taskTone } from "#src/views/blocks.tsx";
+import { createGoalController, type GoalController } from "#src/features/goal/controller.ts";
 import { goalView } from "../helpers/goals.ts";
 
 function fgOf(frame: { lines: { spans: { text: string; fg: RGBA }[] }[] }, needle: string): string {

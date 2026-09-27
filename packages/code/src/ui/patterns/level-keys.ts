@@ -11,10 +11,10 @@ import {
   commandKeyLabel,
   PROMPT_EDITING_KEYS,
   promptKeyLabel,
-} from "../../keys/keyspec.ts";
+} from "#src/keys/keyspec.ts";
 import { registerListNav, registerScrollKeys } from "./list-navigation.ts";
-import { uiCommand } from "../../keys/actions.ts";
-import type { ActionHintGroup } from "../../keys/actions.ts";
+import { uiCommand } from "#src/keys/actions.ts";
+import type { ActionHintGroup } from "#src/keys/actions.ts";
 import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
 
 export { LAYER, compactKey, compactSequence, commandKeyLabel, PROMPT_EDITING_KEYS, promptKeyLabel };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { PLANS_SETTINGS_FIELDS, plansParamSchema, plansSettingsSpec } from "../../src/settings.ts";
+import { PLANS_SETTINGS_FIELDS, plansParamSchema, plansSettingsSpec } from "#src/settings.ts";
 
 describe("plans provider settings", () => {
   it("accepts only the built-in Markdown provider", () => {

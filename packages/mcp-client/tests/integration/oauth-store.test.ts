@@ -7,7 +7,7 @@ import {
   createMcpOAuthCredentialStore,
   MAX_MCP_OAUTH_STORE_BYTES,
   McpOAuthStoreError,
-} from "../../src/oauth-store.ts";
+} from "#src/oauth-store.ts";
 
 const KEY_A = "a".repeat(64);
 const KEY_B = "b".repeat(64);

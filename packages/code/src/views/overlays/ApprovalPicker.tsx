@@ -1,9 +1,9 @@
 import { createSignal, type Accessor, type JSX } from "solid-js";
-import type { SettingsAdapter } from "../../adapters/settings.ts";
-import type { Interaction } from "../../keys/interaction.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
 import { ListPicker } from "./ListPicker.tsx";
-import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
-import { tokens } from "../../theme/tokens.ts";
+import { glyph, glyphColWidth } from "#src/theme/glyphs.ts";
+import { tokens } from "#src/theme/tokens.ts";
 
 type Mode = "manual" | "auto";
 const MODES: { value: Mode; label: string; detail: string }[] = [

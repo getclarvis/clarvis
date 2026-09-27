@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { projectHeader, type HeaderInput } from "../../src/views/header-projection.ts";
-import { tokens } from "../../src/theme/tokens.ts";
+import { projectHeader, type HeaderInput } from "#src/views/header-projection.ts";
+import { tokens } from "#src/theme/tokens.ts";
 
 function baseInput(overrides: Partial<HeaderInput> = {}): HeaderInput {
   return {

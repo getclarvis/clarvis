@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ModelCatalog } from "@clarvis/protocol";
-import { createModelsCatalog, resolveModelPrice } from "../../src/adapters/models-catalog.ts";
-import type { ProviderConfig } from "../../src/adapters/settings.ts";
+import { createModelsCatalog, resolveModelPrice } from "#src/adapters/models-catalog.ts";
+import type { ProviderConfig } from "#src/adapters/settings.ts";
 
 test("preserves the public projection source without inventing provider endpoints", () => {
   const catalog = createModelsCatalog({

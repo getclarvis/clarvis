@@ -4,7 +4,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
-import { captureWorkspaceState } from "../../src/workspace-state.ts";
+import { captureWorkspaceState } from "#src/workspace-state.ts";
 import { makeRoot } from "../helpers/fs.ts";
 
 describe("workspace state capture", () => {

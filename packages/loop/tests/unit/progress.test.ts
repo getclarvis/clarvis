@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { createProgressTracker } from "../../src/runtime/loop/progress.ts";
+import { createProgressTracker } from "#src/runtime/loop/progress.ts";
 
 describe("createProgressTracker", () => {
   it("counts consecutive unproductive bumps and trips at the limit", () => {

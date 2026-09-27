@@ -2,9 +2,9 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDiagnosticSession } from "../../src/adapters/diagnostic-session.ts";
+import { createDiagnosticSession } from "#src/adapters/diagnostic-session.ts";
 import { createComponentLoggers } from "@clarvis/kernel";
-import { diagnosticAsync, installDiagnosticSession } from "../../src/core/diagnostic-events.ts";
+import { diagnosticAsync, installDiagnosticSession } from "#src/core/diagnostic-events.ts";
 
 const made: string[] = [];
 

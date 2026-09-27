@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { saveWarningsNote } from "../../src/features/issues.ts";
+import { saveWarningsNote } from "#src/features/issues.ts";
 
 test("save warning summaries distinguish one warning from several", () => {
   const warning = { field: "model", level: "warn" as const, message: "model is inherited" };

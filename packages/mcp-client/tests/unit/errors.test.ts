@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
-import { isMcpProtocolError, isMcpRequestTimeout } from "../../src/errors.ts";
+import { isMcpProtocolError, isMcpRequestTimeout } from "#src/errors.ts";
 
 describe("MCP error classification", () => {
   it("recognizes only the request-timeout code as a timeout", () => {

@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { useTerminalDimensions } from "@opentui/solid";
 import { openRender } from "../helpers/tracked-render.ts";
-import { FloatFrame } from "../../src/views/overlays/FloatFrame.tsx";
-import { HintToast } from "../../src/views/Footer.tsx";
-import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { AgentProfileView } from "../../src/adapters/agents.ts";
+import { FloatFrame } from "#src/views/overlays/FloatFrame.tsx";
+import { HintToast } from "#src/views/Footer.tsx";
+import { AgentProfilePicker } from "#src/views/overlays/AgentProfilePicker.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { AgentProfileView } from "#src/adapters/agents.ts";
 
 const stubInteraction = {
   keymap: { registerLayer: () => () => {} },

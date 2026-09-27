@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { memoizeByOwner, sharedFallback } from "../../src/per-owner.ts";
+import { memoizeByOwner, sharedFallback } from "#src/per-owner.ts";
 
 describe("memoizeByOwner", () => {
   it("builds each distinct owner at most once and caches the result", () => {

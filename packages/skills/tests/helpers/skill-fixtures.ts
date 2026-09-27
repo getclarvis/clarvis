@@ -1,5 +1,5 @@
 import type { LogFn, Logger } from "@clarvis/capability";
-import type { SkillContent, SkillFrontmatter, SkillInfo } from "../../src/types.ts";
+import type { SkillContent, SkillFrontmatter, SkillInfo } from "#src/types.ts";
 
 /** Build catalog metadata without coupling policy tests to filesystem fixtures. */
 export function makeInfo(overrides: Partial<SkillInfo> = {}): SkillInfo {

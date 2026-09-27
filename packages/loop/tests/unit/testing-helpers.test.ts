@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { fakeAgentBuildContext, fakeAgentScope } from "../../src/runtime/capabilities/testing.ts";
+import { fakeAgentBuildContext, fakeAgentScope } from "#src/runtime/capabilities/testing.ts";
 
 describe("capability testing helpers", () => {
   it("builds overridable defaults whose policy callbacks are executable", () => {

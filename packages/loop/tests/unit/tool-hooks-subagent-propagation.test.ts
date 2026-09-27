@@ -1,8 +1,8 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { runSubagent } from "../../src/runtime/subagents/run-subagent.ts";
+import { runSubagent } from "#src/runtime/subagents/run-subagent.ts";
 import { createTrace } from "@clarvis/trace";
-import { createTokenLedger } from "../../src/runtime/budget/index.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
+import { createTokenLedger } from "#src/runtime/budget/index.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
 import type { MCPConnection, ToolResult } from "@clarvis/capability";
 import type { LifecycleHook, HookVerdict } from "@clarvis/capability";
 import { MockLLM } from "../helpers/fixtures.ts";

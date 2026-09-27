@@ -29,8 +29,8 @@ import {
   createExtensionProfileManager,
   type ExtensionProfileManagerOptions,
   type ExtensionProfileSkillDriftNotice,
-} from "../../src/extension-profiles/extension-profile-manager.ts";
-import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
+} from "#src/extension-profiles/extension-profile-manager.ts";
+import { createPluginContributions } from "#src/plugins/plugin-contributions.ts";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
 import {
   createAgentSkills,

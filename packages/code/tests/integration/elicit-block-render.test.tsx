@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { createSignal, Show } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
-import type { ElicitRequestParams, ElicitResult } from "../../src/adapters/elicit-types.ts";
-import { ElicitBlock } from "../../src/views/ElicitBlock.tsx";
-import { BlockView } from "../../src/views/blocks.tsx";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
-import type { PlanActivity } from "../../src/adapters/plan-projection.ts";
+import type { ElicitRequestParams, ElicitResult } from "#src/adapters/elicit-types.ts";
+import { ElicitBlock } from "#src/views/ElicitBlock.tsx";
+import { BlockView } from "#src/views/blocks.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import type { TranscriptNode } from "#src/adapters/store.ts";
+import type { PlanActivity } from "#src/adapters/plan-projection.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const stubInteraction = {

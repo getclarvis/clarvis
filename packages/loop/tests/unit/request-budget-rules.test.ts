@@ -1,10 +1,7 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { loadEnv, type RunRequest } from "@clarvis/capability";
-import {
-  enforceBudgetMode,
-  enforceEnvCeilings,
-} from "../../src/validation/request/budget-rules.ts";
-import { requireEntryShape } from "../../src/validation/request/identity-rules.ts";
+import { enforceBudgetMode, enforceEnvCeilings } from "#src/validation/request/budget-rules.ts";
+import { requireEntryShape } from "#src/validation/request/identity-rules.ts";
 import { parsedRequest, validationCode, VALID_REQUEST } from "../helpers/request.ts";
 
 function budgetCode(over: Parameters<typeof parsedRequest>[0]): string {

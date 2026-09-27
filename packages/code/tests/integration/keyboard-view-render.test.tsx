@@ -1,15 +1,15 @@
 import { expect, test } from "bun:test";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
 import type {
   KeyboardConfig,
   KeyboardEnvironment,
   KeyboardEnvironmentConfig,
   KeyboardProfile,
-} from "../../src/keys/keyboard-profile.ts";
-import { uiCommand } from "../../src/keys/actions.ts";
-import { KeyboardView } from "../../src/views/config/KeyboardView.tsx";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
+} from "#src/keys/keyboard-profile.ts";
+import { uiCommand } from "#src/keys/actions.ts";
+import { KeyboardView } from "#src/views/config/KeyboardView.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 

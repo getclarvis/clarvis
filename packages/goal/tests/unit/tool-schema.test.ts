@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildGoalTools } from "../../src/tools.ts";
+import { buildGoalTools } from "#src/tools.ts";
 
 test("advertises mutually exclusive update actions inside one portable object envelope", () => {
   const schema = buildGoalTools()[1]!.inputSchema as {

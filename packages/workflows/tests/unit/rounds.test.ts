@@ -14,7 +14,7 @@ import {
   whenSatisfied,
   type RepeatSpec,
   type WorkflowState,
-} from "../../src/rounds.ts";
+} from "#src/rounds.ts";
 
 function state(rounds: Record<string, unknown>): WorkflowState {
   return { rounds };

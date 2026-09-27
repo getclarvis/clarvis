@@ -6,11 +6,11 @@ import {
   ModelCallStuckError,
   withModelCallAdmission,
   withTransportRetry,
-} from "../../src/index.ts";
-import { classifyProviderError } from "../../src/classify-provider-error.ts";
-import { toProviderError } from "../../src/ai-sdk/errors.ts";
-import { createBoundedFetch } from "../../src/ai-sdk/bounded-fetch.ts";
-import { buildRequestOptions } from "../../src/ai-sdk/request-options.ts";
+} from "#src/index.ts";
+import { classifyProviderError } from "#src/classify-provider-error.ts";
+import { toProviderError } from "#src/ai-sdk/errors.ts";
+import { createBoundedFetch } from "#src/ai-sdk/bounded-fetch.ts";
+import { buildRequestOptions } from "#src/ai-sdk/request-options.ts";
 import { ProviderError, type LLMCallParams } from "@clarvis/capability";
 import { APICallError, type ModelMessage } from "ai";
 

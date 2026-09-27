@@ -1,7 +1,7 @@
 import { describe, expect, it } from "../bun-test.ts";
 import type { ConnectionManager, Lease } from "@clarvis/mcp-client";
 import type { RunRequest } from "@clarvis/capability";
-import { openToolPool } from "../../src/runtime/open-tool-pool.ts";
+import { openToolPool } from "#src/runtime/open-tool-pool.ts";
 
 const request: RunRequest = {
   messages: [{ role: "user", content: "go" }],

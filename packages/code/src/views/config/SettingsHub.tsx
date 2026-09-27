@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import type { ViewHost } from "../../keys/commands.ts";
+import type { ViewHost } from "#src/keys/commands.ts";
 import { HubMenu } from "./hub-menu.tsx";
 import { SETTINGS_ITEMS } from "./hub-items.ts";
 

@@ -5,8 +5,8 @@ import {
   isolationChoice,
   saveIsolationChoice,
   type IsolationChoice,
-} from "../../src/adapters/isolation-mode.ts";
-import type { SettingsAdapter } from "../../src/adapters/settings.ts";
+} from "#src/adapters/isolation-mode.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
 
 test("workspace sandbox defaults keep network restricted", () => {
   expect(isolationChoice()).toEqual({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { memoryState, modelResolves } from "../../src/adapters/execution-safety.ts";
-import type { SettingsFile } from "../../src/adapters/settings.ts";
+import { memoryState, modelResolves } from "#src/adapters/execution-safety.ts";
+import type { SettingsFile } from "#src/adapters/settings.ts";
 
 /**
  * A settings object exactly as it sits on disk, before schema defaults apply.

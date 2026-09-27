@@ -1,18 +1,18 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { AgentsPanel } from "../../src/views/config/AgentsPanel.tsx";
-import type { ProviderConfig, SettingsAdapter } from "../../src/adapters/settings.ts";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
-import type { AgentFile, EnvView } from "../../src/adapters/agent-files.ts";
-import type { AgentsStore } from "../../src/adapters/agents-store.ts";
-import type { Scope } from "../../src/adapters/settings.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { AgentsPanel } from "#src/views/config/AgentsPanel.tsx";
+import type { ProviderConfig, SettingsAdapter } from "#src/adapters/settings.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { AgentFile, EnvView } from "#src/adapters/agent-files.ts";
+import type { AgentsStore } from "#src/adapters/agents-store.ts";
+import type { Scope } from "#src/adapters/settings.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { compareAgentDisplayOrder } from "@clarvis/kernel/config";
 import type { ModelCatalog } from "@clarvis/protocol";
-import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
+import { createModelsCatalog } from "#src/adapters/models-catalog.ts";
 
 type RenderHarness = Awaited<ReturnType<typeof openRender>>;
 

@@ -11,7 +11,7 @@ import type {
   GoalView,
   HostedRunRef,
 } from "@clarvis/protocol";
-import { detachObserved } from "../../core/tasks.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 
 /** Local presentation generation fences late work; only sessionId crosses the goal service seam. */
 export interface GoalBinding {

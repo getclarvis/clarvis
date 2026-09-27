@@ -6,19 +6,19 @@ import {
   RESIDENT_TRANSCRIPT_TURN_LIMIT,
   type RunHost,
   type RunHostDeps,
-} from "../../src/run-host.ts";
+} from "#src/run-host.ts";
 import {
   applyEvent,
   createTranscriptStore,
   TRANSCRIPT_PROSE_RELEASED_NOTICE,
   type TranscriptNode,
   type TranscriptStore,
-} from "../../src/adapters/store.ts";
-import { createChildTranscriptStore } from "../../src/adapters/child-transcript-store.ts";
-import { createActivityStore } from "../../src/adapters/activity-store.ts";
-import { createElicitSlot } from "../../src/adapters/elicit-slot.ts";
-import type { SessionMeta, SessionStore } from "../../src/adapters/session-store.ts";
-import { renderTranscriptMarkdown } from "../../src/views/transcript-markdown.ts";
+} from "#src/adapters/store.ts";
+import { createChildTranscriptStore } from "#src/adapters/child-transcript-store.ts";
+import { createActivityStore } from "#src/adapters/activity-store.ts";
+import { createElicitSlot } from "#src/adapters/elicit-slot.ts";
+import type { SessionMeta, SessionStore } from "#src/adapters/session-store.ts";
+import { renderTranscriptMarkdown } from "#src/views/transcript-markdown.ts";
 import { runEvent } from "../helpers/run-events.ts";
 
 /**

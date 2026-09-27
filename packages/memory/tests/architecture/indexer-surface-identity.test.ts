@@ -35,12 +35,12 @@
  */
 import { describe, expect, it } from "bun:test";
 
-import type { MemoryFactory } from "../../src/factory.ts";
-import { createMemory } from "../../src/index.ts";
-import { createMemoryCapability } from "../../src/capability.ts";
-import { createIndexerMemoryCapability } from "../../src/indexer/capability.ts";
-import { DEFAULT_BUDGETS } from "../../src/config.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
+import type { MemoryFactory } from "#src/factory.ts";
+import { createMemory } from "#src/index.ts";
+import { createMemoryCapability } from "#src/capability.ts";
+import { createIndexerMemoryCapability } from "#src/indexer/capability.ts";
+import { DEFAULT_BUDGETS } from "#src/config.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
 import { fakeAgentBuildContext, fakeRunCapabilityContext } from "../helpers/capability.ts";
 import type { NamespacedTool } from "@clarvis/capability";
 

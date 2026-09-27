@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createSignal, type Accessor } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
 import type {
   Page,
   RunDetail,
@@ -9,9 +9,9 @@ import type {
   WorkflowNode,
   WorkflowSummary,
 } from "@clarvis/protocol";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { WorkflowsHub, type WorkflowsHubDeps } from "../../src/views/config/WorkflowsHub.tsx";
-import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { WorkflowsHub, type WorkflowsHubDeps } from "#src/views/config/WorkflowsHub.tsx";
+import type { WorkflowActivity } from "#src/adapters/workflow-projection.ts";
 import { captureUntil } from "../helpers/render-support.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 

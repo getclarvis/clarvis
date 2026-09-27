@@ -1,14 +1,14 @@
-import { MAX_JSON_MESSAGE_BYTES } from "../../../src/core/json-message.ts";
+import { MAX_JSON_MESSAGE_BYTES } from "#src/core/json-message.ts";
 import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it, vi } from "bun:test";
-import { kernelError } from "../../../src/core/errors.ts";
-import type { KernelServer } from "../../../src/transport/server.ts";
+import { kernelError } from "#src/core/errors.ts";
+import type { KernelServer } from "#src/transport/server.ts";
 import {
   MAX_WIRE_FRAME_BYTES,
   createStdioTransport,
   decodeFrame,
   serveKernelOverStdio,
-} from "../../../src/transport/stdio.ts";
+} from "#src/transport/stdio.ts";
 import { recordingLogger } from "../../helpers/logger.ts";
 
 class GatedWritable extends Writable {

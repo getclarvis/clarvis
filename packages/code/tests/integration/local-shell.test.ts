@@ -8,7 +8,7 @@ import {
   runLocalBash,
   stripAnsi,
   type LocalBashResult,
-} from "../../src/adapters/local-shell.ts";
+} from "#src/adapters/local-shell.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 
 const cwd = process.cwd();

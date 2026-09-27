@@ -6,7 +6,7 @@ export {
   type MockMCPOptions,
   type MockMCPResource,
   type MockMCPTool,
-} from "../../src/testing/index.ts";
+} from "#src/testing/index.ts";
 
 import type { MCPClientFactory } from "@clarvis/mcp-client";
 import { createConnectionManager, type ConnectionManager } from "@clarvis/mcp-client";

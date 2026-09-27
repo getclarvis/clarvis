@@ -6,9 +6,9 @@ import {
   CANDIDATE_REPOSITORY,
   parseSourceCandidate,
   type SourceCandidate,
-} from "../src/adapters/source-candidate.ts";
+} from "#src/adapters/source-candidate.ts";
 import { installDevelopmentLauncher } from "./development-install.ts";
-import { publishSelectedSystemDocs } from "../src/bootstrap/system-docs-cli.ts";
+import { publishSelectedSystemDocs } from "#src/bootstrap/system-docs-cli.ts";
 
 type CandidateFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 

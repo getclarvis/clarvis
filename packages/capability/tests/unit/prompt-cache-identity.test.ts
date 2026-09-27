@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { composePromptCacheKey } from "../../src/prompt-cache-identity.ts";
+import { composePromptCacheKey } from "#src/prompt-cache-identity.ts";
 
 describe("persisted prompt-cache identity", () => {
   it("is stable within an instance and distinct across sessions and instances", () => {

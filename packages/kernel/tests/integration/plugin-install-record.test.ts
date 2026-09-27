@@ -6,8 +6,8 @@ import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
 import {
   PLUGIN_INSTALL_RECORD,
   readPluginInstallRecord,
-} from "../../src/plugins/plugin-install-record.ts";
-import { createFilePluginRepository } from "../../src/adapters/filesystem/plugin-repository.ts";
+} from "#src/plugins/plugin-install-record.ts";
+import { createFilePluginRepository } from "#src/adapters/filesystem/plugin-repository.ts";
 
 const roots: string[] = [];
 

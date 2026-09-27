@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { engineEventToProto, type TraceEvent } from "@clarvis/kernel/policy";
-import { applyEvent, createTranscriptStore } from "../../src/adapters/store.ts";
+import { applyEvent, createTranscriptStore } from "#src/adapters/store.ts";
 
 test("the kernel projection feeds one engine iteration through code's protocol seam", () => {
   const engineEvent: TraceEvent = {

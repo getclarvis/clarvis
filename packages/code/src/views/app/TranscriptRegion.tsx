@@ -1,12 +1,12 @@
 import { Show, createMemo, onCleanup, type Accessor, type JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { ElicitRequestParams, ElicitResult } from "../../adapters/elicit-types.ts";
-import type { ActivityStore } from "../../adapters/activity-store.ts";
-import type { TranscriptStore } from "../../adapters/store.ts";
-import type { WorkflowActivity } from "../../adapters/workflow-projection.ts";
-import type { LayoutMode, SecondarySurfaceMode } from "../../app/layout.ts";
-import type { Interaction } from "../../keys/interaction.ts";
-import { tokens } from "../../theme/tokens.ts";
+import type { ElicitRequestParams, ElicitResult } from "#src/adapters/elicit-types.ts";
+import type { ActivityStore } from "#src/adapters/activity-store.ts";
+import type { TranscriptStore } from "#src/adapters/store.ts";
+import type { WorkflowActivity } from "#src/adapters/workflow-projection.ts";
+import type { LayoutMode, SecondarySurfaceMode } from "#src/app/layout.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { tokens } from "#src/theme/tokens.ts";
 import { Sidebar, type SidebarRevealIntent } from "../Sidebar.tsx";
 import { ActivitySummaryStrip, ACTIVITY_SUMMARY_PADDING } from "../ActivitySummaryStrip.tsx";
 import {
@@ -23,7 +23,7 @@ import {
   type TranscriptViewportHandle,
 } from "../transcript/TranscriptViewport.tsx";
 import { ElicitBlock } from "../ElicitBlock.tsx";
-import type { GoalController } from "../../features/goal/controller.ts";
+import type { GoalController } from "#src/features/goal/controller.ts";
 
 /** Normal bottom breathing room between the newest transcript row and composer chrome. */
 const TRANSCRIPT_READING_RUNWAY_ROWS = 3;

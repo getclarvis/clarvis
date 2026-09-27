@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import * as local from "../../src/local.ts";
-import { sanitizeErrorMessage, sanitizeText } from "../../src/policy.ts";
+import * as local from "#src/local.ts";
+import { sanitizeErrorMessage, sanitizeText } from "#src/policy.ts";
 import {
   sanitizeErrorMessage as canonicalErrorMessage,
   sanitizeText as canonical,

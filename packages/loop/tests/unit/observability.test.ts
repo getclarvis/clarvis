@@ -1,23 +1,23 @@
 import { describe, expect, it } from "../bun-test.ts";
 import type { AgentCapability, LLMCallResult, LLMProvider } from "@clarvis/capability";
 import { NOOP_LOGGER, ProviderError } from "@clarvis/capability";
-import { runAgent, type RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
-import { runGates } from "../../src/runtime/loop/loop-contract.ts";
-import { createToolArgValidator } from "../../src/runtime/tools/tool-arg-validator.ts";
+import { runAgent, type RunAgentInput } from "#src/runtime/loop/run-agent.ts";
+import { runGates } from "#src/runtime/loop/loop-contract.ts";
+import { createToolArgValidator } from "#src/runtime/tools/tool-arg-validator.ts";
 import {
   createCachePrefixWatch,
   recordIterationMetrics,
-} from "../../src/runtime/loop/iteration-metrics.ts";
-import { createCompactionReachWatch } from "../../src/runtime/loop/compaction-reach.ts";
-import { attemptCompaction } from "../../src/runtime/context/llm-compaction.ts";
-import { collectCompactionContributions } from "../../src/runtime/loop/lifecycle-hooks.ts";
+} from "#src/runtime/loop/iteration-metrics.ts";
+import { createCompactionReachWatch } from "#src/runtime/loop/compaction-reach.ts";
+import { attemptCompaction } from "#src/runtime/context/llm-compaction.ts";
+import { collectCompactionContributions } from "#src/runtime/loop/lifecycle-hooks.ts";
 import {
   createLiveContext,
   DISABLED_COMPACTION,
   type CompactionConfig,
-} from "../../src/runtime/context/index.ts";
-import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
+} from "#src/runtime/context/index.ts";
+import { createTokenLedger, createIterationCounter } from "#src/runtime/budget/index.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
 import { createTrace } from "@clarvis/trace";
 import { MockLLM } from "../helpers/fixtures.ts";
 import { recordingLogger, type LogRecord, type RecordingLogger } from "../helpers/logging.ts";

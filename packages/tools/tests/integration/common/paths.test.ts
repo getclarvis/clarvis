@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import { makeWorkspace, cleanup, makeSymlink } from "../../helpers/fixtures.ts";
-import { resolvePath, resolveFileToolPath, displayPath } from "../../../src/lib/paths.ts";
+import { resolvePath, resolveFileToolPath, displayPath } from "#src/lib/paths.ts";
 
 describe("resolvePath", () => {
   let root: string;

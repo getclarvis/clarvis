@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { toModelMessages } from "../../src/index.ts";
+import { toModelMessages } from "#src/index.ts";
 import type { LiveMessage } from "@clarvis/capability";
 
 describe("toModelMessages — LiveMessage → AI SDK ModelMessage", () => {

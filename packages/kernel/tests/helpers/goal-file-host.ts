@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { createFilePlanRepository, createPlanStore } from "@clarvis/plan";
 import { globalPaths, localHostPaths, writeFileDurableSync } from "@clarvis/paths";
-import { createFileRunHost } from "../../src/bootstrap.ts";
-import { openHostedProjection } from "../../src/hosting/projection.ts";
-import { createKernelEnvironment } from "../../src/ports/environment.ts";
-import { connectKernelClient } from "../../src/transport/client.ts";
-import { connectLocalKernelTransport, listenLocalKernel } from "../../src/transport/local.ts";
+import { createFileRunHost } from "#src/bootstrap.ts";
+import { openHostedProjection } from "#src/hosting/projection.ts";
+import { createKernelEnvironment } from "#src/ports/environment.ts";
+import { connectKernelClient } from "#src/transport/client.ts";
+import { connectLocalKernelTransport, listenLocalKernel } from "#src/transport/local.ts";
 
 export interface GoalFixtureRequest {
   messages: Array<Record<string, unknown>>;

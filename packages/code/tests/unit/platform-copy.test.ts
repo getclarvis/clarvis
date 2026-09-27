@@ -3,8 +3,8 @@ import type { CliRenderer } from "@opentui/core";
 import type {
   ClipboardProcessRequest,
   ClipboardProcessResult,
-} from "../../src/adapters/clipboard-process.ts";
-import { createPlatform } from "../../src/adapters/platform.ts";
+} from "#src/adapters/clipboard-process.ts";
+import { createPlatform } from "#src/adapters/platform.ts";
 const localEnvironment: NodeJS.ProcessEnv = { DISPLAY: ":0" };
 
 function fakeRenderer(oscResult: boolean, onOsc?: () => void) {

@@ -8,10 +8,7 @@ import type {
   RunRequest,
 } from "@clarvis/capability";
 import { contentToText } from "@clarvis/capability";
-import {
-  generateWorkflowTitle,
-  WORKFLOW_TITLE_TIMEOUT_MS,
-} from "../../src/workflows/workflow-title.ts";
+import { generateWorkflowTitle, WORKFLOW_TITLE_TIMEOUT_MS } from "#src/workflows/workflow-title.ts";
 
 function request(overrides: Partial<RunRequest> = {}): RunRequest {
   return {

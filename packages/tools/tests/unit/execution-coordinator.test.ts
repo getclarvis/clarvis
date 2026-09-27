@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { SandboxSetupError } from "@clarvis/sandbox";
-import { resolveConfig } from "../../src/config.ts";
-import { ToolError } from "../../src/errors.ts";
-import { CoordinatedToolExecutor } from "../../src/execution/coordinator.ts";
-import type { ToolExecutionPort } from "../../src/execution/port.ts";
-import type { ToolDef } from "../../src/tools/types.ts";
+import { resolveConfig } from "#src/config.ts";
+import { ToolError } from "#src/errors.ts";
+import { CoordinatedToolExecutor } from "#src/execution/coordinator.ts";
+import type { ToolExecutionPort } from "#src/execution/port.ts";
+import type { ToolDef } from "#src/tools/types.ts";
 
 const tool: ToolDef = {
   name: "write_file",

@@ -4,7 +4,7 @@ import {
   BOOTSTRAP_SKILL_MAX_CHARS,
   BOOTSTRAP_SKILLS_RUN_BUDGET_CHARS,
   type PluginBootstrapSkill,
-} from "../../src/bootstrap.ts";
+} from "#src/bootstrap.ts";
 import { makeContent, recordingLogger } from "../helpers/skill-fixtures.ts";
 
 const PLUGIN_ROOT = "/home/.clarvis/plugins/superpowers/skills";

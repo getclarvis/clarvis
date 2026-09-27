@@ -14,8 +14,8 @@ import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import { createAskUserCapability, type ExecuteRunDeps } from "@clarvis/loop";
 import { z } from "zod";
 import type { RunEvent, StartRunParams } from "@clarvis/protocol";
-import { createInProcessKernel as rawCreateInProcessKernel } from "../../src/index.ts";
-import { createMemoryConfigStore } from "../../src/config.ts";
+import { createInProcessKernel as rawCreateInProcessKernel } from "#src/index.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 
 const createInProcessKernel: typeof rawCreateInProcessKernel = (options) => {

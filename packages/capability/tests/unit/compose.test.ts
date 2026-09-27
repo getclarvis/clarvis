@@ -1,14 +1,14 @@
 import { describe, expect, it } from "../helpers/bun-test.ts";
 
-import { capabilitiesForScope, foldContributions } from "../../src/compose.ts";
+import { capabilitiesForScope, foldContributions } from "#src/compose.ts";
 import type {
   AgentCapability,
   AgentLoopContribution,
   AgentScope,
   RunCapability,
-} from "../../src/contract.ts";
-import type { NamespacedTool } from "../../src/run.ts";
-import type { FinalizeGate, ToolHandler } from "../../src/loop-contract.ts";
+} from "#src/contract.ts";
+import type { NamespacedTool } from "#src/run.ts";
+import type { FinalizeGate, ToolHandler } from "#src/loop-contract.ts";
 
 function tool(name: string): NamespacedTool {
   return {

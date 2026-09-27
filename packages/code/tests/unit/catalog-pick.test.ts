@@ -9,12 +9,8 @@ import {
   providerRows,
   recommendedProviderRows,
   type CatalogRow,
-} from "../../src/views/config/catalog-pick.ts";
-import type {
-  CatalogModel,
-  CatalogProvider,
-  ModelsCatalog,
-} from "../../src/adapters/models-catalog.ts";
+} from "#src/views/config/catalog-pick.ts";
+import type { CatalogModel, CatalogProvider, ModelsCatalog } from "#src/adapters/models-catalog.ts";
 
 function row(id: string): CatalogRow {
   return { id, label: id, haystack: id };

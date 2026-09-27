@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createStewardInput } from "../../src/goals/steward-input.ts";
+import { createStewardInput } from "#src/goals/steward-input.ts";
 
 describe("createStewardInput", () => {
   it("evicts the oldest events once the retained window is full", () => {

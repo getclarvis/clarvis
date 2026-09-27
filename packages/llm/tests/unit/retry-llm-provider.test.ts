@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "../helpers/bun-test.ts";
-import { withTransportRetry, backoffDelayMs } from "../../src/index.ts";
+import { withTransportRetry, backoffDelayMs } from "#src/index.ts";
 import { ModelCallInactivityError } from "@clarvis/capability";
 import {
   ProviderError,

@@ -19,7 +19,7 @@ import {
   INDEXER_CONTINUATION_INSTRUCTION,
   INDEXER_ITERATION_LIMIT,
   INDEXER_TOKEN_LIMIT,
-} from "../../src/indexer/request.ts";
+} from "#src/indexer/request.ts";
 
 const MODEL = "anthropic/claude-sonnet-5";
 

@@ -1,9 +1,9 @@
 import type { JSX } from "solid-js";
 import { createMemo, For, Index, Show } from "solid-js";
-import { tokens } from "../../theme/tokens.ts";
-import { glyph } from "../../theme/glyphs.ts";
-import { filetypeFor, syntaxStyle } from "../../theme/syntax.ts";
-import type { NodeStatus } from "../../adapters/store.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { filetypeFor, syntaxStyle } from "#src/theme/syntax.ts";
+import type { NodeStatus } from "#src/adapters/store.ts";
 import {
   parseBash,
   parseGrepContent,
@@ -11,7 +11,7 @@ import {
   parseShellSession,
   parsePathList,
   parseReadFile,
-} from "../../adapters/tool-parsers.ts";
+} from "#src/adapters/tool-parsers.ts";
 import {
   diffStats,
   formatStatsChip,
@@ -19,10 +19,10 @@ import {
   MUTATION_GATE_LINES,
   type DiffStats,
 } from "./mutation-gate.ts";
-import { toolIdentity } from "../../adapters/tool-identity.ts";
+import { toolIdentity } from "#src/adapters/tool-identity.ts";
 import { moreChip } from "../truncate.ts";
-import { StableDiff } from "../../ui/patterns/stable-syntax.tsx";
-import { terminalPlainText } from "../../core/terminal-text.ts";
+import { StableDiff } from "#src/ui/patterns/stable-syntax.tsx";
+import { terminalPlainText } from "#src/core/terminal-text.ts";
 
 /** The fields a tool result renderer needs from a transcript tool node. */
 export interface ToolCallView {

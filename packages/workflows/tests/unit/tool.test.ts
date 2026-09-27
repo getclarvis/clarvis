@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
-import { buildRunLeaderTool, RUN_LEADER_TOOL_NAME } from "../../src/tool.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
+import { buildRunLeaderTool, RUN_LEADER_TOOL_NAME } from "#src/tool.ts";
 
 describe("buildRunLeaderTool", () => {
   test("requires a title and prompt and exposes the run_leader wire name", () => {

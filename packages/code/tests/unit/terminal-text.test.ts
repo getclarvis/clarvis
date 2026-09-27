@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { stripAnsi, terminalPlainText } from "../../src/core/terminal-text.ts";
+import { stripAnsi, terminalPlainText } from "#src/core/terminal-text.ts";
 
 test("stripAnsi removes complete CSI and string-control families", () => {
   expect(stripAnsi("\u001b[1;32mok\u001b[0m")).toBe("ok");

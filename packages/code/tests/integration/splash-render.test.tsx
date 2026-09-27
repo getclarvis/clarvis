@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { BootFrame } from "../../src/views/BootFrame.tsx";
+import { BootFrame } from "#src/views/BootFrame.tsx";
 import {
   createStartupComposerState,
   resolveStartupComposerHandoff,
   StartupComposer,
-} from "../../src/views/StartupComposer.tsx";
+} from "#src/views/StartupComposer.tsx";
 import {
   APP_PAINT_MARKER,
   APP_READY_MARKER,
@@ -18,7 +18,7 @@ import {
   FIRST_RUN_SPLASH_MIN_ROWS,
   firstRunSplashFits,
   Splash,
-} from "../../src/views/Splash.tsx";
+} from "#src/views/Splash.tsx";
 
 const TEST_VERSION = "0.0.4-beta";
 

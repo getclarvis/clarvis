@@ -1,8 +1,8 @@
 import { createSignal } from "solid-js";
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import { HeaderRows } from "../../src/views/HeaderRows.tsx";
-import { projectHeader, type HeaderInput } from "../../src/views/header-projection.ts";
+import { HeaderRows } from "#src/views/HeaderRows.tsx";
+import { projectHeader, type HeaderInput } from "#src/views/header-projection.ts";
 
 function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
   return {

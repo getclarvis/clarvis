@@ -13,7 +13,7 @@ import {
   setThemedMixBase,
   TERMINAL_BG,
   mixHex,
-} from "../../src/theme/model.ts";
+} from "#src/theme/model.ts";
 
 afterEach(() => setThemedMixBase(resolveTokens(undefined, "dark").bg));
 

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, truncateSync, writeFileSync, mkdirSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { MAX_JSON_CONTROL_FILE_BYTES, readJsonFile } from "../../src/json-file.ts";
+import { MAX_JSON_CONTROL_FILE_BYTES, readJsonFile } from "#src/json-file.ts";
 
 const schema = z.object({ name: z.string(), count: z.number().int() }).strict();
 

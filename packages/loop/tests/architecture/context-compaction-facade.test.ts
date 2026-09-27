@@ -1,12 +1,12 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { readFileSync } from "node:fs";
-import * as facade from "../../src/runtime/context/context-compaction.ts";
-import type { LiveContext } from "../../src/runtime/context/compaction-contracts.ts";
+import * as facade from "#src/runtime/context/context-compaction.ts";
+import type { LiveContext } from "#src/runtime/context/compaction-contracts.ts";
 import {
   deriveMaxResultChars,
   DISABLED_COMPACTION,
-} from "../../src/runtime/context/compaction-policy.ts";
-import { createLiveContext } from "../../src/runtime/context/live-context.ts";
+} from "#src/runtime/context/compaction-policy.ts";
+import { createLiveContext } from "#src/runtime/context/live-context.ts";
 
 describe("context-compaction facade", () => {
   it("preserves the identity of its runtime exports", () => {

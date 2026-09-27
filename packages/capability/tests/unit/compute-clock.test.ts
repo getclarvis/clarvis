@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "../helpers/bun-test.ts";
-import { createComputeClock } from "../../src/compute-clock.ts";
-import type { Logger, LogFn } from "../../src/ports.ts";
+import { createComputeClock } from "#src/compute-clock.ts";
+import type { Logger, LogFn } from "#src/ports.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const loopAfter = <T>(ms: number, value: T): Promise<T> => sleep(ms).then(() => value);

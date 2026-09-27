@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "../bun-test.ts";
-import { createSteerInbox } from "../../src/runtime/loop/steer-inbox.ts";
+import { createSteerInbox } from "#src/runtime/loop/steer-inbox.ts";
 import type { Logger } from "@clarvis/capability";
 import type { SteerMessage, SteerSource } from "@clarvis/capability";
 

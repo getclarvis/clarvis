@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { discoverSkills, resolveConfig } from "@clarvis/skills";
-import { SkillError } from "../../src/errors.ts";
+import { SkillError } from "#src/errors.ts";
 import {
   captureWarnings,
   clarvisRoots,

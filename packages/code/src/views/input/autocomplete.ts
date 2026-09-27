@@ -1,4 +1,4 @@
-import { fuzzyScore } from "../../core/fuzzy.ts";
+import { fuzzyScore } from "#src/core/fuzzy.ts";
 export interface CompleteItem {
   label: string;
   detail?: string;

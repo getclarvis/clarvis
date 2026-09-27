@@ -10,7 +10,7 @@ import {
   resolveCommandBindings,
   validateManualBindings,
   type KeyboardEnvironmentInput,
-} from "../../src/keys/keyboard-profile.ts";
+} from "#src/keys/keyboard-profile.ts";
 
 const host: HostMetadata = {
   platform: "linux",

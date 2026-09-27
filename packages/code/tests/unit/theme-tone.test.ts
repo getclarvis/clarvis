@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { tone } from "../../src/theme/tone.ts";
-import { tokens } from "../../src/theme/tokens.ts";
-import { applyAsciiMode, glyph } from "../../src/theme/glyphs.ts";
+import { tone } from "#src/theme/tone.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { applyAsciiMode, glyph } from "#src/theme/glyphs.ts";
 
 afterEach(() => applyAsciiMode(false));
 

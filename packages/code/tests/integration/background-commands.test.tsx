@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import { createCommands, type CommandUi } from "../../src/keys/commands.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { registerBackgroundCommands } from "../../src/features/background/commands.ts";
-import type { BackgroundController } from "../../src/features/background/controller.ts";
-import { BackgroundView } from "../../src/features/background/view.tsx";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
+import { createCommands, type CommandUi } from "#src/keys/commands.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { registerBackgroundCommands } from "#src/features/background/commands.ts";
+import type { BackgroundController } from "#src/features/background/controller.ts";
+import { BackgroundView } from "#src/features/background/view.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 import { hostedRef } from "../helpers/hosted-run.ts";

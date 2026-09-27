@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 
-import { AGENT_ID_PATTERN, mintAgentId } from "../../src/ids.ts";
+import { AGENT_ID_PATTERN, mintAgentId } from "#src/ids.ts";
 
 describe("mintAgentId", () => {
   it("mints many unique ids in the canonical prefixed shape", () => {

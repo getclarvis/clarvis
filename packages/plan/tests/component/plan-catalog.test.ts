@@ -4,9 +4,9 @@ import {
   createPlansCapability,
   createPlansCatalogCapability,
   PLAN_SPAWN_PORT,
-} from "../../src/capability/index.ts";
-import { createPlanStore } from "../../src/store.ts";
-import { createInMemoryPlanRepository } from "../../src/testing.ts";
+} from "#src/capability/index.ts";
+import { createPlanStore } from "#src/store.ts";
+import { createInMemoryPlanRepository } from "#src/testing.ts";
 import { fakeAgentBuildContext, fakeRunCapabilityContext } from "../helpers/context.ts";
 
 it.each(["off", "on", "review"] as const)(

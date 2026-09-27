@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { classifyResponse } from "../../src/runtime/loop/classify-response.ts";
+import { classifyResponse } from "#src/runtime/loop/classify-response.ts";
 
 const usage = { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 };
 

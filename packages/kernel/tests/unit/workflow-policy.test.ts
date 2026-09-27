@@ -1,9 +1,9 @@
 import { describe, it, expect } from "bun:test";
 import type { SkillsProvider } from "@clarvis/loop";
 import type { StartRunParams } from "@clarvis/protocol";
-import { createAgentWorkflowPolicy } from "../../src/application/workflow-policy.ts";
-import { createConfigService } from "../../src/config/config-service.ts";
-import { createMemoryConfigStore } from "../../src/config/memory-config-store.ts";
+import { createAgentWorkflowPolicy } from "#src/application/workflow-policy.ts";
+import { createConfigService } from "#src/config/config-service.ts";
+import { createMemoryConfigStore } from "#src/config/memory-config-store.ts";
 
 async function storeWith(agents: Record<string, Record<string, unknown>>) {
   const store = createMemoryConfigStore({

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "../bun-test.ts";
-import { createToolArgValidator } from "../../src/runtime/tools/index.ts";
+import { createToolArgValidator } from "#src/runtime/tools/index.ts";
 import type { Logger } from "@clarvis/capability";
 
 const schema = {

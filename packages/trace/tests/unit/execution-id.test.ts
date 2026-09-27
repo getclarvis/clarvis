@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { generateExecutionId } from "../../src/execution-id.ts";
+import { generateExecutionId } from "#src/execution-id.ts";
 
 describe("generateExecutionId", () => {
   it("prefixes a v4 uuid with exec_", () => {

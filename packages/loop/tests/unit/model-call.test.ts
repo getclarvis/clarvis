@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "../bun-test.ts";
-import { callModelWithRecovery } from "../../src/runtime/loop/model-call.ts";
+import { callModelWithRecovery } from "#src/runtime/loop/model-call.ts";
 import {
   ProviderError,
   type LLMCallParams,
@@ -8,11 +8,11 @@ import {
 } from "@clarvis/capability";
 import { createTrace } from "@clarvis/trace";
 import { contentToText } from "@clarvis/capability";
-import { runAgent, type RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
-import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import { compileResultContract } from "../../src/runtime/tools/index.ts";
-import { DISABLED_COMPACTION, type CompactionConfig } from "../../src/runtime/context/index.ts";
+import { runAgent, type RunAgentInput } from "#src/runtime/loop/run-agent.ts";
+import { createTokenLedger, createIterationCounter } from "#src/runtime/budget/index.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import { compileResultContract } from "#src/runtime/tools/index.ts";
+import { DISABLED_COMPACTION, type CompactionConfig } from "#src/runtime/context/index.ts";
 import { MockLLM } from "../helpers/fixtures.ts";
 
 type CallBehavior = { throw: ProviderError } | { return: LLMCallResult };

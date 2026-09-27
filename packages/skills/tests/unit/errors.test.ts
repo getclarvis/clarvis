@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { SkillError, fsError } from "../../src/errors.ts";
+import { SkillError, fsError } from "#src/errors.ts";
 
 describe("SkillError", () => {
   it("carries a code and structured fields", () => {

@@ -21,11 +21,11 @@
 import { describe, expect, it } from "bun:test";
 
 import type { Capability, RunCapability } from "@clarvis/capability";
-import type { MemoryFactory } from "../../src/factory.ts";
-import { createMemory } from "../../src/index.ts";
-import { createMemoryCapability } from "../../src/capability.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
-import { INDEXER_CONTINUATION_INSTRUCTION } from "../../src/indexer/request.ts";
+import type { MemoryFactory } from "#src/factory.ts";
+import { createMemory } from "#src/index.ts";
+import { createMemoryCapability } from "#src/capability.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
+import { INDEXER_CONTINUATION_INSTRUCTION } from "#src/indexer/request.ts";
 import { fakeRunCapabilityContext } from "../helpers/capability.ts";
 
 const ENTRY = { agent: "lead", entry: true, grants: [] } as const;

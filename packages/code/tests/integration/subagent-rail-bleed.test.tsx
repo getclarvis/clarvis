@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { For } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { openRender } from "../helpers/tracked-render.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import { tokens } from "../../src/theme/tokens.ts";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import { BlockView } from "#src/views/blocks.tsx";
+import { tokens } from "#src/theme/tokens.ts";
+import type { TranscriptNode } from "#src/adapters/store.ts";
 
 function subagentNodes(): TranscriptNode[] {
   return Array.from({ length: 10 }, (_, i) => ({

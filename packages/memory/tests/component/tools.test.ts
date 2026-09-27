@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
-import { reindex } from "../../src/reindex.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
-import { createMemoryTools } from "../../src/tools.ts";
-import type { MemoryStore, MemoryToolDef } from "../../src/types.ts";
+import { reindex } from "#src/reindex.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
+import { createMemoryTools } from "#src/tools.ts";
+import type { MemoryStore, MemoryToolDef } from "#src/types.ts";
 
 describe("memory tools", () => {
   let store: MemoryStore;

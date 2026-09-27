@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { RunHandle } from "@clarvis/protocol";
-import { releaseRunLeases, withRunLease } from "../../src/runs/run-lease.ts";
+import { releaseRunLeases, withRunLease } from "#src/runs/run-lease.ts";
 
 describe("withRunLease", () => {
   it("admits before execution and releases after success", async () => {

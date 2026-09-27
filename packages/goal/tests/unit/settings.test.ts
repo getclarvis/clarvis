@@ -1,9 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  goalsSettingsSchema,
-  goalsSettingsSpec,
-  resolveGoalsSettings,
-} from "../../src/settings.ts";
+import { goalsSettingsSchema, goalsSettingsSpec, resolveGoalsSettings } from "#src/settings.ts";
 
 describe("goal settings", () => {
   it("owns a strict last-wins creation-default block with bounded defaults", () => {

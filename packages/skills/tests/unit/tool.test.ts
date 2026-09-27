@@ -5,7 +5,7 @@ import {
   readSkillResourceTool,
   READ_SKILL_RESOURCE_TOOL_NAME,
   renderSkillsSection,
-} from "../../src/tool.ts";
+} from "#src/tool.ts";
 import { makeInfo } from "../helpers/skill-fixtures.ts";
 
 describe("loadSkillTool definition", () => {

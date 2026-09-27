@@ -4,6 +4,13 @@
   "description": "Native process isolation policy and launch backends for Clarvis tools.",
   "license": "MIT",
   "type": "module",
+  "imports": {
+    "#src/*.ts": {
+      "bun": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",

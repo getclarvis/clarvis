@@ -1,11 +1,11 @@
 import type { JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
-import type { CatalogModel } from "../../../adapters/models-catalog.ts";
-import { cacheModeOf, derivePromptCacheMode } from "../../../adapters/model-policy.ts";
-import { tokens } from "../../../theme/tokens.ts";
-import { glyph } from "../../../theme/glyphs.ts";
-import { clampListIndex } from "../../../ui/patterns/list-navigation.ts";
-import { PANEL_VERBS, type LevelSpec } from "../../../ui/patterns/level-keys.ts";
+import type { CatalogModel } from "#src/adapters/models-catalog.ts";
+import { cacheModeOf, derivePromptCacheMode } from "#src/adapters/model-policy.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { clampListIndex } from "#src/ui/patterns/list-navigation.ts";
+import { PANEL_VERBS, type LevelSpec } from "#src/ui/patterns/level-keys.ts";
 import { FieldRow } from "../view-host.tsx";
 import type { ProvidersViewContext } from "./context.ts";
 

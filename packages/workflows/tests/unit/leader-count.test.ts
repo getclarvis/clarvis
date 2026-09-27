@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
+import { createWorkflowLeaderCount } from "#src/leader-count.ts";
 
 describe("WorkflowLeaderCount", () => {
   test("rejects an invalid lifetime ceiling", () => {

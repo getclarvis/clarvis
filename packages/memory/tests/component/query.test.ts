@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
-import { queryMemory } from "../../src/query.ts";
-import { rankByOverlap } from "../../src/similar.ts";
-import { createInMemoryMemoryStore } from "../../src/testing.ts";
-import type { MemoryStore } from "../../src/types.ts";
+import { queryMemory } from "#src/query.ts";
+import { rankByOverlap } from "#src/similar.ts";
+import { createInMemoryMemoryStore } from "#src/testing.ts";
+import type { MemoryStore } from "#src/types.ts";
 
 /** A small bilingual wiki, written the way the indexer writes one. */
 const CORPUS: Record<string, string> = {

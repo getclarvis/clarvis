@@ -1,9 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import {
-  cancellationReason,
-  recordCancellation,
-  checkCancelled,
-} from "../../src/runtime/loop/index.ts";
+import { cancellationReason, recordCancellation, checkCancelled } from "#src/runtime/loop/index.ts";
 import { createTrace } from "@clarvis/trace";
 
 describe("cancellationReason", () => {

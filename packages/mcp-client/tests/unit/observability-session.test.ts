@@ -1,14 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolResult } from "@clarvis/capability";
-import type { MCPClientHandle } from "../../src/client.ts";
+import type { MCPClientHandle } from "#src/client.ts";
 import {
   createResilientSession,
   type ResilientSession,
   type ResilientSessionOptions,
   type ResilientSessionRuntime,
   type ResilientSessionTimer,
-} from "../../src/resilient-session.ts";
+} from "#src/resilient-session.ts";
 import { createRecordingLogger } from "../helpers/recording-logger.ts";
 
 interface ScheduledTask {

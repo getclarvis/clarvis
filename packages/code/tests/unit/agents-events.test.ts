@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { presentAgentsEvent, type AgentsEvent } from "../../src/features/agents/events.ts";
+import { presentAgentsEvent, type AgentsEvent } from "#src/features/agents/events.ts";
 
 test("save_blocked reports the blocking reason as an error", () => {
   const note = presentAgentsEvent({ type: "save_blocked", message: "missing model" });

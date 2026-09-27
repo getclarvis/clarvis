@@ -18,7 +18,7 @@ import {
   createExecutionPolicy,
   prepareLaunch,
   SandboxSetupError,
-} from "../../../src/index.ts";
+} from "#src/index.ts";
 
 function createDeniedHomeDirectories(home: string): void {
   for (const name of [".ssh", ".aws", ".config", ".gnupg", ".kube"]) {

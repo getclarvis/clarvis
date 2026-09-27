@@ -2,10 +2,10 @@ import type { JSX } from "solid-js";
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { DoctorView, type DoctorViewDeps } from "../../src/views/config/DoctorView.tsx";
-import type { DoctorCtx, DoctorReport, Gate, GateResult } from "../../src/onboarding/doctor.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { DoctorView, type DoctorViewDeps } from "#src/views/config/DoctorView.tsx";
+import type { DoctorCtx, DoctorReport, Gate, GateResult } from "#src/onboarding/doctor.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const fakeKeymap = createFakeKeymap;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { createMemoryJobBroker, type MemoryJobSettlement } from "../../src/job-broker.ts";
-import { createTestClock } from "../../src/testing.ts";
+import { createMemoryJobBroker, type MemoryJobSettlement } from "#src/job-broker.ts";
+import { createTestClock } from "#src/testing.ts";
 
 function settlement(over: Partial<MemoryJobSettlement> = {}): MemoryJobSettlement {
   return { run_id: "r1", outcome: "completed", ...over };

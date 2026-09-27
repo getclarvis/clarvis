@@ -1,10 +1,10 @@
 import { describe, expect, it } from "../bun-test.ts";
 import type { LLMToolCall, TraceKind, TracePort } from "@clarvis/capability";
-import { executeAgentToolCall } from "../../src/runtime/tools/builtin/execute-agent-tool-call.ts";
-import { executeMcpToolCall, createToolArgValidator } from "../../src/runtime/tools/index.ts";
-import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
-import type { AgentToolset } from "../../src/runtime/tools/builtin/toolset.ts";
-import type { ConvergenceGuards } from "../../src/runtime/guards/convergence-guards.ts";
+import { executeAgentToolCall } from "#src/runtime/tools/builtin/execute-agent-tool-call.ts";
+import { executeMcpToolCall, createToolArgValidator } from "#src/runtime/tools/index.ts";
+import { buildRegistry } from "#src/runtime/tools/mcp-registry.ts";
+import type { AgentToolset } from "#src/runtime/tools/builtin/toolset.ts";
+import type { ConvergenceGuards } from "#src/runtime/guards/convergence-guards.ts";
 import type { MCPConnection, ToolResult } from "@clarvis/capability";
 
 interface Recorded {

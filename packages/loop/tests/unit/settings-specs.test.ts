@@ -5,11 +5,11 @@ import {
   CAPABILITY_REQUEST_PARAM_KEYS,
   capabilityRequestParamFields,
   capabilitySettingsFields,
-} from "../../src/runtime/capabilities/settings-specs.ts";
-import { SETTINGS_MERGE_STRATEGY_KEYS } from "../../src/settings/settings-merge.ts";
-import { settingsSchema } from "../../src/settings/settings-schema.ts";
-import { pluginManifestSchema } from "../../src/settings/plugin-schema.ts";
-import { runRequestSchema } from "../../src/validation/request-schema.ts";
+} from "#src/runtime/capabilities/settings-specs.ts";
+import { SETTINGS_MERGE_STRATEGY_KEYS } from "#src/settings/settings-merge.ts";
+import { settingsSchema } from "#src/settings/settings-schema.ts";
+import { pluginManifestSchema } from "#src/settings/plugin-schema.ts";
+import { runRequestSchema } from "#src/validation/request-schema.ts";
 
 describe("capability settings registry", () => {
   it("every capability block is served by settingsSchema and has a merge strategy", () => {

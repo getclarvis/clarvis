@@ -9,7 +9,7 @@ import {
   admittedRunCapability,
   capabilityActivationOperation,
   isExtensionAdmissionRefusal,
-} from "../../src/runtime/extension-admission.ts";
+} from "#src/runtime/extension-admission.ts";
 
 describe("admittedRunCapability", () => {
   it("routes every asynchronous extension surface through the physical gate", async () => {

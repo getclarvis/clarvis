@@ -5,8 +5,8 @@ import {
   compileMatch,
   globToRegExp,
   matchesCandidate,
-} from "../../src/match.ts";
-import type { HookLogger, ToolCandidate } from "../../src/types.ts";
+} from "#src/match.ts";
+import type { HookLogger, ToolCandidate } from "#src/types.ts";
 
 function candidate(tool: string, args: unknown = {}): ToolCandidate {
   return { tool, arguments: args };

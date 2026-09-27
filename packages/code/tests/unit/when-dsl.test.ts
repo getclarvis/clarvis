@@ -6,7 +6,7 @@ import {
   isTruthy,
   parseWhen,
   type ContextKey,
-} from "../../src/keys/when-dsl.ts";
+} from "#src/keys/when-dsl.ts";
 
 test("parseWhen handles truthy, equality, and bounded-set forms", () => {
   expect(parseWhen("autocomplete")).toEqual({ kind: "truthy", key: "autocomplete" });

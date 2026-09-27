@@ -27,7 +27,7 @@ import type {
   WorkflowDetail,
   WorkflowSequence,
   WorkflowsService,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 const capabilities = {
   memory: true,

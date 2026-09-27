@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { withoutGitRepositoryEnvironment } from "../../src/git-environment.ts";
+import { withoutGitRepositoryEnvironment } from "#src/git-environment.ts";
 
 describe("withoutGitRepositoryEnvironment", () => {
   it("removes Git's complete repository-local environment and preserves transport inputs", () => {

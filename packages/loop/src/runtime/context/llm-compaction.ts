@@ -14,7 +14,7 @@ import type { TokenLedger } from "../budget/budget.ts";
 import type { TokenAccumulator } from "@clarvis/capability";
 import { contentToText } from "@clarvis/capability";
 import { addUsage } from "../usage.ts";
-import { errorText } from "../../error-text.ts";
+import { errorText } from "#src/error-text.ts";
 
 /**
  * A stable reference block prepended to the summarizer's system prompt so the

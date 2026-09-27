@@ -23,23 +23,23 @@ import type {
   ToolEffect,
   ToolEffectPort,
 } from "@clarvis/capability";
-import { createPlanStore } from "../../src/index.ts";
-import { createInMemoryPlanRepository } from "../../src/testing.ts";
+import { createPlanStore } from "#src/index.ts";
+import { createInMemoryPlanRepository } from "#src/testing.ts";
 import { createEditablePlanRepository } from "../helpers/store.ts";
 import {
   buildPlansOrchestration,
   type PlansOrchestration,
   type PlansOrchestrationDeps,
-} from "../../src/capability/orchestration.ts";
+} from "#src/capability/orchestration.ts";
 import {
   CREATE_PLAN_TOOL_NAME,
   LIST_PLANS_TOOL_NAME,
   READ_PLAN_TOOL_NAME,
   REVISE_PLAN_TOOL_NAME,
   TRANSITION_PLAN_TASK_TOOL_NAME,
-} from "../../src/capability/runtime-tools.ts";
-import type { PlanReviewDecision } from "../../src/capability/review-gate.ts";
-import type { PlanSession } from "../../src/capability/session.ts";
+} from "#src/capability/runtime-tools.ts";
+import type { PlanReviewDecision } from "#src/capability/review-gate.ts";
+import type { PlanSession } from "#src/capability/session.ts";
 import { fakeAgentBuildContext, makeTrace } from "../helpers/context.ts";
 
 const READ_TOOLS = new Set(["read_file", "read_image", "list_dir"]);

@@ -6,8 +6,8 @@ import {
   ValidationError,
   type ModelExecutionResolver,
 } from "@clarvis/capability";
-import { rejectCatalogProviders, requireModelExecution } from "../../model-execution.ts";
-import { isWellFormedHttpUrl } from "../../http-url.ts";
+import { rejectCatalogProviders, requireModelExecution } from "#src/model-execution.ts";
+import { isWellFormedHttpUrl } from "#src/http-url.ts";
 import type { ParsedRunRequest } from "./request-schema.ts";
 
 function envRefsWellFormed(value: string): boolean {

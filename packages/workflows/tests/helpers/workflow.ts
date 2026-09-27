@@ -9,10 +9,10 @@ import type {
 import { createCapabilityServices, createSemaphore } from "@clarvis/capability";
 import type { ExecuteRunArgs, ExecuteRunOutcome } from "@clarvis/loop";
 import { AGENT_REGISTRY_PORT } from "@clarvis/supervision";
-import { WORKFLOW_GRANT } from "../../src/capability.ts";
-import { createWorkflowLedger } from "../../src/ledger.ts";
-import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
-import type { WorkflowCtx, WorkflowRunDeps } from "../../src/types.ts";
+import { WORKFLOW_GRANT } from "#src/capability.ts";
+import { createWorkflowLedger } from "#src/ledger.ts";
+import { createWorkflowLeaderCount } from "#src/leader-count.ts";
+import type { WorkflowCtx, WorkflowRunDeps } from "#src/types.ts";
 
 /** A per-test workflow execution fake. Calls and id allocation are owned by the
  * returned instance, so no test mutates process-wide module state. */

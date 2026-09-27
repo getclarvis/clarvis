@@ -1,8 +1,5 @@
 import { describe, it, expect } from "../bun-test.ts";
-import {
-  loopResultToResponse,
-  mapErrorToResponse,
-} from "../../src/runtime/run-response-mapping.ts";
+import { loopResultToResponse, mapErrorToResponse } from "#src/runtime/run-response-mapping.ts";
 import { CodedError, ProviderError } from "@clarvis/capability";
 import type { Usage } from "@clarvis/capability";
 

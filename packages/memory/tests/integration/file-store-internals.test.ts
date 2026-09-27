@@ -2,13 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 
-import { createDocumentRepository } from "../../src/file-store/documents.ts";
-import { createJobRepository, encodeRunId } from "../../src/file-store/jobs.ts";
-import { createJournalRepository } from "../../src/file-store/journal.ts";
-import { createFileStoreLayout } from "../../src/file-store/layout.ts";
-import { createTreeLock } from "../../src/file-store/lock.ts";
-import { createRecoveryCoordinator } from "../../src/file-store/recovery.ts";
-import { createRevisionRepository } from "../../src/file-store/revisions.ts";
+import { createDocumentRepository } from "#src/file-store/documents.ts";
+import { createJobRepository, encodeRunId } from "#src/file-store/jobs.ts";
+import { createJournalRepository } from "#src/file-store/journal.ts";
+import { createFileStoreLayout } from "#src/file-store/layout.ts";
+import { createTreeLock } from "#src/file-store/lock.ts";
+import { createRecoveryCoordinator } from "#src/file-store/recovery.ts";
+import { createRevisionRepository } from "#src/file-store/revisions.ts";
 import { run } from "../helpers/fixtures.ts";
 import { makeRoot } from "../helpers/fs.ts";
 

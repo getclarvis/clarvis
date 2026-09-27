@@ -4,7 +4,7 @@ import {
   createStreamMetricsCounter,
   selectStreamMetrics,
   streamMetrics,
-} from "../../src/stream-metrics.ts";
+} from "#src/stream-metrics.ts";
 
 test("an absent debug path selects an inert sink without process resources", () => {
   const metrics = selectStreamMetrics(undefined, "loop");

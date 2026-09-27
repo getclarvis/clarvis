@@ -3,7 +3,7 @@ import {
   createTokenLedger,
   createIterationCounter,
   checkLimits,
-} from "../../src/runtime/budget/index.ts";
+} from "#src/runtime/budget/index.ts";
 
 describe("createTokenLedger (shared token pool)", () => {
   it("meters NET-NEW tokens: cached (re-sent) input is excluded from the budget", () => {

@@ -1,8 +1,8 @@
-import type { SettingsAdapter } from "../../adapters/settings.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
 import type { FieldEditor } from "./view-host.tsx";
 import type { CatalogPickerSpec } from "./CatalogPicker.tsx";
 import { configuredModelRows } from "./catalog-pick.ts";
-import { glyph } from "../../theme/glyphs.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 
 /**
  * Builds a {@link CatalogPickerSpec} for picking a model from the configured providers.

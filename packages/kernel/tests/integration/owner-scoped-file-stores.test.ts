@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { ownerSegment, workspaceStatePaths } from "@clarvis/paths";
-import { createOwnerScopedFileStores } from "../../src/bootstrap.ts";
+import { createOwnerScopedFileStores } from "#src/bootstrap.ts";
 
 describe("createOwnerScopedFileStores", () => {
   it("keeps owners' plan repositories separate", async () => {

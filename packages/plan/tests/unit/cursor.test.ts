@@ -9,7 +9,7 @@ import {
   PlanCursorError,
   decodePlanCursor,
   encodePlanCursor,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 describe("plan cursor tagging", () => {
   test("round-trips a payload through its own tag", () => {

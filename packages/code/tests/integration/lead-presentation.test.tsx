@@ -2,10 +2,10 @@ import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
 import type { RunEvent } from "@clarvis/protocol";
-import { createTranscriptStore, type TranscriptNode } from "../../src/adapters/store.ts";
+import { createTranscriptStore, type TranscriptNode } from "#src/adapters/store.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import { LeadActivityLine, type LeadActivityPhase } from "../../src/views/Footer.tsx";
+import { BlockView } from "#src/views/blocks.tsx";
+import { LeadActivityLine, type LeadActivityPhase } from "#src/views/Footer.tsx";
 
 const ev = runEvent;
 

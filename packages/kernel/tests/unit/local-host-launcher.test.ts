@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { localHostSpawnOptions, parseLocalHostArguments } from "../../src/hosting/launcher.ts";
+import { localHostSpawnOptions, parseLocalHostArguments } from "#src/hosting/launcher.ts";
 
 describe("local host bootstrap arguments", () => {
   test("keeps operator paths literal and rejects missing, repeated or unknown flags", () => {

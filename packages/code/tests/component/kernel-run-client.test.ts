@@ -13,9 +13,9 @@ import type {
 import {
   createKernelRunClient,
   type KernelRunClientCallbacks,
-} from "../../src/adapters/kernel-run-client.ts";
-import type { RunProgress } from "../../src/adapters/run-types.ts";
-import type { ElicitRequestParams, ElicitResult } from "../../src/adapters/elicit-types.ts";
+} from "#src/adapters/kernel-run-client.ts";
+import type { RunProgress } from "#src/adapters/run-types.ts";
+import type { ElicitRequestParams, ElicitResult } from "#src/adapters/elicit-types.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 
 async function flushMicrotasks(): Promise<void> {

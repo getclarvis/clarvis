@@ -6,17 +6,17 @@ import type {
   RunEvent,
 } from "@clarvis/protocol";
 import { applyGoalControl } from "@clarvis/goal";
-import { decodeGoalView } from "../../../src/transport/goal-codec.ts";
-import { connectKernelClient } from "../../../src/transport/client.ts";
-import { decodeRunEvent } from "../../../src/transport/run-event-codec.ts";
+import { decodeGoalView } from "#src/transport/goal-codec.ts";
+import { connectKernelClient } from "#src/transport/client.ts";
+import { decodeRunEvent } from "#src/transport/run-event-codec.ts";
 import {
   KNOWN_METHODS,
   OPERATIONS,
   ORDINARY_OPERATIONS,
   SPECIAL_OPERATIONS,
   decodeOperationParams,
-} from "../../../src/transport/operations.ts";
-import { CLARVIS_WIRE_VERSION, M, N, type HelloResult } from "../../../src/transport/wire.ts";
+} from "#src/transport/operations.ts";
+import { CLARVIS_WIRE_VERSION, M, N, type HelloResult } from "#src/transport/wire.ts";
 import {
   createRecordingKernelServices,
   RECORDED_OPERATION,

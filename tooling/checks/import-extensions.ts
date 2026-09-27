@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, extname, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { repositoryPaths } from "./bun-sources.ts";
 
@@ -107,6 +107,43 @@ export function invalidRelativeImportExtensions(file, source, fileExists = exist
   return failures;
 }
 
+/** Require private aliases for long same-package source edges, including unmapped packages. */
+export function invalidPrivateImportConvention(
+  pkgDir,
+  file,
+  source,
+  fileExists = existsSync,
+  imports = undefined,
+) {
+  const manifestFile = join(pkgDir, "package.json");
+  const mappings =
+    imports ??
+    (fileExists(manifestFile) ? JSON.parse(readFileSync(manifestFile, "utf8")).imports : {});
+  const mapped = mappings?.["#src/*"] !== undefined || mappings?.["#src/*.ts"] !== undefined;
+  const sourceRoot = join(pkgDir, "src");
+  const importerInSource = file.startsWith(sourceRoot + sep);
+  const fromTestsOrTooling = ["tests", "tooling"].some((tree) =>
+    file.startsWith(join(pkgDir, tree) + sep),
+  );
+  if (!importerInSource && !fromTestsOrTooling) return [];
+  return moduleSpecifiers(file, source).flatMap((specifier) => {
+    if (!specifier.startsWith(".")) return [];
+    const target = resolve(dirname(file), specifier);
+    if (
+      !fileExists(target) ||
+      !/\.(?:ts|tsx)$/.test(target) ||
+      !target.startsWith(sourceRoot + sep)
+    )
+      return [];
+    const upwards = relative(dirname(file), target)
+      .split(sep)
+      .filter((part) => part === "..").length;
+    if (importerInSource && upwards < 2) return [];
+    const expected = `#src/${relative(sourceRoot, target).split(sep).join("/")}`;
+    return [{ file, specifier, expected, target, manifest: manifestFile, needsMapping: !mapped }];
+  });
+}
+
 /** Return tracked and unignored TypeScript source paths. */
 export function typescriptSourcePaths(paths) {
   return paths.filter((path) => SOURCE_EXTENSION.test(path)).sort();
@@ -116,7 +153,14 @@ if (import.meta.main) {
   const root = resolve(import.meta.dir, "../..");
   const failures = typescriptSourcePaths(repositoryPaths(root)).flatMap((path) => {
     const file = resolve(root, path);
-    return invalidRelativeImportExtensions(file, readFileSync(file, "utf8")).map((failure) => ({
+    const source = readFileSync(file, "utf8");
+    const packageName = /^packages\/([^/]+)\//.exec(path)?.[1];
+    const pkgDir = packageName === undefined ? undefined : join(root, "packages", packageName);
+    const violations = [
+      ...invalidRelativeImportExtensions(file, source),
+      ...(pkgDir === undefined ? [] : invalidPrivateImportConvention(pkgDir, file, source)),
+    ];
+    return violations.map((failure) => ({
       ...failure,
       file: path,
     }));
@@ -124,17 +168,17 @@ if (import.meta.main) {
 
   if (failures.length > 0) {
     console.error(
-      `relative import extensions (${String(failures.length)}):\n${failures
+      `import conventions (${String(failures.length)}):\n${failures
         .map(
-          ({ file, specifier, expected }) =>
-            `- ${file}: ${specifier}${expected === undefined ? " (missing extension)" : ` -> ${expected}`}`,
+          ({ file, specifier, expected, target, manifest, needsMapping }) =>
+            `- ${file}: ${specifier}${expected === undefined ? " (missing extension)" : ` -> ${expected}`}${target === undefined ? "" : ` (target ${relative(root, target)}${needsMapping ? `; declare a compatible #src/ mapping in ${relative(root, manifest)}` : ""})`}`,
         )
         .join("\n")}`,
     );
     process.exitCode = 1;
   } else {
     console.log(
-      "import extensions: literal relative imports have extensions and do not mask TypeScript sources with JavaScript suffixes",
+      "import conventions: literal relatives use source extensions and long same-package imports use private source aliases",
     );
   }
 }

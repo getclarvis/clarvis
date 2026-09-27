@@ -4,8 +4,8 @@ import {
   activeAgentCatalogTransition,
   automaticAgentFallback,
   createActiveAgentStore,
-} from "../../src/adapters/active-agent.ts";
-import type { ProfileInfo } from "../../src/adapters/run-types.ts";
+} from "#src/adapters/active-agent.ts";
+import type { ProfileInfo } from "#src/adapters/run-types.ts";
 
 const profile = (name: string, lead = false): ProfileInfo => ({
   name,

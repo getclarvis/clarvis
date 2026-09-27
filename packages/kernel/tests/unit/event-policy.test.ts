@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { RUN_EVENT_POLICY } from "../../src/runs/event-policy.ts";
+import { RUN_EVENT_POLICY } from "#src/runs/event-policy.ts";
 
 describe("run event policy", () => {
   it("persists the minimal announcement without persisting or dropping argument deltas as facts", () => {

@@ -7,14 +7,14 @@ import type {
   GoalService,
   GoalView as GoalViewDto,
 } from "@clarvis/protocol";
-import { createCommands, type CommandUi } from "../../src/keys/commands.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createCommandCompletionProvider } from "../../src/views/input/command-completion.ts";
-import { registerGoalCommands } from "../../src/features/goal/commands.ts";
-import { createGoalController } from "../../src/features/goal/controller.ts";
-import { createGoalDraft } from "../../src/features/goal/draft.ts";
-import { GoalView } from "../../src/features/goal/view.tsx";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
+import { createCommands, type CommandUi } from "#src/keys/commands.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createCommandCompletionProvider } from "#src/views/input/command-completion.ts";
+import { registerGoalCommands } from "#src/features/goal/commands.ts";
+import { createGoalController } from "#src/features/goal/controller.ts";
+import { createGoalDraft } from "#src/features/goal/draft.ts";
+import { GoalView } from "#src/features/goal/view.tsx";
+import { createViewHost } from "#src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 import { goalRun, goalView } from "../helpers/goals.ts";

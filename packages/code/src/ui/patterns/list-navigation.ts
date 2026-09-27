@@ -1,8 +1,8 @@
 import { createEffect, untrack } from "solid-js";
 import type { KeyEvent, Renderable, ScrollBoxRenderable } from "@opentui/core";
 import type { Binding, Command, Keymap, ReactiveMatcher } from "@opentui/keymap";
-import { LAYER } from "../../keys/keyspec.ts";
-import { uiCommand } from "../../keys/actions.ts";
+import { LAYER } from "#src/keys/keyspec.ts";
+import { uiCommand } from "#src/keys/actions.ts";
 
 type OpenTuiBinding = Binding<Renderable, KeyEvent>;
 type OpenTuiCommand = Command<Renderable, KeyEvent>;

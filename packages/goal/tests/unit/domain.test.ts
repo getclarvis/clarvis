@@ -26,7 +26,7 @@ import {
   type GoalControl,
   type GoalState,
   type GoalUsage,
-} from "../../src/index.ts";
+} from "#src/index.ts";
 
 const context = { session_id: "session", new_goal_id: "goal-1", now: 100, physically_busy: false };
 const limits = { max_net_tokens: 1000, max_auto_continuations: 8, max_no_progress_stages: 3 };

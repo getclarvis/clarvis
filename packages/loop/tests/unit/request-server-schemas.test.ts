@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../bun-test.ts";
-import { serverSchema } from "../../src/validation/request/server-schemas.ts";
+import { serverSchema } from "#src/validation/request/server-schemas.ts";
 
 describe("request server schema", () => {
   it.each([

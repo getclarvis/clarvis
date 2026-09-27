@@ -10,10 +10,10 @@ import {
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { openTempDir } from "../helpers/tracked-temp.ts";
-import { fuzzyFilter, fuzzyScore } from "../../src/core/fuzzy.ts";
-import { createPromptHistory } from "../../src/core/prompt-history.ts";
-import { createFilePromptHistory } from "../../src/adapters/file-prompt-history.ts";
-import { MAX_PROMPT_HISTORY_ENTRY_CHARS } from "../../src/core/prompt-history.ts";
+import { fuzzyFilter, fuzzyScore } from "#src/core/fuzzy.ts";
+import { createPromptHistory } from "#src/core/prompt-history.ts";
+import { createFilePromptHistory } from "#src/adapters/file-prompt-history.ts";
+import { MAX_PROMPT_HISTORY_ENTRY_CHARS } from "#src/core/prompt-history.ts";
 
 test("fuzzyFilter: empty term is identity", () => {
   expect(fuzzyFilter(["b", "a", "c"], "", (x) => x)).toEqual(["b", "a", "c"]);

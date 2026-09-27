@@ -10,9 +10,9 @@ import {
   type HostedRegistryOptions,
   type HostedRegistryState,
   type HostedTurnContinuation,
-} from "../../src/hosting/registry.ts";
-import { createHostedProjection, type ProjectionStorage } from "../../src/hosting/projection.ts";
-import { createManagedRun, type ManagedRunContext } from "../../src/runs/managed-run.ts";
+} from "#src/hosting/registry.ts";
+import { createHostedProjection, type ProjectionStorage } from "#src/hosting/projection.ts";
+import { createManagedRun, type ManagedRunContext } from "#src/runs/managed-run.ts";
 
 export function input(executionId = "run-1", sessionId = "session-1"): StartHostedTurnParams {
   return {

@@ -15,21 +15,21 @@ import type {
   RunResult,
   StartHostedTurnParams,
 } from "@clarvis/protocol";
-import { createInProcessKernel } from "../../src/kernel.ts";
-import { createMemoryConfigStore } from "../../src/config.ts";
-import { createHostedRegistry } from "../../src/hosting/registry.ts";
-import { openHostedProjection } from "../../src/hosting/projection.ts";
-import { createManagedRun, type ManagedRunContext } from "../../src/runs/managed-run.ts";
-import { elicitWindowFor } from "../../src/runs/elicit-bridge.ts";
-import { createKernelServer } from "../../src/transport/server.ts";
-import { connectKernelClient } from "../../src/transport/client.ts";
-import { createLoopbackTransport } from "../../src/transport/loopback.ts";
-import { connectLocalKernelTransport, listenLocalKernel } from "../../src/transport/local.ts";
-import { decodeHostedFrame } from "../../src/transport/hosting-codec.ts";
-import { kernelError } from "../../src/core/errors.ts";
+import { createInProcessKernel } from "#src/kernel.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
+import { createHostedRegistry } from "#src/hosting/registry.ts";
+import { openHostedProjection } from "#src/hosting/projection.ts";
+import { createManagedRun, type ManagedRunContext } from "#src/runs/managed-run.ts";
+import { elicitWindowFor } from "#src/runs/elicit-bridge.ts";
+import { createKernelServer } from "#src/transport/server.ts";
+import { connectKernelClient } from "#src/transport/client.ts";
+import { createLoopbackTransport } from "#src/transport/loopback.ts";
+import { connectLocalKernelTransport, listenLocalKernel } from "#src/transport/local.ts";
+import { decodeHostedFrame } from "#src/transport/hosting-codec.ts";
+import { kernelError } from "#src/core/errors.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
-import { M, N } from "../../src/transport/wire.ts";
-import { wireRecord } from "../../src/transport/hosting-codec.ts";
+import { M, N } from "#src/transport/wire.ts";
+import { wireRecord } from "#src/transport/hosting-codec.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

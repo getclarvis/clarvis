@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { runCredentialNames } from "../../src/capability.ts";
+import { runCredentialNames } from "#src/capability.ts";
 import { context, request } from "../helpers/capability.ts";
 
 describe("runCredentialNames", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createHostedAdmission } from "../../src/hosting/admission.ts";
+import { createHostedAdmission } from "#src/hosting/admission.ts";
 
 describe("hosted admission and interactive authority", () => {
   test("keeps conversation control between stages and requires explicit takeover", () => {

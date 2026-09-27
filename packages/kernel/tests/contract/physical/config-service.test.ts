@@ -8,7 +8,7 @@ import {
   createMemoryConfigStore,
   createFileConfigStore,
   type ConfigStore,
-} from "../../../src/config.ts";
+} from "#src/config.ts";
 
 describe("ConfigService over a storage-agnostic ConfigStore (memory)", () => {
   it("exposes builtin misses and a disposable low-level watcher", () => {

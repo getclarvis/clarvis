@@ -1,5 +1,5 @@
-import { DEFAULT_SHARED_AGENT_PROMPT } from "../src/runtime/prompts/shared-agent-prompt.ts";
-import { buildSystemSections } from "../src/runtime/subagents/build-subagent-input.ts";
+import { DEFAULT_SHARED_AGENT_PROMPT } from "#src/runtime/prompts/shared-agent-prompt.ts";
+import { buildSystemSections } from "#src/runtime/subagents/build-subagent-input.ts";
 
 /**
  * The `# Environment` system-prompt section a run opens with, for a given

@@ -1,11 +1,11 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { validateSpawnArgs } from "../../src/runtime/subagents/spawn-subagent.ts";
+import { validateSpawnArgs } from "#src/runtime/subagents/spawn-subagent.ts";
 import {
   resolveSubagentProfiles,
   hasVisionCapableProfile,
-} from "../../src/runtime/subagents/subagent-profiles.ts";
-import { buildSpawnSubagentTool } from "../../src/runtime/subagents/lead-tools.ts";
-import { collectTurnImages } from "../../src/runtime/subagents/build-subagent-input.ts";
+} from "#src/runtime/subagents/subagent-profiles.ts";
+import { buildSpawnSubagentTool } from "#src/runtime/subagents/lead-tools.ts";
+import { collectTurnImages } from "#src/runtime/subagents/build-subagent-input.ts";
 import { loadEnv } from "@clarvis/capability";
 import type { Message } from "@clarvis/capability";
 

@@ -17,7 +17,7 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createSmokeFixture } from "../artifact/isolation.ts";
-import { releaseAssetName, releaseTarget } from "../../src/update-contract.ts";
+import { releaseAssetName, releaseTarget } from "#src/update-contract.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const repositoryRoot = join(packageRoot, "..", "..");

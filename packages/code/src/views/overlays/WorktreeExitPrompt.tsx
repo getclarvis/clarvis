@@ -1,14 +1,14 @@
 import type { JSX } from "solid-js";
 import { onCleanup, onMount } from "solid-js";
 import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
-import type { Interaction } from "../../keys/interaction.ts";
-import { uiCommand } from "../../keys/actions.ts";
-import { LAYER } from "../../keys/keyspec.ts";
-import { tokens } from "../../theme/tokens.ts";
-import { InteractionNavigationBar } from "../../ui/patterns/navigation-bar.tsx";
-import { useTerminalSize } from "../../ui/patterns/terminal-size.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { uiCommand } from "#src/keys/actions.ts";
+import { LAYER } from "#src/keys/keyspec.ts";
+import { tokens } from "#src/theme/tokens.ts";
+import { InteractionNavigationBar } from "#src/ui/patterns/navigation-bar.tsx";
+import { useTerminalSize } from "#src/ui/patterns/terminal-size.tsx";
 import { FloatFrame, floatContentWidth } from "./FloatFrame.tsx";
-import { useOptionalSurfaceLifecycle } from "../../ui/patterns/surface-lifecycle.tsx";
+import { useOptionalSurfaceLifecycle } from "#src/ui/patterns/surface-lifecycle.tsx";
 
 /** Confirm whether a clean Clarvis checkout should be removed during shutdown. */
 export function WorktreeExitPrompt(props: {

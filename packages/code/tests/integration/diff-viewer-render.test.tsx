@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { DiffViewer, projectChangeFiles } from "../../src/views/overlays/DiffViewer.tsx";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { DiffViewer, projectChangeFiles } from "#src/views/overlays/DiffViewer.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import type { WorkspaceChangeEntry, WorkspaceChangesService } from "@clarvis/protocol";
 

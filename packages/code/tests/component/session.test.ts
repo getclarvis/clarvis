@@ -4,7 +4,7 @@ import {
   TURN_ERROR_MAX_CHARS,
   type SessionMeta,
   type SessionStore,
-} from "../../src/adapters/session-store.ts";
+} from "#src/adapters/session-store.ts";
 import {
   buildSkillRunDigest,
   buildRecoveredContext,
@@ -13,7 +13,7 @@ import {
   isContinuationUnavailable,
   resumeSession,
   SESSION_RESUME_MAX_PAYLOAD_CHARS,
-} from "../../src/adapters/session.ts";
+} from "#src/adapters/session.ts";
 
 const INTERRUPTED_EVENTS: RunEvent[] = [
   {

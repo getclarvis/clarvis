@@ -15,8 +15,8 @@ import {
   mode,
   modeBitsEnforced,
 } from "../../helpers/fixtures.ts";
-import type { ServerConfig } from "../../../src/config.ts";
-import { applyPatchTool } from "../../../src/tools/apply-patch.ts";
+import type { ServerConfig } from "#src/config.ts";
+import { applyPatchTool } from "#src/tools/apply-patch.ts";
 
 describe("apply_patch", () => {
   let root: string;

@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
-import { localKernelPolicyIdentity } from "../../src/hosting/policy-identity.ts";
+import { localKernelPolicyIdentity } from "#src/hosting/policy-identity.ts";
 
 it("compares resolved operator policy without secret, owner or log environment material", () => {
   const first = localKernelPolicyIdentity(

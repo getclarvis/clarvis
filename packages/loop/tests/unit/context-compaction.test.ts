@@ -12,7 +12,7 @@ import {
   derivePreserveRecentTokens,
   DISABLED_COMPACTION,
   type CompactionConfig,
-} from "../../src/runtime/context/index.ts";
+} from "#src/runtime/context/index.ts";
 import { prefixSurvival, renderForPrefix } from "../prefix-stability.ts";
 
 const ON: CompactionConfig = {

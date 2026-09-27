@@ -9,7 +9,7 @@ import {
   type RunCapabilityContext,
 } from "@clarvis/capability";
 import type { SkillsProvider } from "@clarvis/skills/capability";
-import { buildExecuteRunDeps } from "../../src/runtime/build-run-deps.ts";
+import { buildExecuteRunDeps } from "#src/runtime/build-run-deps.ts";
 
 test("file tools expose system documentation without a mutation reviewer", async () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-system-reviewer-gate-"));

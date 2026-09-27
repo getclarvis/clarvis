@@ -1,7 +1,7 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { compileResultContract, OUTPUT_SCHEMA_LIMITS } from "../../src/runtime/tools/index.ts";
+import { compileResultContract, OUTPUT_SCHEMA_LIMITS } from "#src/runtime/tools/index.ts";
 import { ValidationError } from "@clarvis/capability";
-import { SUBMIT_RESULT_TOOL_NAME } from "../../src/runtime/tools/index.ts";
+import { SUBMIT_RESULT_TOOL_NAME } from "#src/runtime/tools/index.ts";
 
 const SCHEMA = {
   type: "object",

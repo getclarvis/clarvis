@@ -1,11 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
-import { ThemeView } from "../../src/views/config/ThemeView.tsx";
-import type { ThemePreview } from "../../src/theme/theme.ts";
-import type { Platform } from "../../src/adapters/platform.ts";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
+import { ThemeView } from "#src/views/config/ThemeView.tsx";
+import type { ThemePreview } from "#src/theme/theme.ts";
+import type { Platform } from "#src/adapters/platform.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
 import {
   parseColor,
   resolveTokens,
@@ -13,10 +13,10 @@ import {
   TERMINAL_BG,
   TOKEN_ORDER,
   type ThemeConfig,
-} from "../../src/theme/model.ts";
-import { applyResolvedTokens, SUBAGENT_ORDER } from "../../src/theme/tokens.ts";
-import { contrastRatio } from "../../src/theme/contrast.ts";
-import { applyAsciiMode } from "../../src/theme/glyphs.ts";
+} from "#src/theme/model.ts";
+import { applyResolvedTokens, SUBAGENT_ORDER } from "#src/theme/tokens.ts";
+import { contrastRatio } from "#src/theme/contrast.ts";
+import { applyAsciiMode } from "#src/theme/glyphs.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 afterEach(() => {

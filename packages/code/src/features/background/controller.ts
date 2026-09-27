@@ -1,4 +1,4 @@
-import { detachObserved } from "../../core/tasks.ts";
+import { detachObserved } from "#src/core/tasks.ts";
 import type { HostedRunReceipt, HostedRunRef, HostingService } from "@clarvis/protocol";
 import { createSignal, type Accessor } from "solid-js";
 import { createDisposeGuard } from "../dispose-guard.ts";

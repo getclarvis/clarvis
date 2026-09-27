@@ -3,12 +3,12 @@ import * as path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { createFileMemoryStore } from "../../src/file-store.ts";
-import { createMemory } from "../../src/index.ts";
-import type { MemoryJournalRecord } from "../../src/journal.ts";
-import { digestBody } from "../../src/revisions.ts";
-import type { MemoryStore } from "../../src/types.ts";
-import type { Memory } from "../../src/memory-contract.ts";
+import { createFileMemoryStore } from "#src/file-store.ts";
+import { createMemory } from "#src/index.ts";
+import type { MemoryJournalRecord } from "#src/journal.ts";
+import { digestBody } from "#src/revisions.ts";
+import type { MemoryStore } from "#src/types.ts";
+import type { Memory } from "#src/memory-contract.ts";
 import { makeRoot } from "../helpers/fs.ts";
 
 const LEAF = "infra/bun/MEMORY.md";

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "../bun-test.ts";
 import type { McpServerConfig } from "@clarvis/capability";
-import type { RegistryEntry } from "../../src/runtime/tools/mcp-registry.ts";
-import { addAutomaticMcpTools } from "../../src/runtime/tools/automatic-mcp-tools.ts";
-import type { ResolvedSubagentProfile } from "../../src/runtime/subagents/subagent-profiles.ts";
+import type { RegistryEntry } from "#src/runtime/tools/mcp-registry.ts";
+import { addAutomaticMcpTools } from "#src/runtime/tools/automatic-mcp-tools.ts";
+import type { ResolvedSubagentProfile } from "#src/runtime/subagents/subagent-profiles.ts";
 
 function opened(name: string, tools: string[]): RegistryEntry {
   return {

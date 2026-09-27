@@ -1,5 +1,5 @@
 import { describe, it, expect } from "../helpers/bun-test.ts";
-import { classifyProviderError, parseRetryAfter } from "../../src/index.ts";
+import { classifyProviderError, parseRetryAfter } from "#src/index.ts";
 
 function headers(map: Record<string, string>): { get(name: string): string | null } {
   const lower: Record<string, string> = {};

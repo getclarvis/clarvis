@@ -1,5 +1,5 @@
 import type { FieldEditor } from "./view-host.tsx";
-import { glyph } from "../../theme/glyphs.ts";
+import { glyph } from "#src/theme/glyphs.ts";
 
 /** Callbacks and display context for {@link promptForApiKey}'s secret prompt. */
 export interface KeyEntryDeps {

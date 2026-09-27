@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { reindex } from "../../src/reindex.ts";
-import { createFileMemoryStore } from "../../src/file-store.ts";
-import type { MemoryStore } from "../../src/types.ts";
+import { reindex } from "#src/reindex.ts";
+import { createFileMemoryStore } from "#src/file-store.ts";
+import type { MemoryStore } from "#src/types.ts";
 import { makeRoot } from "../helpers/fs.ts";
 
 describe("reindex", () => {

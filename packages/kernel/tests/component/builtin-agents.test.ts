@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
-import { agentFrontmatterSchema } from "../../src/config.ts";
+import { agentFrontmatterSchema } from "#src/config.ts";
 import {
   BUILTIN_AGENTS,
   BUILTIN_AGENT_NAMES,
   DEFAULT_ENTRY_AGENT,
   isBuiltinAgent,
   readBuiltinAgent,
-} from "../../src/config/builtin-agents/index.ts";
-import { compareAgentDisplayOrder } from "../../src/config/agent-resolution.ts";
+} from "#src/config/builtin-agents/index.ts";
+import { compareAgentDisplayOrder } from "#src/config/agent-resolution.ts";
 
 const ADMIRAL = readBuiltinAgent("admiral")!;
 const MARSHALL = readBuiltinAgent("marshall")!;

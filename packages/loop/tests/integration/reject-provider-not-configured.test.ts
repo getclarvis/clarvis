@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "../bun-test.ts";
 import { mockConnections, mockMCPFactory } from "./_fixtures.ts";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
 import { loadEnv } from "@clarvis/capability";
-import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
+import { executeRun, type ExecuteRunDeps } from "#src/runtime/execute-run.ts";
 
 function depsWith(): { deps: ExecuteRunDeps; llmCall: ReturnType<typeof vi.fn> } {
   const llmCall = vi.fn(async () => ({

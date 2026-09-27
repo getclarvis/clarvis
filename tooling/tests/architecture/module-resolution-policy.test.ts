@@ -10,7 +10,7 @@ function fixture(
     packages: Array<{
       name: string;
       dir: string;
-      manifest: { exports: Record<string, unknown> };
+      manifest: { exports: Record<string, unknown>; imports?: Record<string, unknown> };
       sourceEdges?: { file: string; specifier: string }[];
     }>,
   ) => void,
@@ -58,7 +58,12 @@ function fixture(
         }),
       );
     }
-    const packages = [
+    const packages: Array<{
+      name: string;
+      dir: string;
+      manifest: { exports: Record<string, unknown>; imports?: Record<string, unknown> };
+      sourceEdges?: { file: string; specifier: string }[];
+    }> = [
       {
         name: "@clarvis/consumer",
         dir: consumer,
@@ -90,6 +95,88 @@ function fixture(
 }
 
 describe("moduleResolutionPolicyErrors", () => {
+  test("resolves same private name in each owner and rejects inherited or malformed mappings", () =>
+    fixture((root, packages) => {
+      for (const pkg of packages) {
+        pkg.manifest.imports = {
+          "#src/*.ts": { bun: "./src/*.ts", types: "./dist/*.d.ts", default: "./dist/*.js" },
+        };
+        writeFileSync(join(pkg.dir, "src", "value.ts"), `export const owner = "${pkg.name}";\n`);
+        writeFileSync(join(pkg.dir, "src", "index.ts"), 'export { owner } from "#src/value.ts";\n');
+        writeFileSync(
+          join(pkg.dir, "package.json"),
+          JSON.stringify({ name: pkg.name, type: "module", ...pkg.manifest }),
+        );
+        pkg.sourceEdges = [
+          { file: `packages/${pkg.name.split("/")[1]}/src/index.ts`, specifier: "#src/value.ts" },
+        ];
+      }
+      expect(moduleResolutionPolicyErrors(root, packages)).toEqual([]);
+      writeFileSync(
+        join(root, "package.json"),
+        JSON.stringify({ imports: { "#src/*": "./src/*" } }),
+      );
+      delete packages[0].manifest.imports;
+      writeFileSync(
+        join(packages[0].dir, "package.json"),
+        JSON.stringify({ name: packages[0].name, type: "module" }),
+      );
+      expect(moduleResolutionPolicyErrors(root, packages).join("\n")).toContain(
+        "package must declare its own #src/ mapping",
+      );
+      packages[0].manifest.imports = { "#src/*": "../provider/src/*" };
+      expect(moduleResolutionPolicyErrors(root, packages).join("\n")).toContain(
+        "invalid #src/ mapping",
+      );
+      packages[0].manifest.imports = {
+        "#src/*.ts": { bun: "./src/*.ts", types: "./dist/*.d.ts", default: "./dist/*.js" },
+      };
+      packages[0].sourceEdges = [
+        { file: "packages/consumer/src/index.ts", specifier: "#src/missing.ts" },
+      ];
+      expect(moduleResolutionPolicyErrors(root, packages).join("\n")).toContain(
+        "source does not exist",
+      );
+    }));
+
+  test("validates conditional library targets and condition order", () =>
+    fixture((root, packages) => {
+      const pkg = packages[1];
+      pkg.manifest.imports = {
+        "#src/*.ts": { bun: "./src/*.ts", types: "./dist/*.d.ts", default: "./dist/*.js" },
+      };
+      writeFileSync(join(pkg.dir, "src", "value.ts"), "export const value = 1;\n");
+      writeFileSync(
+        join(pkg.dir, "package.json"),
+        JSON.stringify({ name: pkg.name, type: "module", ...pkg.manifest }),
+      );
+      pkg.sourceEdges = [{ file: "packages/provider/src/index.ts", specifier: "#src/value.ts" }];
+      expect(moduleResolutionPolicyErrors(root, packages)).toEqual([]);
+      pkg.manifest.imports = {
+        "#src/*.ts": { types: "./dist/*.d.ts", bun: "./src/*.ts", default: "./dist/*.js" },
+      };
+      expect(moduleResolutionPolicyErrors(root, packages).join("\n")).toContain(
+        "invalid #src/ mapping",
+      );
+    }));
+
+  test("rejects private targets that escape through a symlink", () =>
+    fixture((root, packages) => {
+      const pkg = packages[1];
+      pkg.manifest.imports = {
+        "#src/*.ts": { bun: "./src/*.ts", types: "./dist/*.d.ts", default: "./dist/*.js" },
+      };
+      writeFileSync(join(root, "external.ts"), "export const external = 1;\n");
+      symlinkSync(join(root, "external.ts"), join(pkg.dir, "src", "escape.ts"));
+      writeFileSync(
+        join(pkg.dir, "package.json"),
+        JSON.stringify({ name: pkg.name, type: "module", ...pkg.manifest }),
+      );
+      pkg.sourceEdges = [{ file: "packages/provider/src/index.ts", specifier: "#src/escape.ts" }];
+      expect(moduleResolutionPolicyErrors(root, packages).join("\n")).toContain(
+        "source escapes package src",
+      );
+    }));
   test("accepts export based source resolution without prior dist", () =>
     fixture((root, packages) => {
       expect(moduleResolutionPolicyErrors(root, packages)).toEqual([]);
@@ -136,6 +223,27 @@ describe("moduleResolutionPolicyErrors", () => {
         }),
       );
       expect(moduleResolutionPolicyErrors(root, packages)).toEqual([]);
+    }));
+
+  test("rejects a private alias duplicated in TypeScript paths", () =>
+    fixture((root, packages) => {
+      writeFileSync(
+        join(packages[0].dir, "tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            target: "ESNext",
+            module: "NodeNext",
+            moduleResolution: "NodeNext",
+            noEmit: true,
+            customConditions: ["bun"],
+            paths: { "#src/*": ["src/*"] },
+          },
+          include: ["src"],
+        }),
+      );
+      expect(moduleResolutionPolicyErrors(root, packages).join("\n")).toContain(
+        "private paths alias is forbidden",
+      );
     }));
 
   test("rejects an alias in the tooling CLI profile", () =>

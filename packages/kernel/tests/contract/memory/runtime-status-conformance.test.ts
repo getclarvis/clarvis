@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { HostedRunRef, KernelTransport, RuntimeStatus } from "@clarvis/protocol";
-import { decodeHostedRegistryState } from "../../../src/hosting/state.ts";
-import { createLocalHostClient } from "../../../src/transport/local-host-client.ts";
+import { decodeHostedRegistryState } from "#src/hosting/state.ts";
+import { createLocalHostClient } from "#src/transport/local-host-client.ts";
 
 function persisted(runtime: unknown) {
   const ref: HostedRunRef = {

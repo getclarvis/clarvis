@@ -10,7 +10,7 @@ import {
   marketplaceInstallSource,
   OFFICIAL_MARKETPLACE_URL,
   type MarketplaceListing,
-} from "../../src/adapters/marketplace.ts";
+} from "#src/adapters/marketplace.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const roots: string[] = [];

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { decideRecovery, type MemoryJournalRecord } from "../../src/journal.ts";
+import { decideRecovery, type MemoryJournalRecord } from "#src/journal.ts";
 
 const LEAF = "infra/bun/MEMORY.md";
 

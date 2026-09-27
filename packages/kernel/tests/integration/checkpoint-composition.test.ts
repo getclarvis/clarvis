@@ -8,7 +8,7 @@ import { AiSdkAdapter } from "@clarvis/llm/adapter";
 import { createFilePlanRepository, createPlanStore, type PlanDocument } from "@clarvis/plan";
 import { globalPaths } from "@clarvis/paths";
 import type { RunEvent } from "@clarvis/protocol";
-import { createFileKernel, type FileKernel } from "../../src/file-kernel.ts";
+import { createFileKernel, type FileKernel } from "#src/file-kernel.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

@@ -19,7 +19,7 @@ import {
   removeWorktreeCheckout,
   runBootstrapGit,
   worktreeIsClean,
-} from "../../src/bootstrap/worktree.ts";
+} from "#src/bootstrap/worktree.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const roots: string[] = [];

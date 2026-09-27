@@ -5,7 +5,7 @@ import {
   createElicitBridge,
   MAX_ELICIT_WINDOW_MS,
   type ElicitWindowRuntime,
-} from "../../src/runs/elicit-bridge.ts";
+} from "#src/runs/elicit-bridge.ts";
 
 /** Controllable monotonic clock and scheduler, so no test waits on wall time. */
 function fakeWindowRuntime(): {

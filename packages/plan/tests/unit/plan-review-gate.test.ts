@@ -3,7 +3,7 @@ import {
   buildPlanReviewAsk,
   buildPlanReviewElicitParams,
   mapPlanReviewAnswer,
-} from "../../src/capability/review-gate.ts";
+} from "#src/capability/review-gate.ts";
 import type { ComputeClock, ComputeRegion } from "@clarvis/capability";
 import {
   ElicitTimeoutError,

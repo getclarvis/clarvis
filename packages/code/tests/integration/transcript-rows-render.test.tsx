@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { TestRecorder } from "@opentui/core/testing";
-import { applyEvent } from "../../src/adapters/store.ts";
+import { applyEvent } from "#src/adapters/store.ts";
 import {
   transcriptExplorationEvents,
   transcriptToolEvents,

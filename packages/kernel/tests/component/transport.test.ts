@@ -1,4 +1,4 @@
-import { CLARVIS_WIRE_VERSION } from "../../src/transport/wire.ts";
+import { CLARVIS_WIRE_VERSION } from "#src/transport/wire.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "bun:test";
@@ -17,8 +17,8 @@ import {
   createLoopbackTransport,
   connectKernelClient,
   WIRE_METHODS,
-} from "../../src/index.ts";
-import { createMemoryConfigStore } from "../../src/config.ts";
+} from "#src/index.ts";
+import { createMemoryConfigStore } from "#src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 import { memorySessionStore, memoryWorkflowStore } from "../helpers/memory-kernel-stores.ts";
 

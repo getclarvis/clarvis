@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "bun:test";
 import { resolveConfig } from "@clarvis/skills";
-import { StartupError } from "../../src/config.ts";
+import { StartupError } from "#src/config.ts";
 import { cleanup, makeWorkspace } from "../helpers/fixtures.ts";
 import { recordingLogger } from "../helpers/logging.ts";
 

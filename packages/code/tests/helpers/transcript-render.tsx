@@ -1,12 +1,12 @@
 import { createRoot, createSignal } from "solid-js";
 import { createMutable } from "solid-js/store";
 import type { Renderable, ScrollBoxRenderable } from "@opentui/core";
-import type { ActivityStore } from "../../src/adapters/activity-store.ts";
-import { createTranscriptStore } from "../../src/adapters/store.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { TranscriptRegion } from "../../src/views/app/TranscriptRegion.tsx";
-import type { TranscriptViewportHandle as TranscriptViewportHandle } from "../../src/views/transcript/TranscriptViewport.tsx";
-import { createTranscriptState } from "../../src/views/transcript-state.ts";
+import type { ActivityStore } from "#src/adapters/activity-store.ts";
+import { createTranscriptStore } from "#src/adapters/store.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { TranscriptRegion } from "#src/views/app/TranscriptRegion.tsx";
+import type { TranscriptViewportHandle as TranscriptViewportHandle } from "#src/views/transcript/TranscriptViewport.tsx";
+import { createTranscriptState } from "#src/views/transcript-state.ts";
 import { createFakeKeymap } from "./fake-keymap.ts";
 import { openRender } from "./tracked-render.ts";
 

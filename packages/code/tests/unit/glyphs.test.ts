@@ -6,7 +6,7 @@ import {
   glyph,
   glyphColWidth,
   GLYPHS,
-} from "../../src/theme/glyphs.ts";
+} from "#src/theme/glyphs.ts";
 
 afterEach(() => applyAsciiMode(false));
 

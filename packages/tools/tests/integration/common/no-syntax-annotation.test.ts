@@ -12,7 +12,7 @@
  * `specs/cross-cutting/test-architecture.md` rules out.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { contentText, createAgentTools, type AgentTools } from "../../../src/index.ts";
+import { contentText, createAgentTools, type AgentTools } from "#src/index.ts";
 import { cleanup, makeWorkspace, write } from "../../helpers/fixtures.ts";
 
 /** The content that used to produce `warning: typescript syntax error …`. */

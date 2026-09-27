@@ -7,12 +7,12 @@ import {
   teeSink,
   type TranscriptNode,
   type TranscriptStore,
-} from "../../src/adapters/store.ts";
+} from "#src/adapters/store.ts";
 import {
   ACTIVITY_SUBAGENT_SUMMARIES_MAX,
   ACTIVITY_SUBAGENT_SUMMARY_MAX_CHARS,
   createActivityStore,
-} from "../../src/adapters/activity-store.ts";
+} from "#src/adapters/activity-store.ts";
 import type { FoldFixtureNode } from "../helpers/transcript-fixtures.ts";
 
 const ev = runEvent;

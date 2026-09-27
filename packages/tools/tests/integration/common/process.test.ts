@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
-import { killTree, ownProcessGroup } from "../../../src/lib/process.ts";
+import { killTree, ownProcessGroup } from "#src/lib/process.ts";
 
 const DEAD_PID = 2_147_480_000;
 

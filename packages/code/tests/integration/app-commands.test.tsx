@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 // Bun 1.4 omits this module's LCOV record when its first load is the command's lazy import.
-import "../../src/views/config/ProvidersPanel.tsx";
+import "#src/views/config/ProvidersPanel.tsx";
 import { createRoot } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
 import {
@@ -8,21 +8,21 @@ import {
   type CommandEffects,
   type CommandUi,
   type Commands,
-} from "../../src/keys/commands.ts";
+} from "#src/keys/commands.ts";
 import {
   recomposeSelectedPlugin,
   registerAppCommands,
   selectedPluginLifecycleBlock,
   type AppCommandDeps,
-} from "../../src/app/commands.tsx";
-import { registerProvidersCommands } from "../../src/features/providers/commands.ts";
-import { registerAgentsCommands } from "../../src/features/agents/commands.ts";
-import { readEnvView } from "../../src/adapters/agent-files.ts";
-import type { SettingsAdapter } from "../../src/adapters/settings.ts";
-import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
-import type { AgentsStore } from "../../src/adapters/agents-store.ts";
-import type { Interaction } from "../../src/keys/interaction.ts";
-import { createViewHost } from "../../src/views/config/view-host.tsx";
+} from "#src/app/commands.tsx";
+import { registerProvidersCommands } from "#src/features/providers/commands.ts";
+import { registerAgentsCommands } from "#src/features/agents/commands.ts";
+import { readEnvView } from "#src/adapters/agent-files.ts";
+import type { SettingsAdapter } from "#src/adapters/settings.ts";
+import type { CodeConfigStore } from "#src/adapters/code-config.ts";
+import type { AgentsStore } from "#src/adapters/agents-store.ts";
+import type { Interaction } from "#src/keys/interaction.ts";
+import { createViewHost } from "#src/views/config/view-host.tsx";
 import type {
   ExtensionProfileService,
   PluginRef,
@@ -31,16 +31,16 @@ import type {
   ResolvedExtensionProfile,
   SkillsService,
 } from "@clarvis/protocol";
-import { TOKEN_ORDER } from "../../src/theme/model.ts";
+import { TOKEN_ORDER } from "#src/theme/model.ts";
 import { fakeDebugSession } from "../helpers/fake-debug-session.ts";
-import { SUBAGENT_ORDER } from "../../src/theme/tokens.ts";
+import { SUBAGENT_ORDER } from "#src/theme/tokens.ts";
 import { globalPaths, workspacePaths } from "@clarvis/kernel/paths";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
-import { Help } from "../../src/views/overlays/Help.tsx";
-import { DeniedActionPrompt } from "../../src/views/overlays/DeniedActionPrompt.tsx";
+import { Help } from "#src/views/overlays/Help.tsx";
+import { DeniedActionPrompt } from "#src/views/overlays/DeniedActionPrompt.tsx";
 
 async function waitUntil(predicate: () => boolean, maxIters = 40): Promise<void> {
   for (let i = 0; i < maxIters && !predicate(); i++) await Bun.sleep(0);

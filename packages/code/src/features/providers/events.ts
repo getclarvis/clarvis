@@ -1,8 +1,8 @@
-import { glyph } from "../../theme/glyphs.ts";
-import { errorText } from "../../adapters/errors.ts";
-import type { FieldIssue } from "../../adapters/settings.ts";
-import type { KeySource } from "../../adapters/provider-secrets.ts";
-import type { Notice } from "../../ui/notice.ts";
+import { glyph } from "#src/theme/glyphs.ts";
+import { errorText } from "#src/adapters/errors.ts";
+import type { FieldIssue } from "#src/adapters/settings.ts";
+import type { KeySource } from "#src/adapters/provider-secrets.ts";
+import type { Notice } from "#src/ui/notice.ts";
 
 /** Structured events emitted by the Providers controller. */
 export type ProvidersEvent =

@@ -6,11 +6,11 @@ import {
   AGENT_STEER_TOOL,
   AGENT_STOP_TOOL,
   AGENTS_UNFINISHED_CODE,
-} from "../../src/runtime/capabilities/agents.ts";
-import { fakeAgentBuildContext, fakeAgentScope } from "../../src/runtime/capabilities/testing.ts";
+} from "#src/runtime/capabilities/agents.ts";
+import { fakeAgentBuildContext, fakeAgentScope } from "#src/runtime/capabilities/testing.ts";
 import { createAgentRegistry, type AgentRegistry, type AgentsLimits } from "@clarvis/supervision";
-import type { HandlerVerdict } from "../../src/runtime/loop/loop-contract.ts";
-import type { FakeAgentBuildContext } from "../../src/runtime/capabilities/testing.ts";
+import type { HandlerVerdict } from "#src/runtime/loop/loop-contract.ts";
+import type { FakeAgentBuildContext } from "#src/runtime/capabilities/testing.ts";
 import type { AgentLoopContribution } from "@clarvis/capability";
 import type { AgentRegistration } from "@clarvis/capability";
 

@@ -18,14 +18,14 @@ import {
   releaseAssetName,
   releaseRuntimeExecutableName,
   releaseTarget,
-} from "../../src/update-contract.ts";
+} from "#src/update-contract.ts";
 import {
   containsInlineSourceMap,
   isReleaseSourceMapPath,
   parseReleaseManifest,
   restoreReleaseModes,
   verifyReleaseTree,
-} from "../../src/update/release-manifest.ts";
+} from "#src/update/release-manifest.ts";
 import { createSmokeFixture } from "../artifact/isolation.ts";
 import { bootAndObserve, readable } from "../artifact/pty.ts";
 import { APP_READY_MARKER } from "../artifact/markers.ts";

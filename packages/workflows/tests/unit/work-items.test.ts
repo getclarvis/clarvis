@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { WORKFLOW_LIMITS } from "../../src/limits.ts";
-import { buildRunWorkItemsTool, toWorkItem, workItemBrief } from "../../src/work-items.ts";
+import { WORKFLOW_LIMITS } from "#src/limits.ts";
+import { buildRunWorkItemsTool, toWorkItem, workItemBrief } from "#src/work-items.ts";
 
 const VALID = {
   id: "read-parser",

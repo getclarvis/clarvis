@@ -4,8 +4,8 @@ import {
   memoryNoticeText,
   progressStatusText,
   runStripText,
-} from "../../src/features/run/status-presenter.ts";
-import type { MemoryIngestNotice, RunProgress } from "../../src/adapters/run-types.ts";
+} from "#src/features/run/status-presenter.ts";
+import type { MemoryIngestNotice, RunProgress } from "#src/adapters/run-types.ts";
 
 function progress(over: Partial<RunProgress>): RunProgress {
   return { label: "", counter: 0, ...over };

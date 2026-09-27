@@ -1,4 +1,4 @@
-import type { GoalFormulationResult } from "../../src/index.ts";
+import type { GoalFormulationResult } from "#src/index.ts";
 
 export interface GoalFormulationCorpusCase {
   name: string;

@@ -8,8 +8,8 @@ import {
 import { createPlanStore, type PlanStore } from "@clarvis/plan";
 import { createInMemoryPlanRepository } from "@clarvis/plan/testing";
 
-import { createPlansService } from "../../src/plans/plans-service.ts";
-import { createPlanningRuntime } from "../../src/plans/planning-runtime.ts";
+import { createPlansService } from "#src/plans/plans-service.ts";
+import { createPlanningRuntime } from "#src/plans/planning-runtime.ts";
 
 const REQUEST = {
   messages: [{ role: "user", content: "task" }],

@@ -59,7 +59,7 @@
     "check:source-policy": "bun run tooling/checks/source-policy.ts",
     "check:graph": "bun run tooling/checks/package-graph.ts --check-doc",
     "check:specs": "bun run tooling/checks/spec-hygiene.ts",
-    "knip": "knip",
+    "knip": "knip --tsConfig tsconfig.build.json",
     "format": "bun --workspaces format && prettier --write \"tooling/**/*.{ts,js}\" \".github/workflows/*.yml\"",
     "format:check": "bun --workspaces --parallel format:check && prettier --check \"tooling/**/*.{ts,js}\" \".github/workflows/*.yml\"",
     "check:pre-commit": "bun run format:check && bun run build && bun run typecheck && bun run lint:eslint && bun run lint:intent && bun run knip && bun run test:coverage",

@@ -3,12 +3,9 @@ import { mkdtemp, open, readFile, readdir, rm, stat, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fsyncDir } from "@clarvis/paths";
-import { createHostedProjection, openHostedProjection } from "../../src/hosting/projection.ts";
-import {
-  openProjectionStorage,
-  removeProjectionStorage,
-} from "../../src/hosting/projection-storage.ts";
-import { readHostedSnapshot } from "../../src/transport/hosted-snapshot.ts";
+import { createHostedProjection, openHostedProjection } from "#src/hosting/projection.ts";
+import { openProjectionStorage, removeProjectionStorage } from "#src/hosting/projection-storage.ts";
+import { readHostedSnapshot } from "#src/transport/hosted-snapshot.ts";
 
 const roots: string[] = [];
 afterEach(async () => {

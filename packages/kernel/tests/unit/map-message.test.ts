@@ -3,7 +3,7 @@ import {
   engineMessagesToProto,
   protoMessagesToEngine,
   protoSteerToEngineContent,
-} from "../../src/runs/map-message.ts";
+} from "#src/runs/map-message.ts";
 import type { Message as ProtoMessage } from "@clarvis/protocol";
 
 describe("map-message: engine <-> protocol content", () => {

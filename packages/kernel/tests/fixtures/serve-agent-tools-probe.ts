@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
 import { loadEnv } from "@clarvis/capability";
-import { connectKernelClient, createStdioTransport } from "../../src/index.ts";
-import { serveFileKernelOverStdio } from "../../src/bootstrap.ts";
+import { connectKernelClient, createStdioTransport } from "#src/index.ts";
+import { serveFileKernelOverStdio } from "#src/bootstrap.ts";
 
 export const SERVE_AGENT_TOOLS_PROBE_PATH = fileURLToPath(import.meta.url);
 

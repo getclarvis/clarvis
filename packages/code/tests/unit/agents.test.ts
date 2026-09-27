@@ -1,12 +1,7 @@
 import { expect, test } from "bun:test";
 import { grantSchema } from "@clarvis/kernel/config";
-import {
-  deriveAgentShape,
-  GRANT_CATALOG,
-  grantBadges,
-  profileView,
-} from "../../src/adapters/agents.ts";
-import type { ProfileInfo } from "../../src/adapters/run-types.ts";
+import { deriveAgentShape, GRANT_CATALOG, grantBadges, profileView } from "#src/adapters/agents.ts";
+import type { ProfileInfo } from "#src/adapters/run-types.ts";
 
 test("profileView: projects a kernel ProfileInfo (grants/canSpawn/budget travel on it)", () => {
   const profile: ProfileInfo = {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import type { RunEvent } from "@clarvis/protocol";
-import { deriveRunEventSpan } from "../../src/runs/run-event-span.ts";
+import { deriveRunEventSpan } from "#src/runs/run-event-span.ts";
 
 describe("deriveRunEventSpan (RunEvent → span)", () => {
   it("scopes run start/end to the run span", () => {

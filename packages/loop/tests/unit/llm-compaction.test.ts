@@ -11,8 +11,8 @@ import {
   createLiveContext,
   liveMessageChars,
   type CompactionConfig,
-} from "../../src/runtime/context/index.ts";
-import { createTokenLedger } from "../../src/runtime/budget/index.ts";
+} from "#src/runtime/context/index.ts";
+import { createTokenLedger } from "#src/runtime/budget/index.ts";
 import {
   buildCompactionMessages,
   compactionOutputTokens,
@@ -20,7 +20,7 @@ import {
   renderSpan,
   runCompaction,
   summarizeContext,
-} from "../../src/runtime/context/index.ts";
+} from "#src/runtime/context/index.ts";
 
 const ON: CompactionConfig = {
   enabled: true,

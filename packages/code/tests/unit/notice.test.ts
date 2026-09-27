@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { NOTICE_TONES, type Notice } from "../../src/ui/notice.ts";
+import { NOTICE_TONES, type Notice } from "#src/ui/notice.ts";
 
 test("NOTICE_TONES is the complete presentation-neutral severity vocabulary", () => {
   const notice: Notice = { message: "saved", tone: NOTICE_TONES[1] };

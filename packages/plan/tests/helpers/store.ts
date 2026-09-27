@@ -1,5 +1,5 @@
-import { createPlanStore, type PlanRepository, type PlanStore } from "../../src/index.ts";
-import { createInMemoryPlanRepository } from "../../src/testing.ts";
+import { createPlanStore, type PlanRepository, type PlanStore } from "#src/index.ts";
+import { createInMemoryPlanRepository } from "#src/testing.ts";
 
 /** An in-memory repository whose source can be changed as an out-of-band edit. */
 export interface EditablePlanRepository extends PlanRepository {

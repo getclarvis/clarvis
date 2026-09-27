@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { kernelError } from "../../src/core/errors.ts";
-import { memoryKeepsHostAlive } from "../../src/hosting/memory-activity.ts";
-import { memoryError } from "../../src/memory/memory-errors.ts";
+import { kernelError } from "#src/core/errors.ts";
+import { memoryKeepsHostAlive } from "#src/hosting/memory-activity.ts";
+import { memoryError } from "#src/memory/memory-errors.ts";
 
 test("absent and disabled memory permit idle retirement", async () => {
   expect(await memoryKeepsHostAlive(undefined)).toBe(false);

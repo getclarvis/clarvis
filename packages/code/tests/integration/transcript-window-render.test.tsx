@@ -157,6 +157,109 @@ test("streaming height shrink while following the tail does not pause follow", a
   }
 });
 
+test("a cancelled long response keeps later turns visible at the tail", async () => {
+  const fixture = await openTranscript(120, 32);
+  try {
+    fixture.setSplit(true);
+    await fixture.frames();
+    const interrupted = fixture.store.openRun("interrupted");
+    fixture.store.appendUserMessage("Write a long response.");
+    applyEvent(interrupted, { type: "run_started", at: 1 }, "live");
+    applyEvent(
+      interrupted,
+      { type: "iteration_started", agent: "lead", iteration: 1, model: "fixture", at: 2 },
+      "live",
+    );
+    applyEvent(
+      interrupted,
+      {
+        type: "text_delta",
+        agent: "lead",
+        iteration: 1,
+        channel: "text",
+        text: Array.from({ length: 100 }, (_, index) => `${index + 1}. Long partial answer.`).join(
+          "\n\n",
+        ),
+        reset: true,
+        at: 3,
+      },
+      "live",
+    );
+    await fixture.frames(5);
+    applyEvent(
+      interrupted,
+      { type: "run_ended", status: "cancelled", at: 4, reason: "cancelled" },
+      "live",
+    );
+    interrupted.beginReconcile();
+    applyEvent(interrupted, { type: "run_started", at: 1 }, "replay");
+    applyEvent(
+      interrupted,
+      { type: "iteration_started", agent: "lead", iteration: 1, model: "fixture", at: 2 },
+      "replay",
+    );
+    applyEvent(
+      interrupted,
+      { type: "run_ended", status: "cancelled", at: 4, reason: "cancelled" },
+      "replay",
+    );
+    interrupted.endReconcile();
+    interrupted.complete();
+    fixture.store.appendUserMessage("Recover.");
+    const recovered = fixture.store.openRun("recovered");
+    applyEvent(recovered, { type: "run_started", at: 5 }, "live");
+    applyEvent(
+      recovered,
+      { type: "iteration_started", agent: "lead", iteration: 1, model: "fixture", at: 6 },
+      "live",
+    );
+    applyEvent(
+      recovered,
+      {
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        model: "fixture",
+        at: 7,
+        response: "RECOVERED_AFTER_CANCEL",
+        response_phase: "final_answer",
+        input_tokens: 1,
+        output_tokens: 1,
+      },
+      "live",
+    );
+    applyEvent(
+      recovered,
+      { type: "run_ended", status: "completed", at: 8, reason: "completed" },
+      "live",
+    );
+    recovered.complete();
+    await fixture.frames(8);
+    expect(fixture.history().snapshot().followingTail).toBe(true);
+    expect(fixture.rendered.captureCharFrame()).toContain("RECOVERED_AFTER_CANCEL");
+  } finally {
+    fixture.rendered.renderer.destroy();
+  }
+});
+
+test("native scroll correction during tail following does not turn into reader navigation", async () => {
+  const fixture = await openTranscript(80, 24);
+  try {
+    for (let index = 0; index < 60; index++) fixture.store.appendNotice(`CORRECTION_${index}`);
+    await fixture.frames();
+    const box = fixture.scrollbox();
+    expect(box.scrollTop).toBeGreaterThan(6);
+    box.scrollTo({ x: 0, y: box.scrollTop - 6 });
+    await fixture.frames();
+    fixture.store.appendNotice("AFTER_NATIVE_CORRECTION");
+    await fixture.frames();
+    expect(fixture.history().snapshot().followingTail).toBe(true);
+    expect(fixture.rendered.captureCharFrame()).toContain("AFTER_NATIVE_CORRECTION");
+  } finally {
+    fixture.rendered.renderer.destroy();
+  }
+});
+
 test("prepend plus concurrent append preserves row and viewport-relative offset", async () => {
   const fixture = await openTranscript();
   try {

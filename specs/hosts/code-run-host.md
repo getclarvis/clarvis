@@ -36,6 +36,14 @@ activity sinks inside one Solid batch. `runManaged` releases interactive ownersh
 reconciles the stored run, then seals terminal content through `TranscriptRunSink.complete`; a failed
 stored read or exceptional settlement supplies an explicit degraded completion instead of leaving
 a terminal record pending. Session restore closes each replayed sink through the same boundary.
+An available stored run reconciles even when its event list is empty. A cancelled trace without
+an assistant response removes the live-only partial stream row from both mutable and sealed
+records; otherwise that stale row can hide later turns until the session reloads. A missing stored
+run preserves live events and uses degraded completion instead. Production: `replayRunEvents` in
+`packages/code/src/run-host.ts` and `endReconcile` in `packages/code/src/adapters/store.ts`.
+Test: `a cancelled run trace without a response removes its live-only partial response` in
+`packages/code/tests/component/run-host.test.ts` and `a cancelled long response keeps later turns
+visible at the tail` in `packages/code/tests/integration/transcript-window-render.test.tsx`.
 
 The recurring problem the code solves is **ownership across asynchrony**. A run's events, its
 `done` envelope, its stream close, its persisted trace, its post-run memory-ingest notice, a user's

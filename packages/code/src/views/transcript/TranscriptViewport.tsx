@@ -326,7 +326,12 @@ export function TranscriptViewport(props: {
       correcting = false;
     } else if (element.scrollTop !== lastTop) {
       const previous = lastTop;
-      if (current.window.reader.mode !== "tail" || !atBottom()) pause();
+      if (current.window.reader.mode === "tail") {
+        if (!atBottom()) {
+          element.scrollTo({ x: 0, y: maximum() });
+          element.stickyScroll = true;
+        }
+      } else pause();
       if (element.scrollTop <= 1 && previous > 1 && current.window.start > 0) page(-1);
       else if (atBottom() && element.scrollTop > previous) {
         if (current.window.end < current.window.ids.length) page(1);

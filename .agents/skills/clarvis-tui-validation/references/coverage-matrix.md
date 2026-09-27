@@ -38,29 +38,29 @@ passing lower-level suite does not establish execution of its E2E requirements.
 
 ## Composer, autocomplete, attachments, and local shell
 
-| ID      | Scenario                            | Minimum proof                                                                                                         |
-| ------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `IN-01` | Submit and multiline editing        | Enter sends; Shift+Enter and Ctrl+J insert newlines; Unicode, paste, selection and cursor edits are preserved         |
-| `IN-02` | Wrapping and composer growth        | Soft wraps, explicit newlines and long unbroken tokens keep the draft prefix visible within bounded height            |
-| `IN-03` | Slash completion                    | Bare `/`, fuzzy search, argument completion, subcommands, accept, dismiss and scrolling remain stable                 |
-| `IN-04` | Workspace mentions                  | `@path` completion, spaces, missing paths, confined resolution and large workspaces behave predictably                |
-| `IN-05` | Image input                         | Clipboard and `@path` images enforce count, per-item and aggregate limits before run or steer starts                  |
-| `IN-06` | Local `!` command                   | Success, nonzero exit, spawn failure, cancellation, long output and stale completion after session switch are correct |
-| `IN-07` | Steering while a run starts or runs | Input waits for the handle, reaches the intended run once, and leaves steer mode immediately after settlement         |
-| `IN-08` | Draft survival                      | Opening/closing overlays, resize, reconnect, model refusal and recoverable errors do not lose or duplicate the draft  |
+| ID      | Scenario                            | Minimum proof                                                                                                                                                               |
+| ------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IN-01` | Submit and multiline editing        | Enter sends; Shift+Enter and Ctrl+J insert newlines; Unicode, paste, selection and cursor edits are preserved                                                               |
+| `IN-02` | Wrapping and composer growth        | Soft wraps, explicit newlines and long unbroken tokens keep the draft prefix visible within bounded height                                                                  |
+| `IN-03` | Slash completion                    | Bare `/`, fuzzy search, argument completion, subcommands, accept, dismiss and scrolling remain stable                                                                       |
+| `IN-04` | Workspace mentions                  | `@path` completion, spaces, missing paths, confined resolution and large workspaces behave predictably                                                                      |
+| `IN-05` | Image input                         | Clipboard and `@path` images enforce count, per-item and aggregate limits before run or steer starts                                                                        |
+| `IN-06` | Local `!` command                   | Success after a model turn persists and permits the next turn; nonzero exit, spawn failure, cancellation, long output and stale completion after session switch are correct |
+| `IN-07` | Steering while a run starts or runs | Input waits for the handle, reaches the intended run once, and leaves steer mode immediately after settlement                                                               |
+| `IN-08` | Draft survival                      | Opening/closing overlays, resize, reconnect, model refusal and recoverable errors do not lose or duplicate the draft                                                        |
 
 ## Navigation, keyboard, pointer, and responsive layout
 
-| ID       | Scenario                        | Minimum proof                                                                                                                      |
-| -------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `NAV-01` | Escape hierarchy                | Autocomplete, modal, picker, detail, hub and page dismiss/back immediately in the correct order                                    |
-| `NAV-02` | Escape during async replacement | Escape stays live while preview/install/apply/reconnect/refresh settles; stale completions cannot reopen or mutate newer state     |
-| `NAV-03` | Ctrl+C hierarchy                | Active work cancellation, repeated quit guard, fatal boot and idle behavior are distinct from Escape                               |
-| `NAV-04` | Focus and retained surfaces     | Opening, closing and returning preserves intended focus and reader position; inactive surfaces consume no input                    |
-| `NAV-05` | Pointer routes                  | Click, wheel, retained rows and full-screen pointer guards match keyboard outcomes without accidental confirmation                 |
-| `NAV-06` | Keyboard Profiles               | Portable, enhanced and manual profiles, diagnostic capture, reset and protected bindings behave in the active terminal environment |
-| `NAV-07` | Resize transitions              | Repeated 200x50, 120x32, 80x24, 60x16 and sub-floor changes do not clip, loop, duplicate owners or lose state                      |
-| `NAV-08` | Theme and glyph modes           | Dark/light/auto, themed/terminal background, color-depth fallback, contrast warnings, Unicode and `--ascii` are coherent           |
+| ID       | Scenario                        | Minimum proof                                                                                                                                                                                         |
+| -------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NAV-01` | Escape hierarchy                | Autocomplete, modal, picker, detail, hub and page dismiss/back immediately in the correct order                                                                                                       |
+| `NAV-02` | Escape during async replacement | Escape stays live while preview/install/apply/reconnect/refresh settles; stale completions cannot reopen or mutate newer state                                                                        |
+| `NAV-03` | Ctrl+C hierarchy                | Active work cancellation, repeated quit guard, fatal boot and idle behavior are distinct from Escape; after a cancelled long response, a new turn appears at the live tail without reopening Sessions |
+| `NAV-04` | Focus and retained surfaces     | Opening, closing and returning preserves intended focus and reader position; inactive surfaces consume no input                                                                                       |
+| `NAV-05` | Pointer routes                  | Click, wheel, retained rows and full-screen pointer guards match keyboard outcomes without accidental confirmation                                                                                    |
+| `NAV-06` | Keyboard Profiles               | Portable, enhanced and manual profiles, diagnostic capture, reset and protected bindings behave in the active terminal environment                                                                    |
+| `NAV-07` | Resize transitions              | Repeated 200x50, 120x32, 80x24, 60x16 and sub-floor changes do not clip, loop, duplicate owners or lose state                                                                                         |
+| `NAV-08` | Theme and glyph modes           | Dark/light/auto, themed/terminal background, color-depth fallback, contrast warnings, Unicode and `--ascii` are coherent                                                                              |
 
 ## Public commands and settings
 

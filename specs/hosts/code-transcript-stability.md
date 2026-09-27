@@ -113,14 +113,16 @@ Up to 80 rows mount in a short projection. Longer projections normally mount 40 
 20-row paging and at most 80 rows during an anchor-preserving transition. Active off-window tools
 continue as data, not hidden native owners.
 
-Scrolling away from the tail pauses follow. New data does not move the anchor. A content-height
-change that leaves the reader at the native bottom — Markdown wrap or settlement, viewport culling,
-or a shrinking tool body — is not scrolling away and keeps tail follow. Reaching a window
+Explicit reader navigation away from the tail pauses follow. New data does not move the anchor.
+Native scroll-position corrections during Markdown wrap or settlement, viewport culling, or a
+shrinking tool body do not change reader intent; while following, the viewport restores the native
+bottom even if a transient layout frame lands above it. Reaching a window
 edge reveals adjacent retained rows; it is not the end of the conversation while newer rows are
 hidden. End/return-to-tail explicitly selects the tail and restores native sticky behavior.
 Repeated unchanged frames at the upper edge are not new wheel intent.
 Production: `TranscriptViewport`.
-Test: `transcript-window-render.test.tsx`, streaming height shrink and wheel-intent cases.
+Test: `transcript-window-render.test.tsx`, cancelled-response continuation, native correction,
+streaming height shrink and wheel-intent cases.
 
 A transaction captures semantic intent, updates residence/content/width, then compensates the same
 row after OpenTUI's native layout frame. The callback checks its projection and generation token.

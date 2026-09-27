@@ -334,11 +334,10 @@ function composerText(content: MessageContent): string {
 }
 
 function replayRunEvents(sink: RunSink, stored: RunDetail | null): void {
-  const events = stored?.events;
-  if (!events || events.length === 0) return;
+  if (stored === null) return;
   batch(() => {
     sink.beginReconcile();
-    for (const event of events) applyEvent(sink, event, "replay");
+    for (const event of stored.events) applyEvent(sink, event, "replay");
     sink.endReconcile();
   });
 }

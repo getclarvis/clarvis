@@ -8,6 +8,7 @@ import { pauseGoalForPolicy } from "@clarvis/goal";
 import { recoverGoalSettlementSession } from "../goals/settlement.ts";
 import { goalStateFromSession, goalStateToDto } from "../goals/session-state.ts";
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { HostedConversationAuthority } from "./admission.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 
@@ -185,11 +186,11 @@ export function createHostedSessionCoordinator(
       if (
         current !== null &&
         (current.agent_instance_id !== input.agent_instance_id ||
-          JSON.stringify(current.turns) !== JSON.stringify(input.turns) ||
-          JSON.stringify(current.totals) !== JSON.stringify(input.totals) ||
-          JSON.stringify(current.goal_state) !== JSON.stringify(input.goal_state) ||
+          !isDeepStrictEqual(current.turns, input.turns) ||
+          !isDeepStrictEqual(current.totals, input.totals) ||
+          !isDeepStrictEqual(current.goal_state, input.goal_state) ||
           (input.operator_intents !== undefined &&
-            JSON.stringify(current.operator_intents) !== JSON.stringify(input.operator_intents)) ||
+            !isDeepStrictEqual(current.operator_intents, input.operator_intents)) ||
           (input.operator_sequence !== undefined &&
             current.operator_sequence !== input.operator_sequence))
       )

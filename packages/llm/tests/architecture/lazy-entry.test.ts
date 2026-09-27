@@ -60,8 +60,8 @@ function staticallyReachable(entry: string): Set<string> {
 }
 
 /**
- * The package's two entries exist so that importing a decorator does not load
- * four provider SDKs. Nothing else can see that property: adding
+ * The lightweight entries exist so that importing a decorator or metrics
+ * selection does not load the provider SDKs. Nothing else can see that property: adding
  * `export * from "./ai-sdk-adapter.ts"` to `src/index.ts` breaks it with a green
  * typecheck, a green lint and a green suite.
  */
@@ -95,6 +95,18 @@ describe("the main entry stays free of the provider SDKs", () => {
   it("confirms the adapter entry is the one that does load them", () => {
     const viaAdapter = staticallyReachable(join(SRC, "adapter.ts"));
     expect([...viaAdapter].some((f) => f.endsWith("ai-sdk-adapter.ts"))).toBe(true);
+  });
+
+  it("keeps the metrics entry free of provider SDKs", () => {
+    const viaMetrics = staticallyReachable(join(SRC, "metrics.ts"));
+    expect([...viaMetrics].some((f) => f.endsWith("ai-sdk-adapter.ts"))).toBe(false);
+    expect(
+      [...viaMetrics].filter((file) =>
+        staticSpecifiers(file).some(
+          (specifier) => specifier === "ai" || specifier.startsWith("@ai-sdk/"),
+        ),
+      ),
+    ).toEqual([]);
   });
 });
 

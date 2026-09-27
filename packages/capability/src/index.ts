@@ -326,8 +326,13 @@ export type {
   ExtensionAdmissionSnapshot,
   ExtensionAdmissionOptions,
 } from "./extension-admission.ts";
-export { bestEffort, detachObserved, suppressSecondaryRejection } from "./tasks.ts";
-export type { TaskFailure, TaskObservation } from "./tasks.ts";
+export {
+  bestEffort,
+  createTaskObservationScope,
+  detachObserved,
+  suppressSecondaryRejection,
+} from "./tasks.ts";
+export type { TaskFailure, TaskObservation, TaskObservationScope } from "./tasks.ts";
 export {
   BUILTIN_TRACE_KINDS,
   isBuiltinTraceEntry,

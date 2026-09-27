@@ -3,7 +3,12 @@ import { lstat, mkdir, realpath, unlink } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import { bestEffort, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  bestEffort,
+  NOOP_LOGGER,
+  type Logger,
+} from "@clarvis/capability";
 import {
   acquireLocalLease,
   DIR_MODE,
@@ -157,6 +162,7 @@ export async function acquireLocalHostState(
   policyId: string,
   logger: Logger = NOOP_LOGGER,
 ): Promise<LocalHostState | null> {
+  const observationScope = createTaskObservationScope();
   if (artifactId.length === 0 || artifactId.length > 256)
     throw kernelError("invalid_request", "local host artifact identity is invalid");
   if (!/^[a-f0-9]{64}$/u.test(policyId))
@@ -278,7 +284,11 @@ export async function acquireLocalHostState(
       },
     };
   } catch (error) {
-    await bestEffort(() => lease.release(), { operation: "hosting.lease.release", logger });
+    await bestEffort(() => lease.release(), {
+      scope: observationScope,
+      operation: "hosting.lease.release",
+      logger,
+    });
     throw error;
   }
 }

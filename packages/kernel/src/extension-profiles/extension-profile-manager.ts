@@ -1,30 +1,9 @@
-import {
-  constants,
-  closeSync,
-  existsSync,
-  fstatSync,
-  mkdirSync,
-  openSync,
-  opendirSync,
-  readSync,
-  rmSync,
-  unwatchFile,
-  watchFile,
-} from "node:fs";
-import { createHash, randomUUID } from "node:crypto";
-import { join, relative, sep } from "node:path";
+import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { relative, sep } from "node:path";
 import { z } from "zod";
 import {
-  acquireLocalLeaseSync,
-  DIR_MODE,
-  globalPaths,
-  workspacePaths,
-  workspaceStatePaths,
-  writeFileAtomicSync,
-} from "@clarvis/paths";
-import {
   clarvisSkillRoots,
-  listSkillDirs,
   createAgentSkills,
   hashBoundedFile,
   MAX_SKILL_RESOURCE_FILE_BYTES,
@@ -36,27 +15,22 @@ import {
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import { SYSTEM_DOCS_NAME } from "../skills/system-docs.ts";
 import type {
-  ExtensionProfileApplyResult,
   ExtensionProfileCompositionApplyResult,
   ExtensionProfileCompositionInput,
   ExtensionProfileCompositionPreview,
   ExtensionProfileDefinition,
   ExtensionProfileDefinitionInput,
   ExtensionProfileDefinitionView,
-  ExtensionProfileDelta,
-  ExtensionProfileIssue,
   ExtensionProfileInventory,
   ExtensionProfilePluginRef,
   ExtensionProfilePreview,
   ExtensionProfileRef,
   ExtensionProfileRunRef,
-  ExtensionProfileSelectionOrigin,
   ExtensionProfileSelectionScope,
   ExtensionProfileService,
   ExtensionProfileSkillRef,
   ResolvedExtensionProfile,
   ResolvedExtensionProfilePlugin,
-  ResolvedExtensionProfileSkill,
   Scope,
   WorkspaceTrustVerdict,
 } from "@clarvis/protocol";
@@ -72,21 +46,36 @@ import type {
 } from "../plugins/plugin-contributions.ts";
 import { pluginSkillScanRoots, resolvePluginManifest } from "../plugins/plugin-manifest.ts";
 import { pluginDataDir } from "../plugins/plugin-runtime.ts";
+import {
+  createProfileRepository,
+  documentRevision,
+  assertSelectionTarget,
+  PROFILE_NAME_RE,
+} from "./profile-repository.ts";
+import {
+  extensionProfileId,
+  pluginRefId,
+  fingerprintOf,
+  deltaOf,
+  defaultStandaloneSelection,
+  prepareProfileResolution,
+  resolveProfileData,
+  type SelectedExtensionProfile,
+} from "./profile-resolution.ts";
+export { extensionProfileId } from "./profile-resolution.ts";
+import {
+  createSkillCatalogMonitor,
+  watchSkillPath as defaultWatchSkillPath,
+  type SkillPathWatcher,
+} from "./skill-catalog-monitor.ts";
 
 const BUILTIN_REF: ExtensionProfileRef = { scope: "builtin", name: "default" };
-const MAX_EXTENSION_PROFILE_BYTES = 1024 * 1024;
-const MAX_EXTENSION_PROFILES_PER_SCOPE = 128;
-const MAX_EXTENSION_PROFILE_DIRECTORY_ENTRIES = 256;
 const PREVIEW_TTL_MS = 5 * 60_000;
 const MAX_PREVIEWS = 32;
-const EXTENSION_PROFILE_LOCK_STALE_MS = 30_000;
-const NAME_RE = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$/;
-const GLOBAL_SELECTION_WORKSPACE_ERROR =
-  "a global selection cannot point at a workspace Extension Profile";
 const CLI_SELECTION_MUTATION_ERROR =
   "the active --extension-profile override cannot be changed by this process";
 
-const nameSchema = z.string().regex(NAME_RE, "must be a safe Extension Profile identifier");
+const nameSchema = z.string().regex(PROFILE_NAME_RE, "must be a safe Extension Profile identifier");
 const pluginRefSchema = z
   .object({
     scope: z.enum(["global", "workspace"]),
@@ -169,25 +158,6 @@ const clearOptionsSchema = z.object({ preview_token: z.uuid() }).strict();
 const compositionApplyOptionsSchema = z
   .object({ preview_token: z.uuid(), approve_workspace: z.boolean().optional() })
   .strict();
-const selectionSchema = z
-  .object({
-    schema_version: z.literal(1),
-    extension_profile: extensionProfileRefSchema,
-  })
-  .strict();
-
-interface ReadDocument {
-  raw?: string;
-  revision?: string;
-  missing?: boolean;
-  error?: string;
-}
-
-interface SelectedExtensionProfile {
-  ref: ExtensionProfileRef;
-  origin: ExtensionProfileSelectionOrigin;
-  error?: string;
-}
 
 interface StandaloneInventoryEntry {
   ref: ExtensionProfileSkillRef;
@@ -199,13 +169,6 @@ interface StandaloneInventoryEntry {
 
 interface PluginInventoryEntry {
   view: ResolvedExtensionProfilePlugin;
-}
-
-interface DefinitionCatalog {
-  names?: string[];
-  entries?: number;
-  error?: string;
-  resourceExhausted?: true;
 }
 
 interface PreviewEntry {
@@ -252,11 +215,6 @@ export interface ExtensionProfileSkillDriftNotice {
   path: string;
 }
 
-/** Minimal watcher handle used by the Extension Profile's asynchronous drift monitor. */
-interface SkillPathWatcher {
-  close(): void;
-}
-
 /** File-backed Extension Profile manager options. */
 export interface ExtensionProfileManagerOptions {
   globalDir: string;
@@ -270,21 +228,8 @@ export interface ExtensionProfileManagerOptions {
   onSkillDrift?: (notice: ExtensionProfileSkillDriftNotice) => void;
   /** Injectable watcher seam for deterministic tests. */
   watchSkillPath?: (path: string, onChange: () => void) => SkillPathWatcher;
-}
-
-/** Stable qualified string identity used in traces, sessions and diagnostics. */
-export function extensionProfileId(ref: ExtensionProfileRef): string {
-  return `${ref.scope}:${ref.name}`;
-}
-
-/** Canonical key for one exact plugin installation. */
-function pluginRefId(ref: ExtensionProfilePluginRef): string {
-  return `${ref.scope}:${ref.source}:${ref.name}`;
-}
-
-/** Filesystem-shaped plugin identity for operator-facing diagnostics. */
-function pluginRefLabel(ref: ExtensionProfilePluginRef): string {
-  return `${ref.scope}/${ref.source}/${ref.name}`;
+  /** Test seam for failures between definition, selection and rollback writes. */
+  profileWriteDocument?: (path: string, data: string) => void;
 }
 
 /** Plugins inherited from the workspace rather than installed in an operator-owned inventory. */
@@ -309,65 +254,6 @@ function extensionProfileRef(value: unknown): ExtensionProfileRef {
     throw kernelError("not_found", `unknown builtin Extension Profile '${ref.name}'`);
   }
   return ref;
-}
-
-/** Exact-byte revision used by Extension Profile definition CAS. */
-function documentRevision(bytes: Uint8Array): string {
-  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
-
-/** Compare two qualified references without relying on object identity. */
-function sameRef(left: ExtensionProfileRef, right: ExtensionProfileRef): boolean {
-  return left.scope === right.scope && left.name === right.name;
-}
-
-/** Canonicalize JSON-like data for stable hashing. */
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => [key, canonical(child)]),
-  );
-}
-
-/** SHA-256 over a stable JSON projection. */
-function fingerprintOf(value: unknown): string {
-  return `sha256:${createHash("sha256")
-    .update(JSON.stringify(canonical(value)))
-    .digest("hex")}`;
-}
-
-/** Read one regular file with a hard byte bound and no final symlink traversal. */
-function readBounded(path: string, label: string): ReadDocument {
-  let fd: number | undefined;
-  try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) return { error: `${label} is not a regular file` };
-    if (stat.size > MAX_EXTENSION_PROFILE_BYTES) {
-      return {
-        error: `${label} exceeds the ${String(MAX_EXTENSION_PROFILE_BYTES)}-byte resource limit`,
-      };
-    }
-    const bytes = Buffer.alloc(stat.size);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const read = readSync(fd, bytes, offset, bytes.length - offset, offset);
-      if (read === 0) break;
-      offset += read;
-    }
-    if (offset !== bytes.length) return { error: `${label} changed while it was read` };
-    const raw = bytes.toString("utf8");
-    return { raw, revision: documentRevision(bytes) };
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "ENOTDIR") return { missing: true };
-    return { error: `${label} could not be read: ${(error as Error).message}` };
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
 }
 
 /** Parse a definition and enforce the stricter global-definition scope rule. */
@@ -396,144 +282,9 @@ function parseDefinition(
   return { definition };
 }
 
-/** Resolve an absent definition catalog, optionally materializing its authored global container. */
-function missingDefinitionCatalog(dir: string, materialize: boolean): DefinitionCatalog {
-  if (!materialize) return { names: [], entries: 0 };
-  try {
-    mkdirSync(dir, { recursive: true, mode: DIR_MODE });
-  } catch (error) {
-    return {
-      error: `Extension Profile directory could not be created: ${(error as Error).message}`,
-    };
-  }
-  return definitionNames(dir);
-}
-
-/** List bounded JSON definition names without following entries as directories. */
-function definitionNames(dir: string, materializeMissing = false): DefinitionCatalog {
-  let opened: ReturnType<typeof opendirSync>;
-  try {
-    opened = opendirSync(dir);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return missingDefinitionCatalog(dir, materializeMissing);
-    if (code === "ENOTDIR") return { names: [], entries: 0 };
-    return {
-      error: `Extension Profile directory could not be opened: ${(error as Error).message}`,
-    };
-  }
-  const names: string[] = [];
-  let entries = 0;
-  let scanFailed = false;
-  let scanFailure: unknown;
-  try {
-    for (;;) {
-      const entry = opened.readSync();
-      if (entry === null) break;
-      entries += 1;
-      if (entries > MAX_EXTENSION_PROFILE_DIRECTORY_ENTRIES) {
-        return {
-          error:
-            `Extension Profile directory exceeds the ` +
-            `${String(MAX_EXTENSION_PROFILE_DIRECTORY_ENTRIES)}-entry resource limit`,
-          resourceExhausted: true,
-        };
-      }
-      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-      const name = entry.name.slice(0, -5);
-      if (NAME_RE.test(name)) names.push(name);
-    }
-  } catch (error) {
-    scanFailed = true;
-    scanFailure = error;
-  } finally {
-    opened.closeSync();
-  }
-  if (scanFailed) {
-    const code = (scanFailure as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return missingDefinitionCatalog(dir, materializeMissing);
-    if (code === "ENOTDIR") return { names: [], entries: 0 };
-    return {
-      error: `Extension Profile directory could not be read: ${(scanFailure as Error).message}`,
-    };
-  }
-  if (names.length > MAX_EXTENSION_PROFILES_PER_SCOPE) {
-    return {
-      error:
-        `Extension Profile directory contains more than ` +
-        `${String(MAX_EXTENSION_PROFILES_PER_SCOPE)} definitions`,
-      resourceExhausted: true,
-    };
-  }
-  return { names: names.sort((left, right) => left.localeCompare(right)), entries };
-}
-
-/** Set difference preserving deterministic sorted output. */
-function stringDifference(left: readonly string[], right: readonly string[]): string[] {
-  const rightSet = new Set(right);
-  return [...new Set(left)].filter((value) => !rightSet.has(value)).sort();
-}
-
-/** Exact Extension Profile delta between two resolved snapshots. */
-function deltaOf(
-  current: ResolvedExtensionProfile,
-  target: ResolvedExtensionProfile,
-): ExtensionProfileDelta {
-  const pluginKey = (plugin: ResolvedExtensionProfilePlugin): string => pluginRefId(plugin.ref);
-  const currentPlugins = current.plugins.filter((plugin) => plugin.active);
-  const targetPlugins = target.plugins.filter((plugin) => plugin.active);
-  const currentPluginKeys = new Set(currentPlugins.map(pluginKey));
-  const targetPluginKeys = new Set(targetPlugins.map(pluginKey));
-  const currentSkills = [
-    ...current.standalone_skills
-      .filter((skill) => skill.active)
-      .map((skill) =>
-        extensionProfileId({
-          scope: skill.ref.scope === "user" ? "global" : "workspace",
-          name: `${skill.ref.source}:${skill.ref.name}`,
-        }),
-      ),
-    ...currentPlugins.flatMap((plugin) =>
-      plugin.skills.map((skill) => `plugin:${pluginRefId(plugin.ref)}:${skill}`),
-    ),
-  ];
-  const targetSkills = [
-    ...target.standalone_skills
-      .filter((skill) => skill.active)
-      .map((skill) =>
-        extensionProfileId({
-          scope: skill.ref.scope === "user" ? "global" : "workspace",
-          name: `${skill.ref.source}:${skill.ref.name}`,
-        }),
-      ),
-    ...targetPlugins.flatMap((plugin) =>
-      plugin.skills.map((skill) => `plugin:${pluginRefId(plugin.ref)}:${skill}`),
-    ),
-  ];
-  return {
-    plugins_entering: targetPlugins
-      .filter((plugin) => !currentPluginKeys.has(pluginKey(plugin)))
-      .map((plugin) => plugin.ref),
-    plugins_leaving: currentPlugins
-      .filter((plugin) => !targetPluginKeys.has(pluginKey(plugin)))
-      .map((plugin) => plugin.ref),
-    skills_entering: stringDifference(targetSkills, currentSkills),
-    skills_leaving: stringDifference(currentSkills, targetSkills),
-    mcp_servers_entering: stringDifference(
-      targetPlugins.flatMap((plugin) => plugin.mcp_servers),
-      currentPlugins.flatMap((plugin) => plugin.mcp_servers),
-    ),
-    mcp_servers_leaving: stringDifference(
-      currentPlugins.flatMap((plugin) => plugin.mcp_servers),
-      targetPlugins.flatMap((plugin) => plugin.mcp_servers),
-    ),
-    hooks_entering: targetPlugins
-      .filter((plugin) => !currentPluginKeys.has(pluginKey(plugin)) && plugin.hooks.total > 0)
-      .map((plugin) => ({ plugin: plugin.ref, ...plugin.hooks })),
-    hooks_leaving: currentPlugins
-      .filter((plugin) => !targetPluginKeys.has(pluginKey(plugin)) && plugin.hooks.total > 0)
-      .map((plugin) => ({ plugin: plugin.ref, ...plugin.hooks })),
-  };
+/** Compare two qualified references without relying on object identity. */
+function sameRef(left: ExtensionProfileRef, right: ExtensionProfileRef): boolean {
+  return left.scope === right.scope && left.name === right.name;
 }
 
 /**
@@ -565,15 +316,20 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
   close(): void;
 } {
   const logger = options.logger ?? NOOP_LOGGER;
-  const global = globalPaths(options.globalDir);
-  const workspace = workspacePaths(options.workspaceRoot);
-  const workspaceState = workspaceStatePaths(options.workspaceRoot, {
-    env: { CLARVIS_HOME: options.globalDir },
-  });
   const standardRoots = clarvisSkillRoots({
     workspace: options.workspaceRoot,
     ...(options.home === undefined ? {} : { home: options.home }),
     env: { CLARVIS_HOME: options.globalDir },
+  });
+  const repository = createProfileRepository({
+    globalDir: options.globalDir,
+    workspaceRoot: options.workspaceRoot,
+    validateRef: extensionProfileRef,
+    parseDefinition,
+    profileId: extensionProfileId,
+    ...(options.profileWriteDocument === undefined
+      ? {}
+      : { writeDocument: options.profileWriteDocument }),
   });
   const previews = new Map<string, PreviewEntry>();
   let runtime: ExtensionProfileRuntimeBinding | undefined;
@@ -581,166 +337,29 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
   let authoredProfile: ResolvedExtensionProfile | undefined;
   let pinnedEnabled: readonly ExtensionProfilePluginRef[] = [];
   let pinnedTrust: WorkspaceTrustVerdict = { state: "inert" };
-  const driftedSkillDirs = new Set<string>();
-  const skillWatchers = new Map<string, SkillPathWatcher[]>();
-  const rootWatchers = new Map<string, SkillPathWatcher>();
-  const skillRootListeners = new Set<(retainOnFailure?: boolean) => void>();
-  const capturedSkillPaths = new Map<string, string>();
   let workspaceTrustSurfaceCaptured = false;
   let capturedWorkspaceTrustSurface: unknown;
-  let closed = false;
-  const watchSkillPath =
-    options.watchSkillPath ??
-    ((path: string, onChange: () => void): SkillPathWatcher => {
-      const listener = (
-        current: { mtimeMs: number; ctimeMs: number; size: number; mode: number },
-        previous: { mtimeMs: number; ctimeMs: number; size: number; mode: number },
-      ): void => {
-        if (
-          current.mtimeMs === previous.mtimeMs &&
-          current.ctimeMs === previous.ctimeMs &&
-          current.size === previous.size &&
-          current.mode === previous.mode
-        )
-          return;
-        onChange();
-      };
-      watchFile(path, { persistent: false, interval: 1_000 }, listener);
-      return { close: () => unwatchFile(path, listener) };
-    });
+  const monitor = createSkillCatalogMonitor({
+    roots: standardRoots,
+    logger,
+    watchSkillPath: options.watchSkillPath ?? defaultWatchSkillPath,
+    onRefresh: () => flushSkillRefresh(),
+    ...(options.onSkillDrift === undefined ? {} : { onPluginDrift: options.onSkillDrift }),
+  });
 
-  const definitionDir = (scope: Scope): string =>
-    scope === "global" ? global.extensionProfilesDir : workspace.extensionProfilesDir;
-  const definitionPath = (ref: ExtensionProfileRef): string | undefined =>
-    ref.scope === "builtin" ? undefined : join(definitionDir(ref.scope), `${ref.name}.json`);
-  const selectionPath = (scope: ExtensionProfileSelectionScope): string =>
-    scope === "global"
-      ? global.extensionProfileSelectionFile
-      : workspaceState.extensionProfileSelectionFile;
-  const assertSelectionTarget = (
-    scope: ExtensionProfileSelectionScope,
-    ref: ExtensionProfileRef,
-  ): void => {
-    if (scope === "global" && ref.scope === "workspace") {
-      throw kernelError("invalid_request", GLOBAL_SELECTION_WORKSPACE_ERROR);
-    }
-  };
   const assertSelectionMutationAllowed = (): void => {
     if (options.cliSelection !== undefined) {
       throw kernelError("conflict", CLI_SELECTION_MUTATION_ERROR);
     }
   };
-
-  /** Retain the crash-recoverable local lease until the transaction settles. */
-  const underLease = <T>(path: string, label: string, operation: () => T): T => {
-    const lease = acquireLocalLeaseSync(`${path}.lock`, {
-      staleMs: EXTENSION_PROFILE_LOCK_STALE_MS,
-    });
-    if (lease === null)
-      throw kernelError("conflict", `${label} is being changed by another process`);
-    try {
-      const result = operation();
-      if (result instanceof Promise) return result.finally(() => lease.release()) as T;
-      lease.release();
-      return result;
-    } catch (error) {
-      lease.release();
-      throw error;
-    }
-  };
-
-  /** Lock several selection documents in stable order, avoiding cross-process deadlock. */
-  const underSelectionLeases = <T>(
-    scopes: readonly ExtensionProfileSelectionScope[],
-    operation: () => T,
-  ): T => {
-    const ordered = [...new Set(scopes)].sort((left, right) => left.localeCompare(right));
-    const run = (index: number): T => {
-      const scope = ordered[index];
-      if (scope === undefined) return operation();
-      return underLease(selectionPath(scope), `${scope} Extension Profile selection`, () =>
-        run(index + 1),
-      );
-    };
-    return run(0);
-  };
-
-  /** Lock an authored definition while a mutation validates its exact resolved target. */
-  const underDefinitionLease = <T>(selection: SelectedExtensionProfile, operation: () => T): T => {
-    if (selection.error !== undefined || selection.ref.scope === "builtin") return operation();
-    return underLease(
-      definitionPath(selection.ref)!,
-      `Extension Profile '${extensionProfileId(selection.ref)}'`,
-      operation,
-    );
-  };
-
-  /** Exact selection-document revision; malformed JSON still has valid compare-and-swap bytes. */
-  const selectionRevision = (scope: ExtensionProfileSelectionScope): string | null => {
-    const document = readBounded(selectionPath(scope), `${scope} Extension Profile selection`);
-    if (document.missing === true) return null;
-    if (document.revision !== undefined) return document.revision;
-    throw kernelError("unavailable", document.error ?? `${scope} selection could not be read`);
-  };
-
-  const selectionRevisions = (): Record<ExtensionProfileSelectionScope, string | null> => ({
-    global: selectionRevision("global"),
-    workspace: selectionRevision("workspace"),
-  });
-
-  const readDefinition = (input: ExtensionProfileRef): ExtensionProfileDefinitionView => {
-    const ref = extensionProfileRef(input);
-    if (ref.scope === "builtin") return { ref: BUILTIN_REF, immutable: true };
-    const path = definitionPath(ref)!;
-    const document = readBounded(path, `Extension Profile '${extensionProfileId(ref)}'`);
-    if (document.missing === true) {
-      return {
-        ref,
-        immutable: false,
-        error: `Extension Profile '${extensionProfileId(ref)}' does not exist`,
-      };
-    }
-    if (document.raw === undefined) {
-      return {
-        ref,
-        immutable: false,
-        error: document.error ?? "Extension Profile could not be read",
-      };
-    }
-    const parsed = parseDefinition(ref, document.raw);
-    return {
-      ref,
-      immutable: false,
-      ...(document.revision === undefined ? {} : { revision: document.revision }),
-      ...(parsed.definition === undefined ? {} : { definition: parsed.definition }),
-      ...(parsed.error === undefined ? {} : { error: parsed.error }),
-    };
-  };
-
-  const selectionFromFile = (
-    scope: ExtensionProfileSelectionScope,
-  ): { missing?: true; ref?: ExtensionProfileRef; error?: string } => {
-    const document = readBounded(selectionPath(scope), `${scope} Extension Profile selection`);
-    if (document.missing === true) return { missing: true };
-    if (document.raw === undefined)
-      return { error: document.error ?? "selection could not be read" };
-    let json: unknown;
-    try {
-      json = JSON.parse(document.raw);
-    } catch (error) {
-      return { error: `invalid JSON: ${(error as Error).message}` };
-    }
-    const parsed = selectionSchema.safeParse(json);
-    if (!parsed.success) return { error: z.prettifyError(parsed.error) };
-    const ref = parsed.data.extension_profile;
-    if (ref.scope === "builtin" && ref.name !== BUILTIN_REF.name) {
-      return { error: `unknown builtin Extension Profile '${ref.name}'` };
-    }
-    if (scope === "global" && ref.scope === "workspace") {
-      return { error: GLOBAL_SELECTION_WORKSPACE_ERROR };
-    }
-    return { ref };
-  };
+  const {
+    readDefinition,
+    selectionFromFile,
+    selectionRevisions,
+    definitionDocument,
+    assertExpectedDefinition,
+    assertCatalogCapacity,
+  } = repository;
 
   const selectorRef = (selector: string): ExtensionProfileRef => {
     const trimmed = selector.trim();
@@ -754,14 +373,10 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       return extensionProfileRef({ scope, name });
     }
     if (trimmed === "default") return BUILTIN_REF;
-    if (!NAME_RE.test(trimmed))
+    if (!PROFILE_NAME_RE.test(trimmed))
       throw kernelError("invalid_request", "invalid --extension-profile value");
     const workspaceRef: ExtensionProfileRef = { scope: "workspace", name: trimmed };
-    const workspaceDocument = readBounded(
-      definitionPath(workspaceRef)!,
-      `Extension Profile '${extensionProfileId(workspaceRef)}'`,
-    );
-    if (workspaceDocument.missing !== true) return workspaceRef;
+    if (repository.definitionExists(workspaceRef)) return workspaceRef;
     return { scope: "global", name: trimmed };
   };
 
@@ -930,18 +545,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     return out;
   };
 
-  const defaultStandaloneSelection = (
-    inventory: readonly StandaloneInventoryEntry[],
-  ): ExtensionProfileSkillRef[] => {
-    const winners = new Map<string, StandaloneInventoryEntry>();
-    for (const entry of [...inventory].sort((left, right) => left.rootOrder - right.rootOrder)) {
-      winners.set(entry.ref.name, entry);
-    }
-    return [...winners.values()]
-      .sort((left, right) => left.ref.name.localeCompare(right.ref.name))
-      .map((entry) => entry.ref);
-  };
-
   const pluginSkillInventory = (
     plugin: InstalledPlugin,
     manifest: NonNullable<ReturnType<typeof resolvePluginManifest>["manifest"]>,
@@ -1043,151 +646,45 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
           ? definitionOverride
           : readDefinition(selection.ref)
         : undefined;
-    const issues: ExtensionProfileIssue[] = [];
-    if (selection.error !== undefined) {
-      issues.push({ code: "invalid_selection", message: selection.error });
-    }
-    if (definitionView?.error !== undefined) {
-      issues.push({
-        code: definitionView.revision === undefined ? "missing_definition" : "invalid_definition",
-        message: definitionView.error,
-      });
-    }
-    const definition = definitionView?.definition;
-    const definitionIsValid =
-      selection.error === undefined &&
-      (selection.ref.scope === "builtin" || definition !== undefined);
-    const selectedPlugins =
-      selection.ref.scope === "builtin" ? [...enabledPlugins] : (definition?.plugins ?? []);
     const discovered = standaloneCatalog(
-      selection.ref.scope === "builtin" ? undefined : (definition?.skills ?? []),
+      selection.ref.scope === "builtin" ? undefined : (definitionView?.definition?.skills ?? []),
     );
-    const selectedSkills =
-      selection.ref.scope === "builtin"
-        ? defaultStandaloneSelection(discovered)
-        : (definition?.skills ?? []);
-    const selectedPluginNames = new Set<string>();
-    let pluginNamesAreUnique = true;
-    for (const ref of selectedPlugins) {
-      if (selectedPluginNames.has(ref.name)) {
-        pluginNamesAreUnique = false;
-        issues.push({
-          code: "duplicate_plugin_name",
-          plugin: ref,
-          message:
-            `plugin namespace '${ref.name}' is selected more than once; ` +
-            "choose exactly one qualified installation",
-        });
-      }
-      selectedPluginNames.add(ref.name);
-    }
-    const validDefinition = definitionIsValid && pluginNamesAreUnique;
-    const requiresTrust =
-      selection.ref.scope === "workspace" &&
-      selectedPlugins.some((ref) => ref.scope === "workspace");
-    const trusted =
-      assumeWorkspaceTrusted ||
-      !requiresTrust ||
-      workspaceTrust.state === "trusted" ||
-      workspaceTrust.state === "inert";
-    if (validDefinition && !trusted) {
-      issues.push({
-        code: "workspace_untrusted",
-        message:
-          "the workspace Extension Profile selects workspace-owned executable plugins but its current fingerprint is not approved",
-      });
-    }
-    const admittedPlugins = trusted
-      ? selectedPlugins
-      : selectedPlugins.filter((ref) => ref.scope !== "workspace");
-    const contributionSnapshots: readonly PluginContributionSnapshot[] = validDefinition
+    const prepared = prepareProfileResolution({
+      selection,
+      ...(definitionView === undefined ? {} : { definitionView }),
+      enabledPlugins,
+      workspaceTrust,
+      assumeWorkspaceTrusted,
+      discovered,
+    });
+    const contributionSnapshots: readonly PluginContributionSnapshot[] = prepared.validDefinition
       ? pinContributions
-        ? trusted
-          ? options.pluginContributions.pin(selectedPlugins)
+        ? prepared.trusted
+          ? options.pluginContributions.pin(prepared.selectedPlugins)
           : (() => {
-              const snapshots = options.pluginContributions.snapshot(selectedPlugins);
-              options.pluginContributions.pin(admittedPlugins);
+              const snapshots = options.pluginContributions.snapshot(prepared.selectedPlugins);
+              options.pluginContributions.pin(prepared.admittedPlugins);
               return snapshots;
             })()
-        : options.pluginContributions.snapshot(selectedPlugins)
+        : options.pluginContributions.snapshot(prepared.selectedPlugins)
       : pinContributions
         ? options.pluginContributions.pin([])
         : [];
-    const contributionByRef = new Map(
-      contributionSnapshots.map((snapshot) => [pluginRefId(snapshot.ref), snapshot] as const),
-    );
-    const unresolvedRefs = validDefinition
-      ? selectedPlugins.filter((ref) => !contributionByRef.has(pluginRefId(ref)))
+    const capturedRefs = new Set(contributionSnapshots.map((entry) => pluginRefId(entry.ref)));
+    const unresolvedRefs = prepared.validDefinition
+      ? prepared.selectedPlugins.filter((ref) => !capturedRefs.has(pluginRefId(ref)))
       : [];
-    const unresolvedInstalled = new Map(
-      pluginInventory(unresolvedRefs).map(
-        (entry) => [pluginRefId(entry.view.ref), entry.view] as const,
-      ),
-    );
-    const pluginViews: ResolvedExtensionProfilePlugin[] = validDefinition
-      ? selectedPlugins.map((ref) => {
-          const snapshot = contributionByRef.get(pluginRefId(ref));
-          if (snapshot !== undefined) {
-            return {
-              ref,
-              active: trusted || ref.scope !== "workspace",
-              installed: true,
-              valid: true,
-              ...(snapshot.version === undefined ? {} : { version: snapshot.version }),
-              ...(snapshot.revision === undefined ? {} : { revision: snapshot.revision }),
-              agents: snapshot.agents,
-              skills: snapshot.skills,
-              mcp_servers: snapshot.mcpServers,
-              hooks: snapshot.hooks,
-            };
-          }
-          const installed = unresolvedInstalled.get(pluginRefId(ref));
-          if (installed === undefined) {
-            issues.push({
-              code: "missing_plugin",
-              plugin: ref,
-              message: `plugin '${pluginRefLabel(ref)}' is not installed`,
-            });
-            return {
-              ref,
-              active: false,
-              installed: false,
-              valid: false,
-              agents: [],
-              skills: [],
-              mcp_servers: [],
-              hooks: { total: 0 },
-              error: "not installed",
-            };
-          }
-          const error =
-            installed.error ?? `plugin '${pluginRefLabel(ref)}' could not be captured atomically`;
-          issues.push({ code: "invalid_plugin", plugin: ref, message: error });
-          return {
-            ...installed,
-            active: false,
-            valid: false,
-            error,
-          };
-        })
-      : [];
-    const skillByRef = new Map(
+    const installedPlugins = pluginInventory(unresolvedRefs).map((entry) => entry.view);
+    const discoveredByRef = new Map(
       discovered.map((entry) => [
         `${entry.ref.scope}\0${entry.ref.source}\0${entry.ref.name}`,
         entry,
       ]),
     );
-    const skillViews: ResolvedExtensionProfileSkill[] = validDefinition
-      ? selectedSkills.map((ref) => {
-          const entry = skillByRef.get(`${ref.scope}\0${ref.source}\0${ref.name}`);
-          if (entry === undefined) {
-            issues.push({
-              code: "missing_skill",
-              skill: ref,
-              message: `skill '${ref.scope}/${ref.source}/${ref.name}' was not discovered`,
-            });
-            return { ref, active: false, found: false, error: "not discovered" };
-          }
+    const capturedSkills = prepared.validDefinition
+      ? prepared.selectedSkills.flatMap((ref) => {
+          const entry = discoveredByRef.get(`${ref.scope}\0${ref.source}\0${ref.name}`);
+          if (entry === undefined) return [];
           let digest: string | undefined;
           try {
             digest = entry.loadDigest();
@@ -1202,70 +699,15 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
               "a selected standalone skill failed while its snapshot was captured",
             );
           }
-          if (digest === undefined) {
-            issues.push({
-              code: "missing_skill",
-              skill: ref,
-              message: `skill '${ref.scope}/${ref.source}/${ref.name}' could not be captured`,
-            });
-            return { ref, active: false, found: false, error: "could not be captured" };
-          }
-          return {
-            ref,
-            active: true,
-            found: true,
-            description: entry.description,
-            digest,
-          };
+          return [{ ref, rootOrder: entry.rootOrder, description: entry.description, digest }];
         })
       : [];
-    const activePlugins = pluginViews.filter((plugin) => plugin.active);
-    const activeSkills = skillViews.filter((skill) => skill.active);
-    const status = !validDefinition ? "invalid" : issues.length > 0 ? "degraded" : "ready";
-    const identity = {
-      id: extensionProfileId(selection.ref),
-      definition_revision: definitionView?.revision,
-      status,
-      plugins: activePlugins.map((plugin) => ({
-        ref: plugin.ref,
-        digest: contributionByRef.get(pluginRefId(plugin.ref))?.digest,
-      })),
-      skills: activeSkills.map((skill) => ({ ref: skill.ref, digest: skill.digest })),
-      issues,
-      workspace_trust: requiresTrust
-        ? { state: workspaceTrust.state, fingerprint: workspaceTrust.fingerprint }
-        : undefined,
-    };
-    return {
-      id: extensionProfileId(selection.ref),
-      ref: selection.ref,
-      immutable: selection.ref.scope === "builtin",
-      status,
-      fingerprint: fingerprintOf(identity),
-      selection_origin: selection.origin,
-      ...(definition === undefined ? {} : { definition }),
-      ...(definitionView?.revision === undefined
-        ? {}
-        : { definition_revision: definitionView.revision }),
-      ...(definition?.description === undefined ? {} : { description: definition.description }),
-      ...(requiresTrust ? { workspace_trust: workspaceTrust } : {}),
-      plugins: pluginViews,
-      standalone_skills: skillViews,
-      issues,
-      counts: {
-        plugins_active: activePlugins.length,
-        standalone_skills_active: activeSkills.length,
-        plugin_skills_active: activePlugins.reduce(
-          (count, plugin) => count + plugin.skills.length,
-          0,
-        ),
-        mcp_servers_active: activePlugins.reduce(
-          (count, plugin) => count + plugin.mcp_servers.length,
-          0,
-        ),
-        hooks_declared: activePlugins.reduce((count, plugin) => count + plugin.hooks.total, 0),
-      },
-    };
+    return resolveProfileData({
+      prepared,
+      contributionSnapshots,
+      installedPlugins,
+      capturedSkills,
+    });
   };
 
   const freshSelection = (
@@ -1339,60 +781,11 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
   };
 
   const skillRoots = (): SkillRootInput[] => pinnedSkillRoots();
-  let skillRefreshPending = false;
-
-  /** Observe empty/grouping directories within the same bounded discovery walk as skills. */
-  const observeSkillRoots = (): void => {
-    const present = new Set<string>();
-    for (const root of standardRoots) {
-      listSkillDirs(
-        root.path,
-        false,
-        {
-          logger,
-          warningSink: (message) =>
-            logger.warn(
-              { event: "kernel.extension_profile.skill_discovery_notice", detail: message.trim() },
-              "skill directory discovery reported a limitation",
-            ),
-        },
-        undefined,
-        {
-          discovery: root.discovery,
-          manifestName: root.manifestName,
-          observeDirectory(path) {
-            present.add(path);
-            if (rootWatchers.has(path)) return;
-            try {
-              rootWatchers.set(path, watchSkillPath(path, requestSkillRefresh));
-            } catch (error) {
-              logger.warn(
-                {
-                  event: "kernel.extension_profile.skill_root_watch_unavailable",
-                  path,
-                  cause: error instanceof Error ? error.message : String(error),
-                },
-                "skill directory monitoring is unavailable; authorized writer notifications remain active",
-              );
-            }
-          },
-        },
-      );
-    }
-    for (const [path, watcher] of rootWatchers) {
-      if (!present.has(path) && !existsSync(path)) {
-        watcher.close();
-        rootWatchers.delete(path);
-      }
-    }
-  };
-
   /** Coalesce authoring changes and publish only when all captured resource users have settled. */
   const flushSkillRefresh = (): void => {
-    if (!skillRefreshPending || closed || pinned === undefined || runtime?.hasActiveRuns?.())
-      return;
-    skillRefreshPending = false;
-    observeSkillRoots();
+    if (pinned === undefined || runtime?.hasActiveRuns?.()) return;
+    if (!monitor.consumeRefresh()) return;
+    monitor.observeRoots();
     const candidate = authoredProfile ?? pinned;
     if (
       authoredProfile !== undefined &&
@@ -1433,7 +826,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
               next.ref.name === previous.ref.name,
           ) &&
           existsSync(
-            capturedSkillPaths.get(
+            monitor.capturedPath(
               `${previous.ref.scope}/${previous.ref.source}/${previous.ref.name}`,
             ) ?? "",
           ),
@@ -1463,113 +856,16 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       counts: { ...candidate.counts, standalone_skills_active: skills.length },
     };
     pinned = { ...next, fingerprint: fingerprintOf(next) };
-    if (!publishSkillRootsChanged(true)) pinned = previous;
+    if (!monitor.publishRootsChanged(true)) pinned = previous;
     else authoredProfile = undefined;
   };
-
-  const requestSkillRefresh = (): void => {
-    if (closed || skillRefreshPending) return;
-    skillRefreshPending = true;
-    queueMicrotask(flushSkillRefresh);
-  };
-
-  /** Release monitors for a catalog that is about to be replaced at an idle trust boundary. */
-  const resetSkillMonitoring = (): void => {
-    for (const watchers of skillWatchers.values()) {
-      for (const watcher of watchers) watcher.close();
-    }
-    skillWatchers.clear();
-    driftedSkillDirs.clear();
-  };
-
-  /**
-   * Watch each admitted skill directory after one exact catalog capture.
-   *
-   * @remarks Watch callbacks only flip an in-memory latch and publish a notice.
-   * They never rescan, hash, or mutate run admission. Standalone authorship queues
-   * a validated idle refresh; plugin changes retain their explicit trust boundary.
-   */
-  const withdrawSkill = (skill: SkillInfo): void => {
-    if (!skill.source.startsWith("plugin:")) {
-      requestSkillRefresh();
-      return;
-    }
-    if (closed || driftedSkillDirs.has(skill.dir)) return;
-    driftedSkillDirs.add(skill.dir);
-    for (const watcher of skillWatchers.get(skill.dir) ?? []) watcher.close();
-    skillWatchers.delete(skill.dir);
-    logger.warn(
-      {
-        event: "kernel.extension_profile.skill_drift",
-        skill: skill.name,
-        scope: skill.scope,
-        source: skill.source,
-        path: skill.path,
-      },
-      "a changed skill was withdrawn from the process snapshot; runs remain available",
-    );
-    try {
-      options.onSkillDrift?.({
-        name: skill.name,
-        scope: skill.scope,
-        source: skill.source,
-        path: skill.path,
-      });
-    } catch (error) {
-      logger.warn(
-        {
-          event: "kernel.extension_profile.skill_drift_notice_failed",
-          skill: skill.name,
-          cause: error instanceof Error ? error.message : String(error),
-        },
-        "the host's skill drift notice callback failed",
-      );
-    }
-  };
-
-  const observeSkillCatalog = (skills: readonly SkillContent[]): void => {
-    if (closed) return;
-    for (const skill of skills) {
-      capturedSkillPaths.set(`${skill.scope}/${skill.source}/${skill.name}`, skill.path);
-      if (skillWatchers.has(skill.dir)) continue;
-      const onChange = (): void => withdrawSkill(skill);
-      const paths = new Set<string>(
-        skill.identityFiles ?? [skill.path, ...skill.resources.map((resource) => resource.path)],
-      );
-      const watchers: SkillPathWatcher[] = [];
-      let lastError: unknown;
-      for (const path of paths) {
-        try {
-          watchers.push(watchSkillPath(path, onChange));
-        } catch (error) {
-          lastError = error;
-        }
-      }
-      if (watchers.length > 0) {
-        skillWatchers.set(skill.dir, watchers);
-      } else {
-        logger.warn(
-          {
-            event: "kernel.extension_profile.skill_watch_unavailable",
-            skill: skill.name,
-            path: skill.dir,
-            cause: lastError instanceof Error ? lastError.message : String(lastError),
-          },
-          "live skill drift monitoring is unavailable for one pinned skill",
-        );
-      }
-    }
-    observeSkillRoots();
-  };
-
-  const skillAvailable = (skill: SkillInfo): boolean => !driftedSkillDirs.has(skill.dir);
 
   /** Re-read admitted skill identities after watchers are armed and compare them with the pin. */
   const verifySkillCatalog = (skills: readonly SkillContent[]): void => {
     if (pinned === undefined)
       throw kernelError("unavailable", "Extension Profile has not been resolved");
     for (const skill of options.pluginContributions.verifyPinnedSkillCatalog(skills)) {
-      withdrawSkill(skill);
+      monitor.withdrawSkill(skill);
     }
     const selected = pinned.standalone_skills
       .filter((skill) => skill.active)
@@ -1593,57 +889,9 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       const key = `${skill.scope}\0${skill.source}\0${skill.name}`;
       const pinnedDigest = expected.get(key);
       if (pinnedDigest === undefined || current.get(key) !== pinnedDigest) {
-        driftedSkillDirs.add(skill.dir);
-        requestSkillRefresh();
+        monitor.markStandaloneDrift(skill);
       }
     }
-  };
-
-  /** Subscribe to idle trust recompositions that replace the exact skill-root set. */
-  const onSkillRootsChanged = (listener: (retainOnFailure?: boolean) => void): (() => void) => {
-    if (closed) return () => undefined;
-    skillRootListeners.add(listener);
-    return () => skillRootListeners.delete(listener);
-  };
-
-  /** Replace subscribers synchronously while no run can observe the old trust catalog. */
-  const publishSkillRootsChanged = (retainOnFailure = false): boolean => {
-    const previousWatchers = new Map(skillWatchers);
-    const previousDrift = new Set(driftedSkillDirs);
-    const previousPaths = new Map(capturedSkillPaths);
-    if (retainOnFailure) {
-      skillWatchers.clear();
-      driftedSkillDirs.clear();
-    } else resetSkillMonitoring();
-    let success = true;
-    for (const listener of [...skillRootListeners]) {
-      try {
-        listener(retainOnFailure);
-      } catch (error) {
-        success = false;
-        logger.warn(
-          {
-            event: "kernel.extension_profile.skill_recomposition_failed",
-            cause: error instanceof Error ? error.message : String(error),
-          },
-          "a skill catalog subscriber failed during an idle trust recomposition",
-        );
-        if (retainOnFailure) break;
-      }
-    }
-    if (retainOnFailure) {
-      if (success) {
-        for (const watchers of previousWatchers.values())
-          for (const watcher of watchers) watcher.close();
-      } else {
-        resetSkillMonitoring();
-        for (const [path, watchers] of previousWatchers) skillWatchers.set(path, watchers);
-        for (const path of previousDrift) driftedSkillDirs.add(path);
-        capturedSkillPaths.clear();
-        for (const [key, path] of previousPaths) capturedSkillPaths.set(key, path);
-      }
-    }
-    return success;
   };
 
   /**
@@ -1696,22 +944,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     }
   };
 
-  const list = async (): Promise<ExtensionProfileDefinitionView[]> => {
-    const out: ExtensionProfileDefinitionView[] = [{ ref: BUILTIN_REF, immutable: true }];
-    for (const scope of ["global", "workspace"] as const) {
-      const listed = definitionNames(definitionDir(scope), scope === "global");
-      if (listed.error !== undefined) {
-        out.push({
-          ref: { scope, name: "invalid-directory" },
-          immutable: false,
-          error: listed.error,
-        });
-        continue;
-      }
-      for (const name of listed.names ?? []) out.push(readDefinition({ scope, name }));
-    }
-    return out;
-  };
+  const list = async (): Promise<ExtensionProfileDefinitionView[]> => repository.listDefinitions();
 
   const inventory = async (): Promise<ExtensionProfileInventory> => ({
     plugins: pluginInventory().map((entry) => ({ ...entry.view, active: false })),
@@ -1777,57 +1010,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     };
   };
 
-  const assertExpectedDefinition = (
-    ref: { scope: Scope; name: string },
-    expectedRevision: string | null,
-    current: ReadDocument,
-  ): void => {
-    if (expectedRevision === null) {
-      if (current.missing === true) return;
-      if (current.revision !== undefined) {
-        throw kernelError(
-          "conflict",
-          `Extension Profile '${extensionProfileId(ref)}' already exists`,
-        );
-      }
-      throw kernelError(
-        "unavailable",
-        current.error ?? `Extension Profile '${extensionProfileId(ref)}' could not be inspected`,
-      );
-    }
-    if (current.revision !== expectedRevision) {
-      throw kernelError("conflict", "Extension Profile changed since it was read", {
-        expected_revision: expectedRevision,
-        actual_revision: current.revision ?? null,
-      });
-    }
-  };
-
-  const assertCatalogCapacity = (scope: Scope): void => {
-    const catalog = definitionNames(definitionDir(scope));
-    if (catalog.error !== undefined) {
-      throw kernelError(
-        catalog.resourceExhausted === true ? "resource_exhausted" : "unavailable",
-        catalog.error,
-      );
-    }
-    if (
-      (catalog.names?.length ?? 0) >= MAX_EXTENSION_PROFILES_PER_SCOPE ||
-      (catalog.entries ?? 0) >= MAX_EXTENSION_PROFILE_DIRECTORY_ENTRIES
-    ) {
-      throw kernelError(
-        "resource_exhausted",
-        `Extension Profile catalog '${scope}' has reached its definition or entry limit`,
-        {
-          definitions: catalog.names?.length ?? 0,
-          definition_limit: MAX_EXTENSION_PROFILES_PER_SCOPE,
-          entries: catalog.entries ?? 0,
-          entry_limit: MAX_EXTENSION_PROFILE_DIRECTORY_ENTRIES,
-        },
-      );
-    }
-  };
-
   const compositionNeedsWorkspaceTrust = (
     input: ExtensionProfileCompositionInput,
     effective: SelectedExtensionProfile,
@@ -1860,10 +1042,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     assertSelectionMutationAllowed();
     if (pinned === undefined)
       throw kernelError("unavailable", "Extension Profile has not been resolved");
-    const before = readBounded(
-      definitionPath(input.ref)!,
-      `Extension Profile '${extensionProfileId(input.ref)}'`,
-    );
+    const before = definitionDocument(input.ref);
     assertExpectedDefinition(input.ref, input.expected_revision, before);
     if (input.expected_revision === null) assertCatalogCapacity(input.ref.scope);
     const proposed = compositionDefinition(input);
@@ -1968,37 +1147,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     };
   };
 
-  const writeSelection = (
-    ref: ExtensionProfileRef,
-    scope: ExtensionProfileSelectionScope,
-  ): ExtensionProfileApplyResult => {
-    assertSelectionMutationAllowed();
-    assertSelectionTarget(scope, ref);
-    writeFileAtomicSync(
-      selectionPath(scope),
-      `${JSON.stringify({ schema_version: 1, extension_profile: ref }, null, 2)}\n`,
-    );
-    return { selected: ref, reconnect_required: true };
-  };
-
-  const withDefinitionMutation = <T>(
-    ref: { scope: Scope; name: string },
-    expectedRevision: string | null,
-    operation: (current: ReadDocument, path: string) => T,
-  ): T => {
-    const path = definitionPath(ref)!;
-    const mutate = (): T =>
-      underDefinitionLease({ ref, origin: ref.scope }, () => {
-        const current = readBounded(path, `Extension Profile '${extensionProfileId(ref)}'`);
-        assertExpectedDefinition(ref, expectedRevision, current);
-        if (expectedRevision === null) assertCatalogCapacity(ref.scope);
-        return operation(current, path);
-      });
-    return expectedRevision === null
-      ? underLease(definitionDir(ref.scope), `${ref.scope} Extension Profile catalog`, mutate)
-      : mutate();
-  };
-
   const writeDefinition = (
     input: ExtensionProfileDefinitionInput,
     expectedRevision?: string,
@@ -2008,39 +1156,14 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       expected_revision: expectedRevision ?? null,
       selection_scope: input.ref.scope,
     });
-    return withDefinitionMutation(input.ref, expectedRevision ?? null, (_current, path) => {
-      writeFileAtomicSync(path, composition.serialized);
-      return readDefinition(input.ref);
-    });
-  };
-
-  const restoreSelection = (scope: ExtensionProfileSelectionScope, before: ReadDocument): void => {
-    if (before.missing === true) {
-      rmSync(selectionPath(scope), { force: true });
-      return;
-    }
-    if (before.raw === undefined) {
-      throw kernelError(
-        "unavailable",
-        "the previous Extension Profile selection cannot be restored",
-      );
-    }
-    writeFileAtomicSync(selectionPath(scope), before.raw);
-  };
-
-  const restoreDefinition = (ref: { scope: Scope; name: string }, before: ReadDocument): void => {
-    const path = definitionPath(ref)!;
-    if (before.missing === true) {
-      rmSync(path, { force: true });
-      return;
-    }
-    if (before.raw === undefined) {
-      throw kernelError(
-        "unavailable",
-        "the previous Extension Profile definition cannot be restored",
-      );
-    }
-    writeFileAtomicSync(path, before.raw);
+    return repository.withDefinitionMutation(
+      input.ref,
+      expectedRevision ?? null,
+      (_current, tx) => {
+        tx.writeDefinition(input.ref, composition.serialized);
+        return tx.readDefinition(input.ref);
+      },
+    );
   };
 
   const applyComposition = async (
@@ -2079,110 +1202,110 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     if (pinned === undefined)
       throw kernelError("unavailable", "Extension Profile has not been resolved");
     const mutation = entry.mutation;
-    return withDefinitionMutation(input.ref, input.expected_revision, (beforeDefinition, path) =>
-      underSelectionLeases(["global", "workspace"], () => {
-        const revisions = selectionRevisions();
-        if (
-          revisions.global !== mutation.selectionRevisions.global ||
-          revisions.workspace !== mutation.selectionRevisions.workspace
-        ) {
-          throw kernelError(
-            "conflict",
-            "Extension Profile selections changed since the composition preview was created",
-          );
-        }
-        const actualTrust = runtime?.readWorkspaceTrust() ?? pinnedTrust;
-        const effective = selectedAfterWrite(input.ref, input.selection_scope);
-        if (
-          !sameRef(effective.ref, mutation.effective.ref) ||
-          effective.origin !== mutation.effective.origin ||
-          effective.error !== mutation.effective.error
-        ) {
-          throw kernelError(
-            "conflict",
-            "the effective Extension Profile changed since the composition preview was created",
-          );
-        }
-        const requiresWorkspaceTrust = compositionNeedsWorkspaceTrust(
-          input,
-          effective,
-          proposed.view,
-          actualTrust,
-        );
-        const authored = freshCompositionTarget(
-          { ref: input.ref, origin: input.ref.scope },
-          proposed.view,
-          input.ref.scope === "workspace" && input.definition.plugins.length > 0,
-        );
-        const target = freshCompositionTarget(effective, proposed.view, requiresWorkspaceTrust);
-        if (
-          authored.fingerprint !== mutation.authoredFingerprint ||
-          target.fingerprint !== entry.fingerprint
-        ) {
-          throw kernelError(
-            "conflict",
-            "Extension Profile inventory or definition changed since the composition preview",
-          );
-        }
-        if (requiresWorkspaceTrust && applyOptions.approve_workspace !== true) {
-          throw kernelError(
-            "conflict",
-            "the previewed workspace Extension Profile requires explicit trust approval",
-          );
-        }
-        if (requiresWorkspaceTrust && runtime === undefined) {
-          throw kernelError("unavailable", "workspace trust is unavailable");
-        }
-        const beforeSelection = readBounded(
-          selectionPath(input.selection_scope),
-          `${input.selection_scope} Extension Profile selection`,
-        );
-        if (beforeSelection.error !== undefined) {
-          throw kernelError(
-            "unavailable",
-            "the previous Extension Profile selection cannot be snapshotted before composition",
-          );
-        }
-        let definitionWritten = false;
-        let selectionWritten = false;
-        try {
-          writeFileAtomicSync(path, proposed.serialized);
-          definitionWritten = true;
-          writeSelection(input.ref, input.selection_scope);
-          selectionWritten = true;
-          if (requiresWorkspaceTrust) runtime!.approveWorkspace();
-        } catch (error) {
-          const rollbackErrors: string[] = [];
-          if (selectionWritten) {
-            try {
-              restoreSelection(input.selection_scope, beforeSelection);
-            } catch (rollbackError) {
-              rollbackErrors.push(`selection: ${(rollbackError as Error).message}`);
-            }
-          }
-          if (definitionWritten) {
-            try {
-              restoreDefinition(input.ref, beforeDefinition);
-            } catch (rollbackError) {
-              rollbackErrors.push(`definition: ${(rollbackError as Error).message}`);
-            }
-          }
-          if (rollbackErrors.length > 0) {
+    return repository.withDefinitionMutation(
+      input.ref,
+      input.expected_revision,
+      (beforeDefinition, tx) =>
+        tx.withSelectionLeases(["global", "workspace"], () => {
+          const revisions = selectionRevisions();
+          if (
+            revisions.global !== mutation.selectionRevisions.global ||
+            revisions.workspace !== mutation.selectionRevisions.workspace
+          ) {
             throw kernelError(
-              "unavailable",
-              "Extension Profile composition failed and its prior state could not be fully restored",
-              { cause: (error as Error).message, rollback: rollbackErrors },
+              "conflict",
+              "Extension Profile selections changed since the composition preview was created",
             );
           }
-          throw error;
-        }
-        return {
-          definition: readDefinition(input.ref),
-          selected: input.ref,
-          effective: target.ref,
-          reconnect_required: true,
-        };
-      }),
+          const actualTrust = runtime?.readWorkspaceTrust() ?? pinnedTrust;
+          const effective = selectedAfterWrite(input.ref, input.selection_scope);
+          if (
+            !sameRef(effective.ref, mutation.effective.ref) ||
+            effective.origin !== mutation.effective.origin ||
+            effective.error !== mutation.effective.error
+          ) {
+            throw kernelError(
+              "conflict",
+              "the effective Extension Profile changed since the composition preview was created",
+            );
+          }
+          const requiresWorkspaceTrust = compositionNeedsWorkspaceTrust(
+            input,
+            effective,
+            proposed.view,
+            actualTrust,
+          );
+          const authored = freshCompositionTarget(
+            { ref: input.ref, origin: input.ref.scope },
+            proposed.view,
+            input.ref.scope === "workspace" && input.definition.plugins.length > 0,
+          );
+          const target = freshCompositionTarget(effective, proposed.view, requiresWorkspaceTrust);
+          if (
+            authored.fingerprint !== mutation.authoredFingerprint ||
+            target.fingerprint !== entry.fingerprint
+          ) {
+            throw kernelError(
+              "conflict",
+              "Extension Profile inventory or definition changed since the composition preview",
+            );
+          }
+          if (requiresWorkspaceTrust && applyOptions.approve_workspace !== true) {
+            throw kernelError(
+              "conflict",
+              "the previewed workspace Extension Profile requires explicit trust approval",
+            );
+          }
+          if (requiresWorkspaceTrust && runtime === undefined) {
+            throw kernelError("unavailable", "workspace trust is unavailable");
+          }
+          const beforeSelection = tx.selectionDocument(input.selection_scope);
+          if (beforeSelection.error !== undefined) {
+            throw kernelError(
+              "unavailable",
+              "the previous Extension Profile selection cannot be snapshotted before composition",
+            );
+          }
+          let definitionWritten = false;
+          let selectionWritten = false;
+          try {
+            tx.writeDefinition(input.ref, proposed.serialized);
+            definitionWritten = true;
+            tx.writeSelection(input.ref, input.selection_scope);
+            selectionWritten = true;
+            if (requiresWorkspaceTrust) runtime!.approveWorkspace();
+          } catch (error) {
+            const rollbackErrors: string[] = [];
+            if (selectionWritten) {
+              try {
+                tx.restoreSelection(input.selection_scope, beforeSelection);
+              } catch (rollbackError) {
+                rollbackErrors.push(`selection: ${(rollbackError as Error).message}`);
+              }
+            }
+            if (definitionWritten) {
+              try {
+                tx.restoreDefinition(input.ref, beforeDefinition);
+              } catch (rollbackError) {
+                rollbackErrors.push(`definition: ${(rollbackError as Error).message}`);
+              }
+            }
+            if (rollbackErrors.length > 0) {
+              throw kernelError(
+                "unavailable",
+                "Extension Profile composition failed and its prior state could not be fully restored",
+                { cause: (error as Error).message, rollback: rollbackErrors },
+              );
+            }
+            throw error;
+          }
+          return {
+            definition: tx.readDefinition(input.ref),
+            selected: input.ref,
+            effective: target.ref,
+            reconnect_required: true,
+          };
+        }),
     );
   };
 
@@ -2223,58 +1346,50 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       }
       const selectionMutation = entry.mutation;
       const targetSelection = selectionMutation.effective;
-      return underDefinitionLease(targetSelection, () =>
-        underSelectionLeases(["global", "workspace"], () => {
-          const revisions = selectionRevisions();
-          if (
-            revisions.global !== selectionMutation.selectionRevisions.global ||
-            revisions.workspace !== selectionMutation.selectionRevisions.workspace
-          ) {
+      return repository.withSelectedMutation(targetSelection, (tx) => {
+        const revisions = selectionRevisions();
+        if (
+          revisions.global !== selectionMutation.selectionRevisions.global ||
+          revisions.workspace !== selectionMutation.selectionRevisions.workspace
+        ) {
+          throw kernelError(
+            "conflict",
+            "Extension Profile selection changed since the preview was created",
+          );
+        }
+        const definition = readDefinition(targetSelection.ref).definition;
+        const requiresTrust =
+          selectionMutation.scope === "workspace" &&
+          workspaceTargetNeedsApproval(
+            targetSelection.ref,
+            definition,
+            runtime?.readWorkspaceTrust() ?? pinnedTrust,
+          );
+        const target = freshSelection(targetSelection, requiresTrust);
+        if (target.fingerprint !== entry.fingerprint) {
+          throw kernelError("conflict", "Extension Profile changed since the preview was created");
+        }
+        if (selectOptions.approve_workspace === true && requiresTrust) {
+          if (runtime === undefined)
+            throw kernelError("unavailable", "workspace trust is unavailable");
+          const before = tx.selectionDocument(selectOptions.selection_scope);
+          if (before.error !== undefined) {
             throw kernelError(
-              "conflict",
-              "Extension Profile selection changed since the preview was created",
+              "unavailable",
+              "the previous Extension Profile selection cannot be snapshotted before approval",
             );
           }
-          const definition = readDefinition(targetSelection.ref).definition;
-          const requiresTrust =
-            selectionMutation.scope === "workspace" &&
-            workspaceTargetNeedsApproval(
-              targetSelection.ref,
-              definition,
-              runtime?.readWorkspaceTrust() ?? pinnedTrust,
-            );
-          const target = freshSelection(targetSelection, requiresTrust);
-          if (target.fingerprint !== entry.fingerprint) {
-            throw kernelError(
-              "conflict",
-              "Extension Profile changed since the preview was created",
-            );
+          const result = tx.writeSelection(ref, selectOptions.selection_scope);
+          try {
+            runtime.approveWorkspace();
+          } catch (error) {
+            tx.restoreSelection(selectOptions.selection_scope, before);
+            throw error;
           }
-          if (selectOptions.approve_workspace === true && requiresTrust) {
-            if (runtime === undefined)
-              throw kernelError("unavailable", "workspace trust is unavailable");
-            const before = readBounded(
-              selectionPath(selectOptions.selection_scope),
-              `${selectOptions.selection_scope} Extension Profile selection`,
-            );
-            if (before.error !== undefined) {
-              throw kernelError(
-                "unavailable",
-                "the previous Extension Profile selection cannot be snapshotted before approval",
-              );
-            }
-            const result = writeSelection(ref, selectOptions.selection_scope);
-            try {
-              runtime.approveWorkspace();
-            } catch (error) {
-              restoreSelection(selectOptions.selection_scope, before);
-              throw error;
-            }
-            return result;
-          }
-          return writeSelection(ref, selectOptions.selection_scope);
-        }),
-      );
+          return result;
+        }
+        return tx.writeSelection(ref, selectOptions.selection_scope);
+      });
     },
     async clearSelection(inputScope, inputOptions) {
       const scope = parsedInput(
@@ -2303,29 +1418,27 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       }
       const clearMutation = entry.mutation;
       const expectedFallback = selectedNow(scope);
-      return underDefinitionLease(expectedFallback, () =>
-        underSelectionLeases(["global", "workspace"], () => {
-          const revisions = selectionRevisions();
-          if (
-            revisions.global !== clearMutation.selectionRevisions.global ||
-            revisions.workspace !== clearMutation.selectionRevisions.workspace
-          ) {
-            throw kernelError(
-              "conflict",
-              "Extension Profile selections changed since the clear preview was created",
-            );
-          }
-          const target = freshSelection(selectedNow(scope));
-          if (target.fingerprint !== entry.fingerprint) {
-            throw kernelError(
-              "conflict",
-              "Extension Profile fallback changed since the preview was created",
-            );
-          }
-          rmSync(selectionPath(scope), { force: true });
-          return { selected: target.ref, reconnect_required: true };
-        }),
-      );
+      return repository.withSelectedMutation(expectedFallback, (tx) => {
+        const revisions = selectionRevisions();
+        if (
+          revisions.global !== clearMutation.selectionRevisions.global ||
+          revisions.workspace !== clearMutation.selectionRevisions.workspace
+        ) {
+          throw kernelError(
+            "conflict",
+            "Extension Profile selections changed since the clear preview was created",
+          );
+        }
+        const target = freshSelection(selectedNow(scope));
+        if (target.fingerprint !== entry.fingerprint) {
+          throw kernelError(
+            "conflict",
+            "Extension Profile fallback changed since the preview was created",
+          );
+        }
+        tx.removeSelection(scope);
+        return { selected: target.ref, reconnect_required: true };
+      });
     },
     applyComposition,
     async create(input) {
@@ -2352,31 +1465,34 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
         inputOptions,
         "invalid Extension Profile deletion options",
       );
-      return withDefinitionMutation(ref, deleteOptions.expected_revision, (_current, path) =>
-        underSelectionLeases(["global", "workspace"], () => {
-          if (pinned !== undefined && sameRef(pinned.ref, ref)) {
-            throw kernelError(
-              "conflict",
-              `Extension Profile '${extensionProfileId(ref)}' is active; select another Extension Profile and reconnect before deleting it`,
-            );
-          }
-          for (const scope of ["global", "workspace"] as const) {
-            const selection = selectionFromFile(scope);
-            if (selection.error !== undefined) {
-              throw kernelError(
-                "unavailable",
-                `the ${scope} Extension Profile selection must be repaired before deleting a definition`,
-              );
-            }
-            if (selection.ref !== undefined && sameRef(selection.ref, ref)) {
+      return repository.withDefinitionMutation(
+        ref,
+        deleteOptions.expected_revision,
+        (_current, tx) =>
+          tx.withSelectionLeases(["global", "workspace"], () => {
+            if (pinned !== undefined && sameRef(pinned.ref, ref)) {
               throw kernelError(
                 "conflict",
-                `Extension Profile '${extensionProfileId(ref)}' is selected for ${scope}; clear that selection before deleting it`,
+                `Extension Profile '${extensionProfileId(ref)}' is active; select another Extension Profile and reconnect before deleting it`,
               );
             }
-          }
-          rmSync(path);
-        }),
+            for (const scope of ["global", "workspace"] as const) {
+              const selection = selectionFromFile(scope);
+              if (selection.error !== undefined) {
+                throw kernelError(
+                  "unavailable",
+                  `the ${scope} Extension Profile selection must be repaired before deleting a definition`,
+                );
+              }
+              if (selection.ref !== undefined && sameRef(selection.ref, ref)) {
+                throw kernelError(
+                  "conflict",
+                  `Extension Profile '${extensionProfileId(ref)}' is selected for ${scope}; clear that selection before deleting it`,
+                );
+              }
+            }
+            tx.removeDefinition(ref);
+          }),
       );
     },
     async clone(inputSource, inputTarget) {
@@ -2434,7 +1550,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
           false,
           true,
         );
-        publishSkillRootsChanged();
+        monitor.publishRootsChanged();
         return pinned;
       }
       const startedAt = Date.now();
@@ -2458,12 +1574,12 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     activePlugins,
     skillRoots,
     pinnedSkillRoots,
-    observeSkillCatalog,
+    observeSkillCatalog: monitor.observeCatalog,
     verifySkillCatalog,
-    skillAvailable,
-    onSkillRootsChanged,
-    requestSkillRefresh,
-    flushSkillRefresh,
+    skillAvailable: monitor.skillAvailable,
+    onSkillRootsChanged: (listener) => monitor.onRootsChanged(listener),
+    requestSkillRefresh: monitor.requestRefresh,
+    flushSkillRefresh: monitor.flushRefresh,
     runRef() {
       if (pinned === undefined)
         throw kernelError("unavailable", "Extension Profile has not been resolved");
@@ -2471,13 +1587,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     },
     workspaceTrustSurface,
     assertWorkspaceTrustTransitionAllowed,
-    close() {
-      if (closed) return;
-      closed = true;
-      resetSkillMonitoring();
-      for (const watcher of rootWatchers.values()) watcher.close();
-      rootWatchers.clear();
-      skillRootListeners.clear();
-    },
+    close: () => monitor.close(),
   };
 }

@@ -1,6 +1,6 @@
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { Logger } from "@clarvis/capability";
-import { NOOP_LOGGER, detachObserved } from "@clarvis/capability";
+import type { Logger, TaskObservationScope } from "@clarvis/capability";
+import { createTaskObservationScope, NOOP_LOGGER, detachObserved } from "@clarvis/capability";
 
 /** Default maximum size of one HTTP/SSE MCP response before SDK parsing. */
 export const DEFAULT_MCP_HTTP_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -50,8 +50,10 @@ function detachCancel(
   operation: string,
   logger: Logger,
   mcpName: string | undefined,
+  observationScope: TaskObservationScope,
 ): void {
   detachObserved(cancel, {
+    scope: observationScope,
     operation,
     dedupeKey: `${operation}\0${mcpName ?? ""}`,
     logger,
@@ -64,6 +66,7 @@ function detachCancel(
  * a broken transport's cancel algorithm must not defeat the byte limit itself.
  */
 export function createMCPBoundedFetch(options: MCPBoundedFetchOptions = {}): FetchLike {
+  const observationScope = createTaskObservationScope();
   const baseFetch = options.fetch ?? globalThis.fetch;
   const maxResponseBytes = boundedPositive(
     options.maxResponseBytes,
@@ -108,6 +111,7 @@ export function createMCPBoundedFetch(options: MCPBoundedFetchOptions = {}): Fet
           "mcp_oversized_declared_body_cancel",
           logger,
           mcpName,
+          observationScope,
         );
       }
       throw error;
@@ -162,6 +166,7 @@ export function createMCPBoundedFetch(options: MCPBoundedFetchOptions = {}): Fet
             "mcp_oversized_stream_cancel",
             logger,
             mcpName,
+            observationScope,
           );
           controller.error(limitError);
           return;
@@ -170,7 +175,13 @@ export function createMCPBoundedFetch(options: MCPBoundedFetchOptions = {}): Fet
       },
       cancel(reason) {
         upstream.abort(reason);
-        detachCancel(() => reader.cancel(reason), "mcp_bounded_stream_cancel", logger, mcpName);
+        detachCancel(
+          () => reader.cancel(reason),
+          "mcp_bounded_stream_cancel",
+          logger,
+          mcpName,
+          observationScope,
+        );
       },
     });
 

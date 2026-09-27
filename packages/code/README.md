@@ -20,6 +20,12 @@ canonical refresh and confirmed revision sequencing. Its usage adapter converts 
 and delegates token/cache/pricing accumulation to Kernel’s `addRunUsage` through `./policy`. The workspace manager launches or discovers
 the companion `local-host` entry and owns its connection, while the host owns execution and history.
 
+`RunHost` keeps local turn admission in a private coordinator. It tracks human and scheduled
+reservations, conversation generations, reconciliation, physical handles, local shell work and
+compaction independently. The shell's reactive status reads coordinator snapshots; a terminal
+result releases interactive control while physical closure and stored reconciliation retain their
+own ownership. The Kernel still decides hosted admission and authority.
+
 On a local host connection, `/background` confirms that the current hosted run may continue,
 then closes the TUI. SSH Kernels are owned by the current client channel, so
 they refuse an exit-surviving handoff; list, attach and cancel remain available while that
@@ -1173,6 +1179,10 @@ a directory outside the global `exports/` tree.
   marks an unavailable record as incomplete. See
   [transcript stability](../../specs/hosts/code-transcript-stability.md) and
   [run host](../../specs/hosts/code-run-host.md).
+  `RunHost.exportNodeBatches` delegates replay to the private
+  `adapters/transcript-export.ts` reader. It captures the current conversation before reading
+  persisted runs, reconstructs one run in a temporary store at a time, and disposes that store
+  when export completes or its iterator is closed early. The command and output format are unchanged.
 - Tool-call, diff, reasoning, plan and budget views.
 - A tool appears as soon as its name is known. While the provider composes a large argument payload,
   its one mutable row says `waiting for arguments` until the first argument byte arrives, then shows

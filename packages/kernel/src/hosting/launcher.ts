@@ -2,7 +2,13 @@ import { spawn, type SpawnOptions } from "node:child_process";
 import { hostname } from "node:os";
 import { isAbsolute } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { detachObserved, loadEnv, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  detachObserved,
+  loadEnv,
+  NOOP_LOGGER,
+  type Logger,
+} from "@clarvis/capability";
 import { localHostPolicyIdentity } from "./policy-identity.ts";
 import { kernelError } from "../core/errors.ts";
 import { connectKernelClient, type RemoteKernel } from "../transport/client.ts";
@@ -55,13 +61,18 @@ async function connect(
   logger: Logger,
   allowRetiring = false,
 ): Promise<RemoteKernel> {
+  const observationScope = createTaskObservationScope();
   const remaining = Math.max(1, Math.ceil(deadline - performance.now()));
   const transport = await connectLocalKernelTransport(record.endpoint, {
     timeoutMs: Math.min(1000, remaining),
     logger,
   });
   const timer = setTimeout(() => {
-    detachObserved(() => transport.close(), { operation: "hosting.hello.timeout", logger });
+    detachObserved(() => transport.close(), {
+      scope: observationScope,
+      operation: "hosting.hello.timeout",
+      logger,
+    });
   }, remaining);
   try {
     const client = await connectKernelClient(transport, {

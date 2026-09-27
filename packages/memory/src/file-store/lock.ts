@@ -1,11 +1,18 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { promises as fs } from "node:fs";
-import { levelEnabled, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  levelEnabled,
+  NOOP_LOGGER,
+  type Logger,
+  type TaskObservationScope,
+} from "@clarvis/capability";
 import { bestEffortFileStore, detachFileStoreTask } from "./tasks.ts";
 import { readUtf8FileBounded } from "../bounded-io.ts";
 import { MEMORY_STORAGE_LIMITS } from "../storage-limits.ts";
 
 export interface TreeLockOptions {
+  observationScope?: TaskObservationScope;
   lockDir: string;
   staleMs: number;
   heartbeatMs: number;
@@ -51,6 +58,7 @@ export interface TreeLock {
 }
 
 export function createTreeLock(options: TreeLockOptions): TreeLock {
+  const observationScope = options.observationScope ?? createTaskObservationScope();
   const holderFile = `${options.lockDir}/holder`;
   const context = new AsyncLocalStorage<true>();
   const logger = options.logger ?? NOOP_LOGGER;
@@ -104,6 +112,7 @@ export function createTreeLock(options: TreeLockOptions): TreeLock {
           await fs.writeFile(holderFile, token, { encoding: "utf8", mode: 0o600 });
         } catch (error) {
           await bestEffortFileStore(
+            observationScope,
             "memory_failed_lock_cleanup",
             () => fs.rm(options.lockDir, { recursive: true, force: true }),
             logger,
@@ -117,6 +126,7 @@ export function createTreeLock(options: TreeLockOptions): TreeLock {
         if (await stealable()) {
           stolen = true;
           await bestEffortFileStore(
+            observationScope,
             "memory_stale_lock_cleanup",
             () => fs.rm(options.lockDir, { recursive: true, force: true }),
             logger,
@@ -139,6 +149,7 @@ export function createTreeLock(options: TreeLockOptions): TreeLock {
     const heartbeat = setInterval(() => {
       const now = new Date();
       detachFileStoreTask(
+        observationScope,
         "memory_lock_heartbeat",
         () => fs.utimes(options.lockDir, now, now),
         logger,
@@ -149,6 +160,7 @@ export function createTreeLock(options: TreeLockOptions): TreeLock {
       clearInterval(heartbeat);
       if ((await readHolder()) === token) {
         await bestEffortFileStore(
+          observationScope,
           "memory_lock_release",
           () => fs.rm(options.lockDir, { recursive: true, force: true }),
           logger,

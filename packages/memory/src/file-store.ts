@@ -11,7 +11,7 @@
  */
 import { randomBytes } from "node:crypto";
 
-import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { createTaskObservationScope, NOOP_LOGGER, type Logger } from "@clarvis/capability";
 
 import { runBatch, type BatchPrimitives } from "./batch.ts";
 import { createDocumentRepository } from "./file-store/documents.ts";
@@ -123,7 +123,8 @@ export interface CreateFileMemoryStoreOptions {
  * @throws Error when the lock wait times out.
  */
 export function createFileMemoryStore(opts: CreateFileMemoryStoreOptions): MemoryStore {
-  const layout = createFileStoreLayout(opts);
+  const observationScope = createTaskObservationScope();
+  const layout = createFileStoreLayout({ ...opts, observationScope });
   const { root, machineryRoot, lockDir } = layout;
   const init = () => layout.init();
   const logger = opts.logger ?? NOOP_LOGGER;
@@ -131,11 +132,12 @@ export function createFileMemoryStore(opts: CreateFileMemoryStoreOptions): Memor
   const lockStaleMs = opts.lock?.staleMs ?? LOCK_STALE_MS;
   const lockHeartbeatMs = opts.lock?.heartbeatMs ?? LOCK_HEARTBEAT_MS;
   const lockTimeoutMs = opts.lock?.timeoutMs ?? LOCK_TIMEOUT_MS;
-  const revisions = createRevisionRepository({ machineryRoot, init });
-  const jobs = createJobRepository({ machineryRoot, init, logger });
-  const journal = createJournalRepository({ machineryRoot, init });
+  const revisions = createRevisionRepository({ machineryRoot, init, observationScope });
+  const jobs = createJobRepository({ machineryRoot, init, logger, observationScope });
+  const journal = createJournalRepository({ machineryRoot, init, observationScope });
   const documents = createDocumentRepository({ root, init, clock });
   const treeLock = createTreeLock({
+    observationScope,
     lockDir,
     staleMs: lockStaleMs,
     heartbeatMs: lockHeartbeatMs,

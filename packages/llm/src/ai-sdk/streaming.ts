@@ -1,5 +1,5 @@
 import type { LLMCallParams } from "@clarvis/capability";
-import { streamMetrics } from "../stream-metrics.ts";
+import type { StreamMetrics } from "../stream-metrics.ts";
 
 type StreamDeltaSink = NonNullable<LLMCallParams["onStreamDelta"]>;
 type DeltaChannel = "text" | "reasoning";
@@ -45,6 +45,7 @@ const DELTA_BATCH = { maxChars: 384, maxMs: 64 };
 export function makeDeltaBatcher(
   sink: StreamDeltaSink,
   { maxChars, maxMs }: { maxChars: number; maxMs: number } = DELTA_BATCH,
+  metrics?: Pick<StreamMetrics, "count">,
 ): {
   push: (channel: DeltaChannel, text: string) => void;
   flush: () => void;
@@ -57,7 +58,6 @@ export function makeDeltaBatcher(
   let idle: ReturnType<typeof setTimeout> | undefined;
   let sinkError: unknown;
   const started = new Set<DeltaChannel>();
-  const metrics = streamMetrics();
   const disarm = (): void => {
     if (idle === undefined) return;
     clearTimeout(idle);
@@ -73,7 +73,7 @@ export function makeDeltaBatcher(
     if (buf.length === 0 || channel === undefined) return;
     const reset = !started.has(channel);
     started.add(channel);
-    metrics.count(`batcher_flush_${channel}`);
+    metrics?.count(`batcher_flush_${channel}`);
     const text = buf;
     buf = "";
     lastFlush = Date.now();
@@ -97,8 +97,8 @@ export function makeDeltaBatcher(
   };
   const push = (ch: DeltaChannel, text: string): void => {
     if (text.length === 0) return;
-    metrics.count("provider_delta");
-    metrics.count("provider_chars", text.length);
+    metrics?.count("provider_delta");
+    metrics?.count("provider_chars", text.length);
     if (channel !== undefined && ch !== channel) flush();
     channel = ch;
     buf += text;
@@ -150,6 +150,7 @@ export const TOOL_INPUT_REPORT_MS = 250;
 export function makeToolInputReporter(
   sink: NonNullable<LLMCallParams["onToolInputDelta"]>,
   maxMs: number = TOOL_INPUT_REPORT_MS,
+  metrics?: Pick<StreamMetrics, "count">,
 ): {
   start: (callId: string, toolName: string) => void;
   delta: (callId: string, text: string) => void;
@@ -157,7 +158,6 @@ export function makeToolInputReporter(
   observe: (text: string) => void;
 } {
   const open = new Map<string, { toolName: string; chars: number; reportedAt: number }>();
-  const metrics = streamMetrics();
   let streamChars = 0;
   const report = (
     callId: string,
@@ -178,14 +178,14 @@ export function makeToolInputReporter(
   return {
     start: (callId, toolName): void => {
       open.set(callId, { toolName, chars: 0, reportedAt: Date.now() });
-      metrics.count("tool_input_start");
+      metrics?.count("tool_input_start");
       sink({ call_id: callId, tool_name: toolName, chars: 0, stream_chars: streamChars });
     },
     delta: (callId, text): void => {
       const state = open.get(callId);
       if (state === undefined) return;
-      metrics.count("tool_input_delta");
-      metrics.count("tool_input_chars", text.length);
+      metrics?.count("tool_input_delta");
+      metrics?.count("tool_input_chars", text.length);
       state.chars += text.length;
       streamChars += text.length;
       const now = Date.now();
@@ -195,7 +195,7 @@ export function makeToolInputReporter(
       const state = open.get(callId);
       if (state === undefined) return;
       open.delete(callId);
-      metrics.count("tool_input_end");
+      metrics?.count("tool_input_end");
       report(callId, state, Date.now(), true);
     },
     observe: (text): void => {

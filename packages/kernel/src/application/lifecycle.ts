@@ -1,4 +1,9 @@
-import { detachObserved, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  detachObserved,
+  NOOP_LOGGER,
+  type Logger,
+} from "@clarvis/capability";
 import { observationSink } from "../core/observed.ts";
 
 /** A long-lived resource owned by a kernel runtime. */
@@ -32,6 +37,7 @@ export interface KernelLifecycle {
  *   failed resources remain owned and later calls retry only those failures.
  */
 export function createKernelLifecycle(logger: Logger = NOOP_LOGGER): KernelLifecycle {
+  const observationScope = createTaskObservationScope();
   let state: KernelLifecycleState = "open";
   let closing: Promise<void> | undefined;
   const resources = new Set<KernelResource>();
@@ -43,6 +49,7 @@ export function createKernelLifecycle(logger: Logger = NOOP_LOGGER): KernelLifec
     register(resource): () => void {
       if (state !== "open") {
         detachObserved(() => resource.close(), {
+          scope: observationScope,
           operation: "kernel_late_resource_close",
           logger: observationSink(logger, "lifecycle.late_close_failed"),
         });

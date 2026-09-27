@@ -12,6 +12,7 @@ import { systemClock } from "./clock.ts";
 import type { MemoryDrainReport } from "./drain.ts";
 import type { Memory } from "./memory-contract.ts";
 import {
+  createTaskObservationScope,
   createRateLimiter,
   detachObserved,
   NOOP_LOGGER,
@@ -67,6 +68,7 @@ const DEFAULT_INTERVAL_MS = 60_000;
  * @returns a {@link MemoryIndexWorker}; nothing runs until `start`.
  */
 export function createIndexWorker(opts: MemoryIndexWorkerOptions): MemoryIndexWorker {
+  const observationScope = createTaskObservationScope();
   const clock = opts.clock ?? systemClock;
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
   const logger = opts.logger ?? NOOP_LOGGER;
@@ -205,7 +207,7 @@ export function createIndexWorker(opts: MemoryIndexWorkerOptions): MemoryIndexWo
     // Observe each newly-created pass exactly once. A poke storm while this
     // promise is pending only flips `again`; attaching one best-effort await per
     // poke would retain one Promise reaction per poke until the drain settles.
-    detachObserved(() => pass, { operation, logger });
+    detachObserved(() => pass, { scope: observationScope, operation, logger });
   }
 
   return {

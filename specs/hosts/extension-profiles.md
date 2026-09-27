@@ -1,7 +1,10 @@
 # Extension Profiles: deterministic activation snapshots
 
 > Implemented by `packages/protocol/src/extension-profiles.ts`,
-> `packages/kernel/src/extension-profiles/extension-profile-manager.ts`, the Extension Profile composition in
+> `packages/kernel/src/extension-profiles/extension-profile-manager.ts`,
+> `packages/kernel/src/extension-profiles/profile-repository.ts`,
+> `packages/kernel/src/extension-profiles/profile-resolution.ts`,
+> `packages/kernel/src/extension-profiles/skill-catalog-monitor.ts`, the Extension Profile composition in
 > `packages/kernel/src/file-kernel.ts`, and the control surface in
 > `packages/code/src/views/config/ExtensionProfileBrowser.tsx`. Exact skill filtering is delegated to
 > `packages/skills/src/{types,config,registry}.ts`; persisted run identity crosses
@@ -13,14 +16,15 @@ An **Extension Profile** selects which already-installed extensions compose the 
 does not install plugins, copy `settings.json`, select a model or Agent Profile, carry secrets,
 Extension Profile is a complete allow-list of exact plugin installations and standalone skills; plugin
 contributions remain atomic. (`ExtensionProfileDefinition` in
-`packages/protocol/src/extension-profiles.ts`; `resolved` and `skillRoots` in
+`packages/protocol/src/extension-profiles.ts`; `resolveProfileData` in
+`packages/kernel/src/extension-profiles/profile-resolution.ts` and `skillRoots` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.)
 
 The immutable virtual `builtin:default` activates the exact `{ scope, source, name }` references in
 `enabledPlugins`; plugin skills follow those active plugins, and standalone skills use both
 standard roots with their ordinary last-root-wins precedence. A same-name install in another scope
-is never substituted. (`defaultStandaloneSelection` and the builtin
-branches in `resolved`, `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; exact inventory
+is never substituted. (`defaultStandaloneSelection` and `resolveProfileData` in
+`packages/kernel/src/extension-profiles/profile-resolution.ts`; exact inventory
 cases in `packages/kernel/tests/integration/extension-profile-manager.test.ts`.)
 
 The reserved product skill `clarvis-docs` is outside Extension Profile selection. `standaloneCatalog`
@@ -38,6 +42,39 @@ than an Extension Profile domain object. (`skillRoots` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `ExecuteRunDeps.hostMetadata` in
 `packages/loop/src/runtime/execute-run.ts`.)
 
+
+### Internal ownership and lifecycle
+
+The file-backed manager owns runtime binding, trust decisions, preview tokens, plugin/skill
+inventory collection, and publication of the process-pinned snapshot. Its private repository owns
+bounded definition and selection reads, exact-byte revisions, lease ordering, and rollback. Its
+pure resolver takes the already collected definition, plugin contribution, skill digest, and trust
+values and derives precedence, status, delta, and fingerprint without I/O. The skill catalog monitor
+owns watchers, drift latches, coalesced refresh requests, and disposal; the manager alone decides
+whether a validated generation replaces the published snapshot. None of these modules adds a
+protocol entrypoint, wire field, persisted format, or package dependency.
+
+The manager starts unbound with no runtime or pinned resolution. Binding supplies the runtime;
+`resolveActive` pins a snapshot and its roots. Recomposition can replace that snapshot only at the
+documented idle trust or standalone refresh boundary. Closing the manager closes its monitor and
+prevents later watcher callbacks from publishing a generation. A pinned snapshot retains its run
+identity until reconnect or a documented idle recomposition. Repository mutation callbacks are valid only while their
+catalog, definition, global selection, and workspace selection leases are held in that order;
+they re-read revisions before writes and restore the prior documents if a later step fails.
+
+Production: `createExtensionProfileManager` and `resolveActive` in
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
+`createProfileRepository` and `withDefinitionMutation` in
+`packages/kernel/src/extension-profiles/profile-repository.ts`;
+`prepareProfileResolution`, `resolveProfileData`, and `fingerprintOf` in
+`packages/kernel/src/extension-profiles/profile-resolution.ts`;
+`createSkillCatalogMonitor` in
+`packages/kernel/src/extension-profiles/skill-catalog-monitor.ts`. Test:
+`packages/kernel/tests/unit/profile-repository.test.ts`,
+`packages/kernel/tests/unit/profile-resolution.test.ts`,
+`packages/kernel/tests/component/skill-catalog-monitor.test.ts`, and
+`packages/kernel/tests/integration/extension-profile-manager.test.ts` (two manager instances,
+preview isolation, snapshot isolation, rollback, and physical leases).
 
 ## 2. Surface
 
@@ -92,7 +129,8 @@ Definitions may therefore be committed, while merely cloning a repository does n
 Listing definitions materializes an absent global catalog with `DIR_MODE`, but an absent workspace
 catalog contributes no definitions and is not created as a read side effect. Both an initial
 `opendir` absence and an `ENOENT` raised later by bounded directory iteration follow that same rule
-(`missingDefinitionCatalog`, `definitionNames`, and `list` in
+(`missingDefinitionCatalog` and `definitionNames` in
+`packages/kernel/src/extension-profiles/profile-repository.ts`, and `list` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`).
 
 ### 3.2 Version-one definition
@@ -116,27 +154,28 @@ most 64 plugins and 256 standalone skills. Duplicate plugin names across scopes 
 names across roots are rejected because the downstream catalogs merge by unqualified name. A global
 definition may reference only global plugins and user-scoped skills. (`definitionSchema`,
 `readBounded`, and `parseDefinition` in
-`packages/kernel/src/extension-profiles/extension-profile-manager.ts`.)
+`packages/kernel/src/extension-profiles/profile-repository.ts`.)
 
 Each scope admits at most 128 definition files and 256 total directory entries. Create operations
 hold a scope-wide catalog lease before the per-definition lease, re-read both limits inside that
 transaction, and create only when the exact target is observably absent. An unreadable, symlinked,
 or non-regular existing entry is never replaced. (`definitionNames`, `underLease`, and
-`writeDefinition` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.)
+`withDefinitionMutation` in `packages/kernel/src/extension-profiles/profile-repository.ts`.)
 
 Selection documents are strict `{ "schema_version": 1, "extension_profile": ExtensionProfileRef }` JSON
 written atomically. A global selection cannot point at a workspace definition
 (`selectionSchema`, `selectionFromFile`, and `writeSelection` in
-`packages/kernel/src/extension-profiles/extension-profile-manager.ts`). Definition writes
+`packages/kernel/src/extension-profiles/profile-repository.ts`). Definition writes
 are formatted JSON and updates compare the exact-byte SHA-256 revision returned by the prior read.
 Deletion accepts only authored global/workspace refs and the exact expected revision. Under both
 selection leases it refuses the process-pinned Extension Profile and any definition still selected by
 either global or workspace state, then removes only that exact regular file (`ExtensionProfileService.delete`
-and `withDefinitionMutation` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`).
+in `packages/kernel/src/extension-profiles/extension-profile-manager.ts` and `withDefinitionMutation`
+in `packages/kernel/src/extension-profiles/profile-repository.ts`).
 Definition and selection mutations perform that comparison under crash-recoverable local leases, so
 cooperating Clarvis processes cannot both win a stale write (`underLease`, `underDefinitionLease`,
 `underSelectionLeases`, and `writeDefinition` in
-`packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `acquireLocalLeaseSync` in
+`packages/kernel/src/extension-profiles/profile-repository.ts`; `acquireLocalLeaseSync` in
 `packages/paths/src/local-lease.ts`).
 
 ### 3.3 Persisted execution identity
@@ -234,8 +273,8 @@ reconnect` in
 
 `ready` means every selected reference resolved and applicable trust is present; missing inventory,
 an invalid plugin, or unapproved workspace executables produces `degraded`; an invalid selection or
-definition produces `invalid` (`resolved` in
-`packages/kernel/src/extension-profiles/extension-profile-manager.ts`).
+definition produces `invalid` (`prepareProfileResolution` and `resolveProfileData` in
+`packages/kernel/src/extension-profiles/profile-resolution.ts`).
 No state silently substitutes `builtin:default`.
 
 `resolveActive` pins one contribution snapshot for the process, except that an idle workspace-trust
@@ -261,9 +300,9 @@ resource-path allow-list. An idle trust recomposition is the only event that pub
 root set to that provider. Run admission then acquires only its in-memory lease: it performs no skill
 discovery, filesystem traversal, or hashing.
 
-After the registry is captured, the extension-profile manager's `observeSkillCatalog` arms `watchFile` polling on
+After the registry is captured, `createSkillCatalogMonitor.observeCatalog` arms `watchFile` polling on
 every admitted identity file: manifest, selected sidecar, and resources. Before the capture becomes
-visible, `verifySkillCatalog` re-reads the bounded identities and compares them with the pinned
+visible, the manager's `verifySkillCatalog` re-reads the bounded identities and compares them with the pinned
 digests. A mismatch in that interval uses the same memory latch and `onSkillDrift` notice as a later
 watch callback; it withholds only the affected skill and does not fail dependency construction. The
 ongoing maintenance is asynchronous and outside every run. Its callback does not recompute an
@@ -285,9 +324,10 @@ manifest; `standaloneCatalog` hashes each resource through the same raw streamin
 standalone skill. Plugin skill digests include the same dependency projection. Those digests define
 the version recorded by the process fingerprint; later sidecar changes do not alter the in-memory
 catalog of an active run. Standalone changes queue a coalesced idle recapture, while plugin changes
-retain the existing withdrawal boundary. Production: `standaloneCatalog`, `pinnedSkillRoots`, `observeSkillCatalog`,
-`verifySkillCatalog`, `skillAvailable`, and `onSkillRootsChanged` in
-`packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `skillSurface`,
+retain the existing withdrawal boundary. Production: `standaloneCatalog`, `pinnedSkillRoots`, and
+`verifySkillCatalog` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
+`createSkillCatalogMonitor` and its `observeCatalog`, `skillAvailable`, and `onRootsChanged` in
+`packages/kernel/src/extension-profiles/skill-catalog-monitor.ts`; `skillSurface`,
 `verifyPinnedSkillCatalog`, and `pinnedSkillRoots` in
 `packages/kernel/src/plugins/plugin-contributions.ts`; `snapshotSkills` in
 `packages/loop/src/runtime/build-run-deps.ts`. Test: asynchronous withdrawal in
@@ -319,7 +359,7 @@ it (`withSelectedMutation` in `packages/kernel/src/{kernel,plugins/plugin-servic
 Before an interactive selection or local-selection clear, Code asks the kernel for an exact delta
 of plugins, standalone and plugin skills, MCP servers, and hook counts, then requires explicit
 confirmation
-(`deltaOf` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
+(`deltaOf` in `packages/kernel/src/extension-profiles/profile-resolution.ts`;
 `ExtensionProfileBrowser.applyPending`, `packages/code/src/views/config/ExtensionProfileBrowser.tsx`). A preview
 token is single-use, expires after five minutes, and binds the mutation kind, selected reference,
 persisted selection scope, both exact selection-document revisions, and resolved target fingerprint.
@@ -339,8 +379,9 @@ definition plus intended selection as one recoverable operation. No conflict wri
 definition or a different selection; trust approval failure restores both prior documents. A
 workspace-local selection that already shadows a new global default remains the effective target.
 If that unchanged target is untrusted, the global write neither activates it nor grants new trust
-(`inventory`, `previewComposition`, `applyComposition`, `restoreDefinition`, and
-`restoreSelection` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; composition cases
+(`inventory`, `previewComposition`, and `applyComposition` in
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `restoreDefinition` and
+`restoreSelection` in `packages/kernel/src/extension-profiles/profile-repository.ts`; composition cases
 in `packages/kernel/tests/integration/extension-profile-manager.test.ts`).
 
 The workspace executable surface inventories every installed `scope: "workspace"` plugin from both
@@ -363,7 +404,9 @@ the same Extension Profile remain admitted
 `packages/kernel/src/config/workspace-trust.ts`). A selection may still carry the workspace approval
 when the proactive question was declined, and an approval failure restores the exact prior selection
 bytes. Plugin hooks are part of the selected plugin unit rather than a second approval projection
-(`ExtensionProfileService.select`, `restoreSelection`, and `PluginContributions.settingsScopes`; test
+(`ExtensionProfileService.select` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`,
+`restoreSelection` in `packages/kernel/src/extension-profiles/profile-repository.ts`, and
+`PluginContributions.settingsScopes`; test
 `packages/kernel/tests/integration/extension-profile-manager.test.ts` "restores the prior selection").
 
 Approving or revoking workspace trust recomposes the selected workspace (or `builtin:default`
@@ -404,8 +447,8 @@ only the installed inventory. Plugin lifecycle remains on `PluginService`.
 The builtin activation list does not leak into a custom Extension Profile, and no `{ scope, source, name }`
 reference silently means another scope or source.
 
-- **Production:** custom branches and the exact `contributionByRef` / `unresolvedInstalled` lookups in `resolved` in
-  `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
+- **Production:** custom branches and the exact `contributionByRef` / `unresolvedInstalled` lookups in
+  `resolveProfileData` in `packages/kernel/src/extension-profiles/profile-resolution.ts`.
 - **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` proves exact global
   `.agents` scope selection despite same-named alternatives and proves unselected installs are
   absent.
@@ -441,12 +484,13 @@ only at an idle boundary and synchronously replace the exact skill catalog; expl
 refreshes the trust surface through the file-kernel adapter before recording consent, while ordinary
 settings reads reuse its cached process snapshot.
 
-Standalone skills written through ordinary file tools are discovered at the next safe catalog refresh. A custom Extension Profile includes only its selected skill references; adding a skill file does not change that definition. The default standalone selection can discover a new skill without workspace trust approval when its content is otherwise admissible. Production: `standaloneCatalog`, `defaultStandaloneSelection`, and `flushSkillRefresh` in [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts), and `workspaceExecutableSurface` in [workspace-trust.ts](../../packages/kernel/src/config/workspace-trust.ts). Test: exact standalone selection and builtin discovery cases in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).
+Standalone skills written through ordinary file tools are discovered at the next safe catalog refresh. A custom Extension Profile includes only its selected skill references; adding a skill file does not change that definition. The default standalone selection can discover a new skill without workspace trust approval when its content is otherwise admissible. Production: `standaloneCatalog` and `flushSkillRefresh` in [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts), `defaultStandaloneSelection` in [profile-resolution.ts](../../packages/kernel/src/extension-profiles/profile-resolution.ts), and `workspaceExecutableSurface` in [workspace-trust.ts](../../packages/kernel/src/config/workspace-trust.ts). Test: exact standalone selection and builtin discovery cases in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,
-  `standaloneCatalog`, `createExtensionProfileManager` (its `observeSkillCatalog`, `verifySkillCatalog`,
-  `skillAvailable` and `onSkillRootsChanged`), `PluginContributions.verifyPinnedSkillCatalog`,
+  `standaloneCatalog`, `createExtensionProfileManager` (its `verifySkillCatalog`),
+  `createSkillCatalogMonitor` (its `observeCatalog`, `skillAvailable` and `onRootsChanged`),
+  `PluginContributions.verifyPinnedSkillCatalog`,
   `SkillRootSnapshotProvider`, `snapshotSkills`, `withRunLease`,
   the memory factory's host executor, pinned `resolveActive`, revision CAS,
   and preview fingerprint comparison in `packages/kernel/src`; `hashBoundedFile` and the two
@@ -514,8 +558,8 @@ root filters. Neither imports the kernel Extension Profile manager or protocol s
 Two processes cannot both create past a catalog limit, and creation never replaces an entry whose
 absence cannot be established safely.
 
-- **Production:** `definitionNames` and `writeDefinition` in
-  `packages/kernel/src/extension-profiles/extension-profile-manager.ts` enforce catalog and
+- **Production:** `definitionNames` and `withDefinitionMutation` in
+  `packages/kernel/src/extension-profiles/profile-repository.ts` enforce catalog and
   per-definition leases, both limits, exact absence, and atomic publication.
 - **Test:** `serializes catalog creates and enforces both catalog resource bounds` in
   `packages/kernel/tests/integration/extension-profile-manager.test.ts` holds the catalog lease and
@@ -543,8 +587,8 @@ The first definition listing creates an absent global catalog with private direc
 An absent workspace catalog is an empty inventory and is never created merely by opening the view;
 an absence reported during either directory open or bounded iteration has the same outcome.
 
-- **Production:** `missingDefinitionCatalog`, `definitionNames`, and `list` in
-  `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
+- **Production:** `missingDefinitionCatalog`, `definitionNames`, and `listDefinitions` in
+  `packages/kernel/src/extension-profiles/profile-repository.ts`.
 - **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` ("materializes an empty
   global catalog without writing into the workspace").
 
@@ -554,9 +598,10 @@ A composition apply can write only the definition bytes and normally effective s
 under its token. Definition, inventory, or selection drift fails before either write; approval
 failure restores both prior documents.
 
-- **Production:** `previewComposition`, `applyComposition`, `withDefinitionMutation`,
-  `restoreDefinition`, and `restoreSelection` in
-  `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
+- **Production:** `previewComposition` and `applyComposition` in
+  `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
+  `withDefinitionMutation`, `restoreDefinition`, and `restoreSelection` in
+  `packages/kernel/src/extension-profiles/profile-repository.ts`.
 - **Test:** the composition success, stale-definition, inventory-drift, shadowed-precedence,
   unchanged-untrusted-target, trust-rollback, and token-replay cases in
   `packages/kernel/tests/integration/extension-profile-manager.test.ts`.
@@ -566,8 +611,10 @@ failure restores both prior documents.
 Deletion cannot name the builtin, cannot remove a definition selected at either precedence level,
 and cannot remove bytes other than the revision the caller inspected.
 
-- **Production:** `ExtensionProfileService.delete`, `withDefinitionMutation`, and
-  `underSelectionLeases` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
+- **Production:** `ExtensionProfileService.delete` in
+  `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
+  `withDefinitionMutation` and `underSelectionLeases` in
+  `packages/kernel/src/extension-profiles/profile-repository.ts`.
 - **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` (deletion lifecycle and
   stale revision cases) and `packages/code/tests/integration/extension-profile-browser-render.test.tsx`
   (danger-confirmed inactive delete).
@@ -599,8 +646,10 @@ and cannot remove bytes other than the revision the caller inspected.
 | Workspace definition catalog is absent | listing treats it as empty and does not create repository content. |
 | Definition directory or file exceeds a resource bound | list/get reports an invalid entry; it never returns a partial silently usable definition. |
 
-The failures are implemented by `readBounded`, `definitionNames`, `resolved`, `writeDefinition`, and
-`ExtensionProfileService.select` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`. The TUI
+The failures are implemented by `readBounded` and `definitionNames` in
+`packages/kernel/src/extension-profiles/profile-repository.ts`, `resolveProfileData` in
+`packages/kernel/src/extension-profiles/profile-resolution.ts`, and `ExtensionProfileService.select`
+in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`. The TUI
 renders status, every issue, missing contribution, fingerprint, and source rather than reducing a
 degraded Extension Profile to an empty list (`fullDetail` and `normalBody` in
 `packages/code/src/views/config/ExtensionProfileBrowser.tsx`).
@@ -632,5 +681,5 @@ needs a variation clones an Extension Profile and edits the complete allow-list;
 scope requires a new schema version and an explicit product decision.
 
 Standalone refresh arms directory monitors through the skills package’s bounded discovery walk, including newly created empty directories. A manifest written later therefore schedules another generation without requiring an unrelated filesystem event. This scan runs on catalog observation/invalidated idle refresh, never on every submission.
-Production: `observeSkillRoots` in [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts) and `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts).
+Production: `observeSkillRoots` in [skill-catalog-monitor.ts](../../packages/kernel/src/extension-profiles/skill-catalog-monitor.ts) and `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts).
 Test: delayed-manifest directory observation in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).

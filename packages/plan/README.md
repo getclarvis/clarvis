@@ -5,6 +5,11 @@ Execution-plan contracts, orchestration and workspace-local Markdown persistence
 
 Dependencies: `@clarvis/capability`, `@clarvis/paths`, `zod` and `yaml`.
 
+Each `createPlansCapability.forRun` session owns the failure-observation scope for best-effort
+retention cleanup. Separate sessions do not suppress each other's cleanup warning. Production:
+`createPlansCapability` in `packages/plan/src/capability/index.ts`. Test:
+`packages/capability/tests/unit/tasks.test.ts`.
+
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.
 

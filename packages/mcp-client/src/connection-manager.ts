@@ -4,6 +4,7 @@ import type { MCPConnection } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
 import { ownerSegment } from "@clarvis/paths";
 import {
+  createTaskObservationScope,
   NOOP_LOGGER,
   bestEffort,
   bind,
@@ -536,6 +537,7 @@ function poolKey(server: McpServerConfig, scope: PoolScope, sharing: PoolSharing
  *   every acquire throws, without opening anything first.
  */
 export function createConnectionManager(opts: ConnectionManagerOptions): ConnectionManager {
+  const observationScope = createTaskObservationScope();
   const idleTtlMs = finiteIntegerAtLeast(opts.idleTtlMs, DEFAULT_IDLE_TTL_MS, 0);
   const maxConnections = finiteIntegerAtLeast(opts.maxConnections, DEFAULT_MAX_MCP_CONNECTIONS, 1);
   const maxParallelConnects = finiteIntegerAtLeast(
@@ -811,6 +813,7 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
     if (opened) {
       const closing = trackClosure(() => opened.conn.close());
       detachObserved(() => closing, {
+        scope: observationScope,
         operation: "mcp_pool_idle_close",
         workspace: opts.workspace,
         dedupeKey: `mcp_pool_idle_close\0${opts.workspace}\0${slot.mcpName}`,
@@ -897,6 +900,7 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
       const opened = slot.opened;
       const closing = trackClosure(() => opened.conn.close());
       detachObserved(() => closing, {
+        scope: observationScope,
         operation: "mcp_pool_unhealthy_close",
         workspace: opts.workspace,
         dedupeKey: `mcp_pool_unhealthy_close\0${opts.workspace}\0${o.server.name}`,
@@ -935,6 +939,7 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
           reportEvicted("abandoned", fresh, key);
           const closing = trackClosure(() => c.conn.close());
           detachObserved(() => closing, {
+            scope: observationScope,
             operation: "mcp_pool_abandoned_close",
             workspace: opts.workspace,
             dedupeKey: `mcp_pool_abandoned_close\0${opts.workspace}\0${o.server.name}`,
@@ -960,6 +965,7 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
     const work = Promise.all(
       workItems.map((item) =>
         bestEffort(() => item, {
+          scope: observationScope,
           operation: "mcp_manager_close",
           workspace: opts.workspace,
           logger,
@@ -979,6 +985,7 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
     timer.cancel();
     if (!timedOut) return;
     detachObserved(() => work, {
+      scope: observationScope,
       operation: "mcp_manager_close_late",
       workspace: opts.workspace,
       logger,

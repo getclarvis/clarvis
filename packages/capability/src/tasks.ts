@@ -7,42 +7,68 @@ export interface TaskFailure {
 }
 
 export interface TaskObservation {
+  /** History owned by the store, connection, session or host scheduling this task. */
+  scope: TaskObservationScope;
   operation: string;
   workspace?: string;
   logger?: { warn(fields: object, message: string): void };
   observer?: (failure: TaskFailure) => void;
   dedupeKey?: string;
   rateLimitMs?: number;
-  clock?: () => number;
 }
 
 const DEFAULT_RATE_LIMIT_MS = 60_000;
 const MAX_DEDUPE_KEYS = 1_024;
-const lastEmission = new Map<string, number>();
+
+/** One owner's bounded failure-observation history. Share it only deliberately. */
+export interface TaskObservationScope {
+  /** Admit one failure according to this scope's rate limit. */
+  observe(error: unknown, options: Omit<TaskObservation, "scope">): void;
+}
+
+/**
+ * Create an independent, 1,024-key failure history for one owner.
+ *
+ * @param options - optional clock shared by all observations in this scope.
+ * @returns a scope whose repeated failures suppress both observer and logger
+ * notifications until each observation's rate-limit window expires.
+ */
+export function createTaskObservationScope(
+  options: { clock?: () => number } = {},
+): TaskObservationScope {
+  const lastEmission = new Map<string, number>();
+  const clock = options.clock ?? Date.now;
+  return {
+    observe(error, observation) {
+      const now = clock();
+      const key =
+        observation.dedupeKey ?? `${observation.operation}\0${observation.workspace ?? ""}`;
+      const rateLimitMs = observation.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
+      const previous = lastEmission.get(key);
+      if (previous !== undefined && now - previous < rateLimitMs) return;
+      if (lastEmission.size >= MAX_DEDUPE_KEYS && !lastEmission.has(key)) {
+        const oldest = lastEmission.keys().next().value;
+        if (oldest !== undefined) lastEmission.delete(oldest);
+      }
+      lastEmission.delete(key);
+      lastEmission.set(key, now);
+      const failure: TaskFailure = {
+        operation: observation.operation,
+        cause: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)),
+        ...(observation.workspace !== undefined ? { workspace: observation.workspace } : {}),
+      };
+      try {
+        observation.observer?.(failure);
+      } catch {}
+      try {
+        observation.logger?.warn(failure, "best_effort_failed");
+      } catch {}
+    },
+  };
+}
 
 function observe(error: unknown, options: TaskObservation): void {
-  const now = options.clock?.() ?? Date.now();
-  const key = options.dedupeKey ?? `${options.operation}\0${options.workspace ?? ""}`;
-  const rateLimitMs = options.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
-  const previous = lastEmission.get(key);
-  if (previous !== undefined && now - previous < rateLimitMs) return;
-  if (lastEmission.size >= MAX_DEDUPE_KEYS && !lastEmission.has(key)) {
-    const oldest = lastEmission.keys().next().value;
-    if (oldest !== undefined) lastEmission.delete(oldest);
-  }
-  lastEmission.delete(key);
-  lastEmission.set(key, now);
-  const failure: TaskFailure = {
-    operation: options.operation,
-    cause: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)),
-    ...(options.workspace !== undefined ? { workspace: options.workspace } : {}),
-  };
-  try {
-    options.observer?.(failure);
-  } catch {}
-  try {
-    options.logger?.warn(failure, "best_effort_failed");
-  } catch {}
+  options.scope.observe(error, options);
 }
 
 /** Run operational work that may fail without rejecting its caller. */

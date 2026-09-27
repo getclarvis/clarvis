@@ -207,6 +207,25 @@ test("scheduledBinding materializes a stable conversation without a turn, transc
   expect(runs).toEqual([]);
 });
 
+test("two RunHost instances admit and settle independently", async () => {
+  const first = mount();
+  const second = mount();
+  const firstTurn = first.host.submitTurn("first");
+  await flush();
+  expect(first.host.runActive()).toBe(true);
+  expect(second.host.scheduledBusy()).toBe(false);
+  const secondTurn = second.host.submitTurn("second");
+  await flush();
+  expect(second.runs).toHaveLength(1);
+  first.runs[0]!.resolve(completed(first.runs[0]!.handle.executionId));
+  await firstTurn;
+  expect(first.host.scheduledBusy()).toBe(false);
+  expect(second.host.runActive()).toBe(true);
+  second.runs[0]!.resolve(completed(second.runs[0]!.handle.executionId));
+  await secondTurn;
+  expect(second.host.scheduledBusy()).toBe(false);
+});
+
 test("automatic admission reserves before preparation and never converts a concurrent occurrence to steer", async () => {
   const { host, runs, steerImpl, getRunImpl } = mount();
   getRunImpl.fn = async (id) => persisted(id);
@@ -2007,6 +2026,28 @@ test("compactCurrentRun queues on a live run and compacts the latest settled con
   });
   expect(host.runStatus()).toContain("context compacted");
   expect(host.runStatus()).toContain("1,234 chars freed for the next run");
+  dispose();
+});
+
+test("late compaction failure releases its lease without changing a new conversation", async () => {
+  let rejectCompact!: (error: Error) => void;
+  const { host, runs, compactImpl, dispose } = mount();
+  const turn = host.submitTurn("old conversation");
+  await flush();
+  runs[0]!.resolve(completed(runs[0]!.handle.executionId));
+  await turn;
+  compactImpl.fn = () =>
+    new Promise((_resolve, reject) => {
+      rejectCompact = reject;
+    });
+  const compact = host.compactCurrentRun();
+  expect(host.scheduledBusy()).toBe(true);
+  host.clearSession();
+  expect(host.runStatus()).toBe("idle");
+  rejectCompact(new Error("old request failed"));
+  await compact;
+  expect(host.runStatus()).toBe("idle");
+  expect(host.scheduledBusy()).toBe(false);
   dispose();
 });
 

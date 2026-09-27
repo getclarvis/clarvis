@@ -1,4 +1,5 @@
 import type { LLMCallParams, LLMCallResult, LLMProvider, Logger } from "@clarvis/capability";
+import type { StreamMetrics } from "./stream-metrics.ts";
 
 /**
  * The host seams {@link createAiSdkProvider} passes to the adapter it builds.
@@ -32,6 +33,8 @@ export interface AiSdkProviderOptions {
    *   SDKs exactly as before.
    */
   logger?: Logger;
+  /** Counters selected and disposed by the host; default is inert. */
+  metrics?: Pick<StreamMetrics, "count">;
 }
 
 /**
@@ -58,6 +61,7 @@ export function createAiSdkProvider(opts: AiSdkProviderOptions): LLMProvider {
           ? { resolveSubscription: opts.resolveSubscription }
           : {}),
         ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
+        ...(opts.metrics !== undefined ? { metrics: opts.metrics } : {}),
       },
       {
         timeoutMs: opts.timeoutMs,

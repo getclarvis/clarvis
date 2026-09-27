@@ -21,12 +21,14 @@ import { randomUUID } from "node:crypto";
 import { MemoryRecoveryRequiredError } from "./journal.ts";
 import { MemoryPathError } from "./paths.ts";
 import {
+  createTaskObservationScope,
   bestEffort,
   createRateLimiter,
   NOOP_LOGGER,
   sanitizeText,
   type Logger,
   type Sampler,
+  type TaskObservationScope,
 } from "@clarvis/capability";
 import type {
   IndexerRuntimeResolver,
@@ -108,6 +110,8 @@ const BLOCK_CONSEQUENCE: Readonly<Record<MemoryJobBlockReason, string>> = {
 
 /** Everything one drain pass needs. */
 export interface DrainArgs {
+  /** Shared observation history of the memory facade, when one owns this pass. */
+  observationScope?: TaskObservationScope;
   store: MemoryStore;
   /** Omit when the indexer cannot run: due jobs are reported blocked. */
   indexer?: IndexerRuntimeResolver;
@@ -369,6 +373,7 @@ function toFailure(err: unknown): MemoryJobFailure {
  *   bespoke wrapper), and recognising them one by one is a losing game.
  */
 export async function drainIndexJobs(args: DrainArgs): Promise<MemoryDrainReport> {
+  const observationScope = args.observationScope ?? createTaskObservationScope();
   const policy = args.retry ?? DEFAULT_RETRY_POLICY;
   const limit = args.limit ?? DEFAULT_LIMIT;
   const leaseMs = args.leaseMs ?? DEFAULT_LEASE_MS;
@@ -611,7 +616,7 @@ export async function drainIndexJobs(args: DrainArgs): Promise<MemoryDrainReport
           }),
         );
       },
-      { operation: "memory_job_prune", logger },
+      { scope: observationScope, operation: "memory_job_prune", logger },
     );
     logger.debug(
       { event: "memory.prune", removed, kept_failed: retention.keepFailed },

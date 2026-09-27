@@ -132,7 +132,9 @@ rechecked after asynchronous preparation and history recovery, preventing stale 
 settlement or steering failure from an outgoing conversation cannot alter the new draft, status or
 elicitation.
 
-Production: `scheduledBinding`, `scheduledBusy`, `submitScheduledTurn`, `submitTurn`,
+Production: `createRunCoordinator` in
+[run-coordinator.ts](../../packages/code/src/core/run-coordinator.ts),
+`scheduledBinding`, `scheduledBusy`, `submitScheduledTurn`, `submitTurn`,
 `submitPreparedTurn`, `runManaged` and `cancelCurrentRun` in
 [run-host.ts](../../packages/code/src/run-host.ts); `ensureIdentity` in
 [session.ts](../../packages/code/src/adapters/session.ts); interaction gates in

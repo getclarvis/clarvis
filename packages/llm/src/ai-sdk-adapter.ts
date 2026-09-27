@@ -1,19 +1,5 @@
-import {
-  generateText,
-  Output,
-  streamText,
-  type GenerateTextEndEvent,
-  type LanguageModel,
-  type LanguageModelUsage,
-  type ProviderMetadata,
-} from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { convertCompatibleUsage } from "./ai-sdk/compatible-usage.ts";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText, streamText, type LanguageModel } from "ai";
 import type {
-  AssistantTextPart,
   LLMCallParams,
   LLMCallResult,
   LLMProvider,
@@ -28,9 +14,9 @@ import {
   ModelCallInactivityError,
 } from "@clarvis/capability";
 import { toModelMessages } from "./to-model-messages.ts";
-import { openAICompatibleSettings, resolveConfiguredHeaders } from "./openai-compatible-request.ts";
-import { makeDeltaBatcher, makeToolInputReporter } from "./ai-sdk/streaming.ts";
-import { buildCallResult, normalizeUsage } from "./ai-sdk/result.ts";
+import { buildRegistryFactory } from "./ai-sdk/provider-factory.ts";
+import { buildCallResult } from "./ai-sdk/result.ts";
+import { runStreamCall } from "./ai-sdk/stream-call.ts";
 import { buildRequestOptions, type RequestDiagnostics } from "./ai-sdk/request-options.ts";
 import { toProviderError } from "./ai-sdk/errors.ts";
 import {
@@ -42,8 +28,7 @@ import {
   modelCallTimeoutBridgeOf,
   type ModelCallTimeoutBridge,
 } from "./model-call-timeout-bridge.ts";
-import { streamMetrics } from "./stream-metrics.ts";
-import { withResponsesReplayIds } from "./ai-sdk/responses-replay.ts";
+import type { StreamMetrics } from "./stream-metrics.ts";
 import { SerializedPrefixWatch } from "./ai-sdk/request-prefix.ts";
 
 /**
@@ -70,6 +55,8 @@ export interface AiSdkProviderConfig {
    *   in the adapter is optionally chained.
    */
   logger?: Logger;
+  /** Host-owned stream counters; omitted adapters perform no instrumentation. */
+  metrics?: Pick<StreamMetrics, "count">;
 }
 
 /** Token-opaque request authority supplied by the kernel subscription manager. */
@@ -90,8 +77,6 @@ export interface AiSdkGuardrails {
   /** Ceiling on one server-sent event, so a stream cannot buffer unbounded. */
   maxSseEventBytes?: number;
 }
-
-type ModelFactory = (modelId: string) => LanguageModel;
 
 /**
  * The host of a configured base URL, and nothing else.
@@ -229,7 +214,15 @@ export class AiSdkAdapter implements LLMProvider {
     conversationKey?: string,
     messages: readonly LiveMessage[] = [],
   ): LanguageModel {
-    const built = this.buildRegistryFactory(cfg, conversationKey, messages);
+    const built = buildRegistryFactory(cfg, conversationKey, messages, {
+      resolveRegistryKey: this.config.resolveRegistryKey,
+      resolveSubscription: this.config.resolveSubscription,
+      boundedFetch: this.boundedFetch,
+      prefixWatch: this.prefixWatch,
+      maxResponseBytes: this.maxResponseBytes,
+      maxSseEventBytes: this.maxSseEventBytes,
+      logger: this.logger,
+    });
     const model = built.factory(modelId);
     this.describeResolvedModel(cfg, modelId, provider, built.apiKeyPresent);
     return model;
@@ -278,134 +271,6 @@ export class AiSdkAdapter implements LLMProvider {
       },
       "provider client built for this model; every call on this pair uses it",
     );
-  }
-
-  /**
-   * Builds the SDK model factory for a resolved provider, selecting the client by
-   * `kind`, reading the API key from the configured env var, and resolving the
-   * configured `headers` through the same lookup.
-   *
-   * @throws {@link ProviderError} of kind `"client"` when a key-requiring kind's
-   *   `apiKeyEnv` names an unset variable, when a configured header references an
-   *   unset variable, or when an `openai-compatible` provider has no `baseUrl`.
-   * @remarks Headers resolve through `resolveRegistryKey` rather than
-   *   `process.env` directly: it is the package's published host/test seam and
-   *   the adapter's only door to the environment, so a host that resolves keys
-   *   from a vault resolves header variables from the same place.
-   *
-   *   `body` and the cache markers are honoured only by `openai-compatible`,
-   *   through `transformRequestBody`. The other three SDKs expose no equivalent
-   *   seam, which is why a settings schema refuses `body` on them outright
-   *   rather than dropping it silently here.
-   */
-  private buildRegistryFactory(
-    cfg: ResolvedProviderConfig,
-    conversationKey?: string,
-    messages: readonly LiveMessage[] = [],
-  ): {
-    factory: ModelFactory;
-    apiKeyPresent: boolean;
-  } {
-    const lookup = this.config.resolveRegistryKey ?? ((name: string) => process.env[name]);
-    const apiKey = cfg.apiKeyEnv !== undefined ? lookup(cfg.apiKeyEnv) : undefined;
-    const apiKeyPresent = apiKey !== undefined && apiKey.length > 0;
-    const baseURL = cfg.baseUrl;
-    const headers = resolveConfiguredHeaders(cfg.headers, lookup);
-    const common = {
-      ...(baseURL ? { baseURL } : {}),
-      ...(headers !== undefined ? { headers } : {}),
-      fetch: this.boundedFetch,
-    };
-    const requireKey = (): string => {
-      if (!apiKey) {
-        throw new ProviderError(
-          `Provider kind '${cfg.kind}' requires api_key_env to name a set environment variable.`,
-          { kind: "client" },
-        );
-      }
-      return apiKey;
-    };
-    /**
-     * A provider that *names* a credential variable must actually have it.
-     *
-     * @remarks `openai-compatible` deliberately does not call
-     * {@link requireKey}: a local llama.cpp or ollama endpoint needs no
-     * credential, and demanding one would make those unusable. But when the
-     * configuration names an `api_key_env` and that variable is unset, the
-     * request went out unauthenticated and came back as the *remote* 401 —
-     * which on one popular gateway reads as a cookie-authentication failure,
-     * naming neither the provider, nor the variable, nor the fact that the
-     * cause is entirely local. Failing here says which variable to set.
-     */
-    if (cfg.apiKeyEnv !== undefined && !apiKey) {
-      throw new ProviderError(
-        `This provider declares api_key_env '${cfg.apiKeyEnv}', but that environment variable ` +
-          `is not set. Set it, or remove api_key_env for an endpoint that needs no key.`,
-        { kind: "client" },
-      );
-    }
-    switch (cfg.kind) {
-      case "openai":
-        return {
-          factory: createOpenAI({
-            apiKey: requireKey(),
-            ...common,
-            fetch: withResponsesReplayIds(this.boundedFetch, messages),
-          }),
-          apiKeyPresent,
-        };
-      case "openai-compatible":
-        return {
-          factory: createOpenAICompatible({
-            ...openAICompatibleSettings(cfg, headers, apiKey),
-            convertUsage: convertCompatibleUsage,
-            fetch: this.boundedFetch,
-          }),
-          apiKeyPresent,
-        };
-      case "anthropic":
-        return { factory: createAnthropic({ apiKey: requireKey(), ...common }), apiKeyPresent };
-      case "google":
-        return {
-          factory: createGoogleGenerativeAI({ apiKey: requireKey(), ...common }),
-          apiKeyPresent,
-        };
-      case "openai-codex":
-      case "xai-grok": {
-        const resolve = this.config.resolveSubscription;
-        if (resolve === undefined) {
-          throw new ProviderError(
-            `Provider kind '${cfg.kind}' requires the kernel subscription resolver; an API key cannot satisfy subscription billing.`,
-            { kind: "client" },
-          );
-        }
-        const scheme = cfg.kind;
-        const subscriptionFetch = (async (
-          input: Parameters<typeof globalThis.fetch>[0],
-          init?: Parameters<typeof globalThis.fetch>[1],
-        ) => {
-          const auth = await resolve(scheme, init?.signal ?? undefined, {
-            ...(conversationKey === undefined ? {} : { conversationKey }),
-          });
-          return auth.apply(input, init);
-        }) as typeof globalThis.fetch;
-        const fetch = createBoundedFetch({
-          fetch: withResponsesReplayIds(this.prefixWatch.wrap(subscriptionFetch), messages),
-          maxResponseBytes: this.maxResponseBytes,
-          maxSseEventBytes: this.maxSseEventBytes,
-          logger: this.logger,
-        });
-        const client = createOpenAI({
-          apiKey: "subscription-placeholder-never-sent",
-          baseURL:
-            scheme === "openai-codex"
-              ? "https://chatgpt.com/backend-api/codex"
-              : "https://cli-chat-proxy.grok.com/v1",
-          fetch,
-        });
-        return { factory: (modelId) => client.responses(modelId), apiKeyPresent: false };
-      }
-    }
   }
 
   /**
@@ -494,9 +359,6 @@ export class AiSdkAdapter implements LLMProvider {
 
     const stripImages = !(params.capabilities?.has("vision") ?? false);
 
-    let batcher: ReturnType<typeof makeDeltaBatcher> | undefined;
-    let outputObserved = false;
-    let partialUsage: LanguageModelUsage | undefined;
     try {
       const modelMessages = toModelMessages(params.messages, { stripImages });
       const { request, diagnostics } = buildRequestOptions(params, modelMessages);
@@ -519,208 +381,28 @@ export class AiSdkAdapter implements LLMProvider {
           : normalized;
       }
 
-      let streamError: unknown;
-      let aggregate: GenerateTextEndEvent | undefined;
-      const streamedTextOrder: string[] = [];
-      const streamedTextParts = new Map<
-        string,
-        { text: string; providerOptions?: ProviderMetadata }
-      >();
-      const retainTextPart = (
-        id: string,
-        text: string,
-        providerOptions?: ProviderMetadata,
-      ): void => {
-        const current = streamedTextParts.get(id);
-        if (current === undefined) streamedTextOrder.push(id);
-        streamedTextParts.set(id, {
-          text: `${current?.text ?? ""}${text}`,
-          ...(providerOptions !== undefined
-            ? { providerOptions }
-            : current?.providerOptions !== undefined
-              ? { providerOptions: current.providerOptions }
-              : {}),
-        });
-      };
-      const textOutput = Output.text();
-      const nonRetainingTextOutput = {
-        ...textOutput,
-        parsePartialOutput: ({ text }: { text: string }) =>
-          Promise.resolve({ partial: text.length }),
-      };
-      const streamStartedAt = Date.now();
-      /**
-       * Reports time-to-first-token exactly once per call.
-       *
-       * @remarks Called only from the `!outputObserved` arm of each part
-       * branch, so the per-delta path costs one boolean test — the same test
-       * that used to be an unconditional store. A `logger.debug` per delta is
-       * forbidden outright: this loop runs thousands of times per call at
-       * roughly a millisecond apart, and the bindings object would be
-       * allocated before any backend saw the level. Per-chunk telemetry belongs
-       * to the `streamMetrics` counter sink.
-       */
-      const firstOutput = (channel: string): void => {
-        outputObserved = true;
-        modelCallTimeoutBridgeOf(params)?.markStreamStarted();
-        this.logger.debug(
-          {
-            event: "llm.stream.first_token",
-            provider: params.provider,
-            model: params.model,
-            ttft_ms: Date.now() - streamStartedAt,
-            channel,
-          },
-          "the provider started emitting; the turn is now streaming to the user",
-        );
-      };
-      const result = (this.config.streamText ?? streamText)({
-        ...callArgs,
-        output: nonRetainingTextOutput,
-        onError: ({ error }) => {
-          markActivity();
-          streamError ??= error;
-        },
-        onStepEnd: (step) => {
-          markActivity();
-          streamMetrics().count("sdk_step_end");
-          partialUsage = step.usage;
-        },
-        onEnd: (event) => {
-          markActivity();
-          streamMetrics().count("sdk_on_end");
-          aggregate = event;
-          partialUsage = event.usage;
-        },
+      const normalized = await runStreamCall({
+        params,
+        callArgs,
+        stream: this.config.streamText ?? streamText,
+        markActivity,
+        timedOut,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        logger: this.logger,
+        metrics: this.config.metrics,
       });
-
-      batcher = makeDeltaBatcher(params.onStreamDelta ?? (() => undefined));
-      const toolInput = params.onToolInputDelta
-        ? makeToolInputReporter(params.onToolInputDelta)
-        : undefined;
-      for await (const part of result.stream) {
-        markActivity();
-        if (part.type === "text-start" || part.type === "text-end") {
-          retainTextPart(part.id, "", part.providerMetadata);
-        } else if (part.type === "text-delta") {
-          retainTextPart(part.id, part.text, part.providerMetadata);
-          if (!outputObserved) firstOutput("text");
-          toolInput?.observe(part.text);
-          batcher.push("text", part.text);
-        } else if (part.type === "reasoning-delta") {
-          if (!outputObserved) firstOutput("reasoning");
-          toolInput?.observe(part.text);
-          batcher.push("reasoning", part.text);
-        } else if (part.type === "tool-input-start") {
-          if (!outputObserved) firstOutput("tool_input");
-          toolInput?.start(part.id, part.toolName);
-        } else if (part.type === "tool-input-delta") {
-          if (!outputObserved) firstOutput("tool_input");
-          toolInput?.delta(part.id, part.delta);
-        } else if (part.type === "tool-input-end") {
-          if (!outputObserved) firstOutput("tool_input");
-          toolInput?.end(part.id);
-        } else if (part.type === "finish-step") {
-          streamMetrics().count("provider_finish_step");
-          partialUsage = part.usage;
-        } else if (part.type === "finish") {
-          streamMetrics().count("provider_finish");
-          partialUsage = part.totalUsage;
-        } else if (part.type === "tool-call" || part.type === "file" || part.type === "source") {
-          streamMetrics().count(`provider_${part.type}`);
-          if (!outputObserved) firstOutput(part.type === "tool-call" ? "tool_call" : part.type);
-        } else if (part.type === "error") {
-          streamMetrics().count("provider_error");
-          streamError ??= part.error;
-        }
-      }
-      streamMetrics().count("stream_drained");
-      batcher.flush();
-
-      if (streamError !== undefined) {
-        const attemptCost = {
-          streamStarted: outputObserved || batcher.emitted(),
-          ...(partialUsage !== undefined ? { partialUsage: normalizeUsage(partialUsage) } : {}),
-        };
-        /**
-         * Recognise the timeout before generic provider mapping so it keeps the
-         * explicit inactivity subtype and the attempt evidence accumulated by
-         * this stream. The outer catch repeats this for async throws that bypass
-         * the structured stream-error part.
-         */
-        if (timeoutMs !== undefined && timedOut()) {
-          throw new ModelCallInactivityError(
-            timeoutMs,
-            attemptCost.streamStarted,
-            attemptCost.partialUsage,
-          );
-        }
-        throw toProviderError(streamError, attemptCost, this.logger);
-      }
-
-      if (aggregate === undefined) {
-        const streamStarted = outputObserved || batcher.emitted();
-        const partial = partialUsage !== undefined ? normalizeUsage(partialUsage) : undefined;
-        this.logger.warn(
-          {
-            event: "llm.stream.no_aggregate",
-            model: params.model,
-            stream_started: streamStarted,
-            partial_output_tokens: partial?.output_tokens ?? 0,
-          },
-          "the provider stream ended with no final result; the attempt is retried as a transient failure",
-        );
-        throw new ProviderError("Provider stream ended without a final aggregate result.", {
-          kind: "transient",
-          streamStarted,
-          ...(partial !== undefined ? { partialUsage: partial } : {}),
-        });
-      }
-      const normalized = buildCallResult(aggregate);
       normalized.requestPrefix = this.prefixWatch.evidence(params.promptCacheKey);
-      const retainedStreamTextParts: AssistantTextPart[] = streamedTextOrder.flatMap((id) => {
-        const part = streamedTextParts.get(id);
-        if (
-          part === undefined ||
-          part.providerOptions === undefined ||
-          part.text.trim().length === 0
-        )
-          return [];
-        const phaseValue = part.providerOptions.openai?.phase;
-        return [
-          {
-            text: part.text,
-            ...(phaseValue === "commentary" || phaseValue === "final_answer"
-              ? { phase: phaseValue }
-              : {}),
-            providerOptions: part.providerOptions,
-          },
-        ];
-      });
-      const withRetainedText =
-        normalized.textParts === undefined && retainedStreamTextParts.length > 0
-          ? { ...normalized, textParts: retainedStreamTextParts }
-          : normalized;
-      return params.providerConfig?.kind === "openai-codex" ||
-        params.providerConfig?.kind === "xai-grok"
-        ? { ...withRetainedText, billing_source: "subscription" }
-        : withRetainedText;
+      return params.providerConfig.kind === "openai-codex" ||
+        params.providerConfig.kind === "xai-grok"
+        ? { ...normalized, billing_source: "subscription" }
+        : normalized;
     } catch (err) {
-      const attemptCost = {
-        streamStarted: outputObserved || batcher?.emitted() === true,
-        ...(partialUsage !== undefined ? { partialUsage: normalizeUsage(partialUsage) } : {}),
-      };
-      if (timeoutMs !== undefined && timedOut()) {
-        throw new ModelCallInactivityError(
-          timeoutMs,
-          attemptCost.streamStarted,
-          attemptCost.partialUsage,
-        );
-      }
       if (err instanceof ProviderError) throw err;
-      throw toProviderError(err, attemptCost, this.logger);
+      if (timeoutMs !== undefined && timedOut()) {
+        throw new ModelCallInactivityError(timeoutMs, false);
+      }
+      throw toProviderError(err, { streamStarted: false }, this.logger);
     } finally {
-      batcher?.dispose();
       cleanup();
     }
   }

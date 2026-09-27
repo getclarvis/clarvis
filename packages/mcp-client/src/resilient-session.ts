@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { Logger, MCPStatus, ToolResult } from "@clarvis/capability";
+import type { Logger, MCPStatus, ToolResult, TaskObservationScope } from "@clarvis/capability";
 import {
+  createTaskObservationScope,
   NOOP_LOGGER,
   bestEffort,
   bind,
@@ -26,6 +27,8 @@ import {
 import type { ConnectionEvent } from "./connection.ts";
 
 export interface ResilientSessionOptions {
+  /** Shared with the owning connection across reconnect attempts. */
+  observationScope?: TaskObservationScope;
   initialHandle: MCPClientHandle;
   reconnect: () => Promise<MCPClientHandle>;
   mcpName: string;
@@ -106,6 +109,7 @@ export interface ResilientSession {
 }
 
 export function createResilientSession(options: ResilientSessionOptions): ResilientSession {
+  const observationScope = options.observationScope ?? createTaskObservationScope();
   const runtime = options.runtime ?? SYSTEM_RUNTIME;
   const closeGraceMs = normalizeMcpCloseGraceMs(options.closeGraceMs);
   let handle = options.initialHandle;
@@ -130,6 +134,7 @@ export function createResilientSession(options: ResilientSessionOptions): Resili
 
   const awaitLifecycle = async (run: () => unknown, operation: string): Promise<void> => {
     const work = bestEffort(run, {
+      scope: observationScope,
       operation,
       workspace: options.eventBase.scope.workspace,
       dedupeKey: `${operation}\0${options.eventBase.scope.workspace}\0${options.mcpName}`,
@@ -148,6 +153,7 @@ export function createResilientSession(options: ResilientSessionOptions): Resili
     timer.cancel();
     if (!timedOut) return;
     detachObserved(() => work, {
+      scope: observationScope,
       operation: `${operation}_late`,
       workspace: options.eventBase.scope.workspace,
       dedupeKey: `${operation}_late\0${options.eventBase.scope.workspace}\0${options.mcpName}`,
@@ -266,6 +272,7 @@ export function createResilientSession(options: ResilientSessionOptions): Resili
       );
       if (closed || status !== "connected" || inFlight > 0) return;
       await bestEffort(() => ensureReconnected(generation, "health_ping_failed"), {
+        scope: observationScope,
         operation: "mcp_health_reconnect",
         workspace: options.eventBase.scope.workspace,
         dedupeKey: `mcp_health_reconnect\0${options.eventBase.scope.workspace}\0${options.mcpName}`,
@@ -281,6 +288,7 @@ export function createResilientSession(options: ResilientSessionOptions): Resili
     healthTimer = runtime.schedule(() => {
       const check = runHealthCheck().finally(armHealthCheck);
       detachObserved(() => check, {
+        scope: observationScope,
         operation: "mcp_health_check",
         workspace: options.eventBase.scope.workspace,
         dedupeKey: `mcp_health_check\0${options.eventBase.scope.workspace}\0${options.mcpName}`,

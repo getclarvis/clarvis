@@ -26,6 +26,11 @@
       "types": "./dist/adapter.d.ts",
       "import": "./dist/adapter.js"
     },
+    "./metrics": {
+      "bun": "./src/metrics.ts",
+      "types": "./dist/metrics.d.ts",
+      "import": "./dist/metrics.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

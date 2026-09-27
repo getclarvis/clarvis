@@ -31,6 +31,12 @@ diagnostic port are cross-cutting contracts in
 [`cross-cutting/grants.md`](../../specs/cross-cutting/grants.md) and
 [`cross-cutting/observability.md`](../../specs/cross-cutting/observability.md).
 
+`createTaskObservationScope()` owns the bounded failure history used by `bestEffort` and
+`detachObserved`. Both helpers require that scope in `TaskObservation`; construct it with the
+store, connection, worker, capability session or kernel instance that owns the work. Share a scope
+only when those operations should suppress repeat failures together. The optional clock is set at
+scope construction, while `rateLimitMs` remains per observation.
+
 ## Why it is separate from the engine
 
 The engine used to own the contract, which meant a capability shipped from outside it still had to

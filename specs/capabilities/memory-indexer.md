@@ -113,6 +113,7 @@ readiness boundary. That idempotent call starts resident owners, and owners buil
 inside `buildOwner`. A normal primary run still calls `poke(owner)` after enqueue, so deferring old
 queue recovery does not make new learning wait for another boot. Production:
 `packages/kernel/src/kernel.ts` (`startMemoryRecovery`, `buildOwner`) and
+`packages/kernel/src/core/owner-scope-pool.ts` (`forEachResident`, `resident`) and
 `packages/memory/src/capability.ts` (`onRunEnd`). Test:
 `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery only
 after the host releases boot`).
@@ -410,6 +411,12 @@ re-entrant one would deadlock" (`packages/memory/src/drain.ts`).
 **Prune** runs at the end of a pass only when the pass was not aborted and something happened
 (`report.claimed > 0 || report.jobs.length > 0`, `packages/memory/src/drain.ts`), wrapped in `bestEffort`
 (`packages/memory/src/drain.ts`). `packages/memory/tests/component/drain.test.ts` pins that an idle pass sweeps nothing.
+`createMemory` passes its task-observation scope to each `drainIndexJobs` pass, so repeated prune
+failures are suppressed within that facade while another facade can report its first failure.
+The worker separately owns the scope for detached pass failures. Production: `createMemory` in
+`packages/memory/src/memory.ts`, `drainIndexJobs` in `packages/memory/src/drain.ts`, and
+`createIndexWorker` in `packages/memory/src/worker.ts`. Test:
+`packages/capability/tests/unit/tasks.test.ts`.
 `next_due_at` is read afterwards from the lock-free reader `store.jobs.nextDueAt()`
 (`packages/memory/src/drain.ts`).
 

@@ -1244,9 +1244,17 @@ call). The consequence: a `ToolResult` error message that reaches the model is *
 
 | Dependency | Kind | Forced by |
 | --- | --- | --- |
-| `@clarvis/capability` | runtime value + type | `NOOP_LOGGER`, `bind`, `resolveStringMap` at `packages/mcp-client/src/client.ts`; `MissingEnvVarsError`, `bestEffort`, `detachObserved`, `levelEnabled`, `sanitizeErrorMessage`, `unref` at `packages/mcp-client/src/connection.ts`; `createSampler` at `packages/mcp-client/src/resilient-session.ts` |
+| `@clarvis/capability` | runtime value + type | `NOOP_LOGGER`, `bind`, `resolveStringMap` at `packages/mcp-client/src/client.ts`; `MissingEnvVarsError`, `createTaskObservationScope`, `bestEffort`, `detachObserved`, `levelEnabled`, `sanitizeErrorMessage`, `unref` at `packages/mcp-client/src/connection.ts`; `createSampler` at `packages/mcp-client/src/resilient-session.ts` |
 | `@clarvis/paths` | runtime value | `ownerSegment` at `packages/mcp-client/src/connection-manager.ts`; `executableOnPath` at `packages/mcp-client/src/bun-stdio-client.ts`; local lease, durable write and private modes at `packages/mcp-client/src/oauth-store.ts` |
 | `@modelcontextprotocol/sdk` | runtime value + type | `Client`, `UnauthorizedError` and transports at `packages/mcp-client/src/client.ts`; OAuth provider/credential schemas at `packages/mcp-client/src/oauth.ts` and `packages/mcp-client/src/oauth-store.ts`; protocol errors and JSON-RPC schema in their focused modules |
+
+`openConnection` owns one task-observation scope and passes it through reconnect attempts and the
+resilient session. `createConnectionManager` and `createMCPBoundedFetch` own scopes for their own
+cleanup work. Identical cleanup keys in two connections therefore produce two first warnings even
+with the same logger. Production: `openConnection` and `connectWithinBound` in
+`packages/mcp-client/src/connection.ts`, `createConnectionManager` in
+`packages/mcp-client/src/connection-manager.ts`. Test:
+`packages/mcp-client/tests/component/observability-connection.test.ts`.
 
 The type contracts it implements structurally, all owned by `@clarvis/capability`: `MCPConnection`
 (`packages/capability/src/run.ts`) built at `packages/mcp-client/src/connection.ts`; `ToolResult`

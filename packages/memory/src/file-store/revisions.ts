@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { bestEffortFileStore } from "./tasks.ts";
 import * as path from "node:path";
 
+import { createTaskObservationScope, type TaskObservationScope } from "@clarvis/capability";
 import { writeFileDurable } from "@clarvis/paths";
 
 import { MEMORY_DEFAULTS } from "../config.ts";
@@ -36,9 +37,11 @@ function isRevision(value: unknown, id: string, relPath: string): value is Memor
 }
 
 export function createRevisionRepository(options: {
+  observationScope?: TaskObservationScope;
   machineryRoot: string;
   init: () => Promise<void>;
 }): RevisionRepository {
+  const observationScope = options.observationScope ?? createTaskObservationScope();
   const dirFor = (relPath: string): string =>
     path.join(options.machineryRoot, ".history", normalizeMemoryPath(relPath));
 
@@ -114,10 +117,10 @@ export function createRevisionRepository(options: {
             (index >= policy.keep_revisions || revision.at < cutoff),
         );
         for (const revision of doomed) {
-          await bestEffortFileStore("memory_revision_metadata_prune", () =>
+          await bestEffortFileStore(observationScope, "memory_revision_metadata_prune", () =>
             fs.rm(path.join(dirFor(relPath), `${revision.id}.json`), { force: true }),
           );
-          await bestEffortFileStore("memory_revision_body_prune", () =>
+          await bestEffortFileStore(observationScope, "memory_revision_body_prune", () =>
             fs.rm(path.join(dirFor(relPath), `${revision.id}.md`), { force: true }),
           );
         }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { detachObserved, type Logger } from "@clarvis/capability";
+import { createTaskObservationScope, detachObserved, type Logger } from "@clarvis/capability";
 import type { GoalChange, GoalService, KernelTransport } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
 import {
@@ -19,6 +19,7 @@ export function createGoalClient(options: {
   logger: Logger;
   protocolViolation(message: string): void;
 }): { service: GoalService; close(): void } {
+  const observationScope = createTaskObservationScope();
   const { transport } = options;
   const requests = createServiceProxy<Omit<GoalService, "subscribe">>(transport, OPERATIONS.goals);
   const listeners = new Map<string, { sessionId: string; listener(change: GoalChange): void }>();
@@ -105,7 +106,7 @@ export function createGoalClient(options: {
           if (!listeners.delete(subscriptionId) || closed) return;
           detachObserved(
             () => transport.request(M.goalsUnsubscribe, { subscription_id: subscriptionId }),
-            { operation: "goal.unsubscribe", logger: options.logger },
+            { scope: observationScope, operation: "goal.unsubscribe", logger: options.logger },
           );
         };
       },

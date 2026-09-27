@@ -1,8 +1,15 @@
-import { bestEffort, detachObserved, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  bestEffort,
+  detachObserved,
+  NOOP_LOGGER,
+  type Logger,
+  type TaskObservationScope,
+} from "@clarvis/capability";
 
 /**
  * The observation one file-store side effect reports its failure through.
  *
+ * @param scope - the owning store's shared failure history.
  * @param operation - the stable name of the work that failed.
  * @param logger - where the failure is reported.
  * @returns the observation `bestEffort` and `detachObserved` take.
@@ -14,22 +21,28 @@ import { bestEffort, detachObserved, NOOP_LOGGER, type Logger } from "@clarvis/c
  * through here, so this one seam is the whole of the file store's warning
  * channel.
  */
-const observe = (operation: string, logger: Logger) => ({ operation, logger });
+const observe = (scope: TaskObservationScope, operation: string, logger: Logger) => ({
+  scope,
+  operation,
+  logger,
+});
 
 /** Run a file-store side effect whose failure must not reject its caller. */
 export function bestEffortFileStore(
+  scope: TaskObservationScope,
   operation: string,
   run: () => unknown,
   logger: Logger = NOOP_LOGGER,
 ): Promise<void> {
-  return bestEffort(run, observe(operation, logger));
+  return bestEffort(run, observe(scope, operation, logger));
 }
 
 /** Detach a file-store side effect, retaining an observable failure path. */
 export function detachFileStoreTask(
+  scope: TaskObservationScope,
   operation: string,
   run: () => unknown,
   logger: Logger = NOOP_LOGGER,
 ): void {
-  detachObserved(run, observe(operation, logger));
+  detachObserved(run, observe(scope, operation, logger));
 }

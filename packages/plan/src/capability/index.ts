@@ -23,6 +23,7 @@ import type {
   ToolEffect,
 } from "@clarvis/capability";
 import {
+  createTaskObservationScope,
   NOOP_LOGGER,
   PLANS_REVIEW_CONTEXT_PORT,
   TOOL_EFFECT_PORT,
@@ -158,6 +159,7 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
   return {
     ...PLAN_CAPABILITY_METADATA,
     async forRun(ctx: RunCapabilityContext): Promise<RunCapability | null> {
+      const observationScope = createTaskObservationScope();
       const settings = readPlansSettings(ctx.requestParam("plans"));
       if (settings.mode === "off") return null;
 
@@ -328,7 +330,7 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
             async () => {
               deleted = await store.delete(ref.id);
             },
-            { operation: "plan_retention_discard", logger },
+            { scope: observationScope, operation: "plan_retention_discard", logger },
           );
           logger.info(
             {

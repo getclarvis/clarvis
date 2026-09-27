@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { bestEffortFileStore } from "./tasks.ts";
 import * as path from "node:path";
 
+import { createTaskObservationScope, type TaskObservationScope } from "@clarvis/capability";
 import { writeFileDurable } from "@clarvis/paths";
 
 import { readUtf8FileBounded, scanDirectoryBounded } from "../bounded-io.ts";
@@ -53,9 +54,11 @@ function isJournalRecord(value: unknown, batchId: string): value is MemoryJourna
 }
 
 export function createJournalRepository(options: {
+  observationScope?: TaskObservationScope;
   machineryRoot: string;
   init: () => Promise<void>;
 }) {
+  const observationScope = options.observationScope ?? createTaskObservationScope();
   const root = path.join(options.machineryRoot, ".journal");
   const dirFor = (batchId: string): string => path.join(root, batchId);
 
@@ -129,7 +132,7 @@ export function createJournalRepository(options: {
       }
     },
     async sweep(batchId: string): Promise<void> {
-      await bestEffortFileStore("memory_journal_sweep", () =>
+      await bestEffortFileStore(observationScope, "memory_journal_sweep", () =>
         fs.rm(dirFor(batchId), { recursive: true, force: true }),
       );
     },

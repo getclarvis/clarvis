@@ -223,7 +223,7 @@ native presentation. Production: `TranscriptContent`, `createTranscriptProjectio
 `core/transcript` modules. Test:
 [architecture-boundary.test.ts](../../packages/code/tests/architecture/architecture-boundary.test.ts),
 “keeps transcript content and projection independent from activity surfaces”. The assertion scans
-the existing model modules and explicit adapter files, not a removed history directory.
+the model modules and explicit adapter files.
 
 OpenTUI core/keymap/solid remain pinned at 0.5.9. An upgrade needs separate evidence.
 

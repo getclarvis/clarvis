@@ -12,8 +12,7 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 - A tag-triggered workflow in `getclarvis/clarvis` uploads a complete draft to public
   `getclarvis/clarvis-releases` and activates it in its final step. There is no human pause after the
   tagged workflow starts.
-- The source repository's `GITHUB_TOKEN` is read-only by default and receives `Packages: write` only
-  only where required. Cross-repository publication uses the `Clarvis Release Publisher` GitHub
+- The release workflow's `GITHUB_TOKEN` has `Contents: read`. Cross-repository publication uses the `Clarvis Release Publisher` GitHub
   App, installed on `clarvis` and `clarvis-releases` with `Contents: write`. Its Client ID is repository
   variable `CLARVIS_RELEASE_APP_CLIENT_ID`; its private key is repository secret
   `CLARVIS_RELEASE_APP_PRIVATE_KEY`.
@@ -94,8 +93,8 @@ reset `main`, move a tag, or disable protections without separate explicit autho
    agree. Supply the intended `RELEASE_TAG` to `check:release` when validating tag identity before
    publication.
 5. Review [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), the exact Bun license/relink notice, the
-   models.dev and Vercel AI SDK licenses, the portable dependency closure, and the licenses copied
-   into the isolated-runtime carrier. Treat third-party-license review as a release gate, not a
+   models.dev and Vercel AI SDK licenses, the bundled native sandbox assets, and the portable
+   dependency closure. Treat third-party-license review as a release gate, not a
    post-release task.
 6. Review the exact source commit that the distribution release notes will disclose.
 7. Confirm the source `main`, `develop`, and `v*` rulesets are active, GitHub Actions requires full-SHA action
@@ -164,8 +163,8 @@ Do not bypass hooks or force a tag. Do not push a second manual final tag after 
 publication failed, inspect and rerun the failed downstream release run; rerunning tag creation
 verifies the existing tag and does not emit a second push event.
 
-After the authorized source tag push, watch every native build, both runtime architecture jobs, the
-multi-platform manifest/attestation job, and the final cross-repository publish job. Because that job
+After the authorized source tag push, watch the release identity gate, every native portable package
+job, and the final cross-repository publish job. Because that job
 clears the public draft flag automatically after checks, stop and investigate any failed or
 surprising job; do not assemble a partial release manually under the same tag.
 

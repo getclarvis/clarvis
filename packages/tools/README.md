@@ -15,7 +15,11 @@ The registry exposes nine tools. `read_file`, `read_image` and `list_dir` are
 observing tools. `write_file`, `edit_file`, `apply_patch`, `remove`, `shell` and
 `shell_session` can change state. `readOnly: true` advertises and dispatches only
 the three observing tools. Relative file paths resolve from `workspaceRoot`;
-absolute paths remain absolute. Host filesystem permissions determine access.
+absolute paths remain absolute. The selected execution policy and host filesystem permissions
+determine access.
+File-tool paths reject `~` shorthand; use absolute paths or workspace-relative paths.
+Recursive filename and content searches use `shell` when that tool is available; the catalog has
+no dedicated `glob` or `grep` tool.
 `secretEnvNames` filters credential variables from command environments.
 Trusted callers may provide a Sandbox policy, native backend and execution port.
 Sandbox shell children receive `HOME` and `CLARVIS_HOME` from that policy.
@@ -30,7 +34,7 @@ manager and does not claim a new sandboxed launch.
 workspace access preference.
 
 Production: `toolDescriptors` in [registry.ts](src/tools/registry.ts),
-`dispatch` in [core.ts](src/core.ts), and `resolveToolPath` in
+`dispatch` in [core.ts](src/core.ts), and `resolveFileToolPath` in
 [paths.ts](src/lib/paths.ts). Test: [tool-surface.test.ts](tests/integration/common/tool-surface.test.ts)
 and [open-authority.test.ts](tests/integration/common/open-authority.test.ts).
 
@@ -96,14 +100,14 @@ pipe and process-group evidence. Production: `ExecutionSessionManager`,
 `src/lib/process-owner.ts` and `src/tools/shell.ts`. Test:
 `tests/unit/execution-session-policy.test.ts`,
 `tests/unit/process-owner-policy.test.ts` and
-`tests/integration/process-owner.test.ts`.
+`tests/integration/common/process-owner.test.ts`.
 `list` ignores session, cursor and wait fields; `stop` ignores cursor and wait
 fields while still requiring a run-owned session ID.
 `read_image` recognizes PNG, JPEG, GIF and WebP from bytes. `apply_patch` stages a complete multi-file
-transaction and commits atomically. Host remains the default. When a trusted
-caller supplies a Sandbox policy and port, the file worker and each shell
-command use the native launch boundary; the dispatcher applies no extra path
-approval gate.
+transaction and commits atomically. Standalone callers default to Host. The file Kernel defaults
+to Sandbox and binds its action-authorization port after argument validation. The file worker and
+each new shell command use the selected native launch boundary; writes outside admitted roots
+require an eligible permission decision before execution.
 If steering or a mode edit changes authorization during review, the dispatcher
 requests a fresh decision with current authorization and policy revisions for the same final
 action before launch. The Kernel's

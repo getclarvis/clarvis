@@ -20,11 +20,23 @@ Registration refuses a sealed registry or a full live-child limit. The registry 
 
 The registry budgets live and retained buffers across children, evicts settled records when needed, and bounds notices per iteration. `seal` closes admission. `teardown` cancels and drains registered children within its grace period and reports children that did not settle. Production: `createAgentRegistry` in `packages/supervision/src/registry.ts` and `createAgentBuffer` in `packages/supervision/src/buffer.ts`. Test: `packages/supervision/tests/component/registry.test.ts`.
 
+After the consecutive technical-failure limit is reached, `claimFailureProbe` permits one
+synchronously claimed recovery probe after a 30-second cooldown. A further failure does not
+rearm the probe; a completed child does. The registry does not cancel healthy siblings when
+the circuit closes. Production: `claimFailureProbe` and `settled` in
+`packages/supervision/src/registry.ts`. Test: `permits one cooled recovery probe, preserving
+siblings and requiring success to rearm` in
+`packages/supervision/tests/component/registry.test.ts`.
+
 ## Invariants
 
 1. A child handle belongs to one run and cannot control another run's child. Production: `createAgentRegistry` in `packages/supervision/src/registry.ts`. Test: `packages/supervision/tests/component/registry.test.ts`.
 2. Buffer and child limits bound retained state while live child records remain addressable. Production: `createAgentRegistry` in `packages/supervision/src/registry.ts` and `createAgentBuffer` in `packages/supervision/src/buffer.ts`. Test: `packages/supervision/tests/component/registry.test.ts`.
 3. A limited or cancelled child does not count as a technical failure. Production: `settled` and `failingStreakExceeded` in `packages/supervision/src/registry.ts`. Test: `packages/supervision/tests/component/registry.test.ts`.
+4. The technical-failure circuit grants one probe per cooldown and rearms only after a completed
+   child. Production: `claimFailureProbe` and `settled` in `packages/supervision/src/registry.ts`.
+   Test: `permits one cooled recovery probe, preserving siblings and requiring success to rearm` in
+   `packages/supervision/tests/component/registry.test.ts`.
 
 ## Coupling
 

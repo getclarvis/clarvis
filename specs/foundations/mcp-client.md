@@ -606,11 +606,8 @@ throwing sink. A test proves a background reconnect failing after close emits no
 
 `packages/mcp-client/src/connection-manager.ts`. Steps:
 
-1. Reject outright if closed — **before** opening anything. The comment records the prior
-   defect: "`poolable` used to include `!closed`, so an acquire on a torn-down manager took the
-   unpooled branch: it spawned a real subprocess, then closed it and threw"
-   (`packages/mcp-client/tests/component/connection-manager.test.ts`), and the test asserts zero connects after
-   `closeAll`.
+1. Reject outright if closed — **before** opening anything. The test asserts zero connects after
+   `closeAll` (`packages/mcp-client/tests/component/connection-manager.test.ts`).
 2. `poolable = transport === "stdio" && shared === true`. Anything else gets a dedicated
    connection closed on release (`makeFreshLease`).
 3. Compute the pool key and warn once per **server name** if a relay was supplied (`warnRelayDropped`). The key choice is documented: a per-slot flag would re-warn every
@@ -962,10 +959,9 @@ Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts`;
 **MCP-15.** A shutdown grace is finite and bounded: a non-finite programmatic value becomes 2 000 ms
 and anything larger than 30 000 ms is clamped.
 Production: `packages/mcp-client/src/resilient-session.ts`.
-Pinned: `packages/mcp-client/tests/unit/resilient-session.test.ts` (the `Infinity` case);
-~~the upper clamp itself is **unpinned**~~ — **pinned** by a direct
-`normalizeMcpCloseGraceMs` suite in the same file, covering the clamp, its inclusive boundary, the
-zero floor and the fractional truncation.
+Pinned: `packages/mcp-client/tests/unit/resilient-session.test.ts` (`Infinity` and the direct
+`normalizeMcpCloseGraceMs` suite cover the clamp, its inclusive boundary,
+zero floor and fractional truncation).
 
 **MCP-16.** A raw pool key is never logged; only a 12-hex-character SHA-256 prefix is.
 Production: `packages/mcp-client/src/connection-manager.ts`, reported.
@@ -1278,9 +1274,8 @@ The one-directional edge is enforced structurally rather than by a test *in this
 is a required parameter of `buildRegistry` (`packages/mcp-client/src/registry.ts`,
 `buildRegistry`), and the
 engine binds its own vocabulary in its own module — `buildRegistryWith(entries, [...RESERVED_WIRE_NAMES, ...capabilityReserved])`
-(`packages/loop/src/runtime/tools/mcp-registry.ts`). That file's comment records the reason: "The
-MCP client takes the reserved set as an argument because it does not know the host's tool vocabulary
-— that is what removed its one import of `runtime/`" (`packages/loop/src/runtime/tools/mcp-registry.ts`).
+(`packages/loop/src/runtime/tools/mcp-registry.ts`). The MCP client receives that reserved set
+without importing the engine's tool vocabulary.
 The half that proves the engine hands over the *right* set lives in the loop's own suite
 (`packages/loop/tests/unit/mcp-registry-reservation.test.ts`) — delegated to
 [loop-tool-dispatch-and-results](../engine/tool-dispatch.md).
@@ -1292,72 +1287,11 @@ The package extends the root `tsconfig.base.json` with `noEmit` for the typechec
 dependencies (`packages/mcp-client/tsconfig.json`); `include` covers `src/**/*.ts` **and**
 `tests/**/*.ts`. Its test script carries `--timeout 60000`
 (`packages/mcp-client/package.json`). Its coverage floors are `functions: 0.90, lines: 0.98`
-(`tooling/checks/coverage.ts`) — tied with `memory` for the lowest function floor in
-that table (`tooling/checks/coverage.ts`), while its line floor of 0.98 is among the
-highest.
+(`tooling/checks/coverage.ts`).
 
 ## 8. Open questions
 
-**Behavioural gaps and unpinned rules**
-
-- ~~`MAX_MCP_CLOSE_GRACE_MS = 30_000` (`packages/mcp-client/src/resilient-session.ts`) is applied by
-  `normalizeMcpCloseGraceMs` but **no test passes a value above it**; only the non-finite fallback is covered
-  (`packages/mcp-client/tests/unit/resilient-session.test.ts`). The upper clamp is unpinned.~~
-  **Resolved.** The exported `normalizeMcpCloseGraceMs` is now tested directly rather than
-  only through a session, which reaches every branch — clamp, boundary, floor, truncation, fallback —
-  without constructing a shutdown for each.
-- ~~`interpretCallResult` dereferences its argument without a null guard.~~ **Resolved.**
-  It now maps `null`/`undefined` to an operational `mcp_runtime_error` before reading `isError`
-  (`packages/mcp-client/src/tool-results.ts`). Direct tests cover both nullish values and the
-  absence of `outcome: "unknown"`; a resilient-session test proves the malformed response does not
-  fault or reconnect the transport (`packages/mcp-client/tests/unit/tool-results.test.ts` and
-  `packages/mcp-client/tests/unit/resilient-session.test.ts`).
-- `mcp.tools.listed` always reports `truncated: false` (`packages/mcp-client/src/connection.ts`);
-  the field is a constant, since every truncation path throws instead. Whether it is a placeholder
-  for a future non-fatal truncation, or dead, is not determinable.
-- `MCPConnection.listResources`/`readResource` remain optional on the cross-host contract
-  (`packages/capability/src/run.ts`), while this implementation defines both on every opened
-  connection (`packages/mcp-client/src/connection.ts`). Resource availability is represented
-  by the synthesized `resource_list`/`resource_read` descriptors: the loop dispatches those kinds
-  only after resolving a descriptor from the registry
-  (`packages/loop/src/runtime/tools/mcp-dispatch.ts`). With discovery disabled, absent, or
-  failed, `listResources` returns the empty captured catalog and `readResource` remains callable only
-  to a direct programmatic holder of the connection.
-- `MCPClientHandle.protocolVersion` is captured by replacing `transport.setProtocolVersion`
-  (`packages/mcp-client/src/client.ts`). Whether the SDK guarantees that method is called exactly once, or at all,
-  for every transport is outside this repository.
-
-**Uncorroborated prose**
-
-- Several doc comments narrate a prior defect (`packages/mcp-client/src/client.ts` on `defaultCwd`,
-  `packages/mcp-client/src/server-stderr.ts` on stderr reaching the host terminal,
-  and `packages/mcp-client/src/connection-manager.ts` on the dropped relay). The *current*
-  mechanism is verified in each case; the historical claims are not checkable from the code and are
-  quoted, never asserted.
-- The reason for `poolSharing`'s default being `owner` is stated as a security posture in the comment
-  (`packages/mcp-client/src/connection-manager.ts`) referring to owner-isolation modes outside
-  this package. Those modes live outside this package and are not verified here.
-
-**Delegated to sibling documents**
-
-- *When* the loop decides to open a pool, acquire leases, dispatch an MCP tool call, and what it does
-  with a `ToolResult` (including `outcome: "unknown"`), plus the concrete `RESERVED_WIRE_NAMES` list
-  — [loop-tool-dispatch-and-results](../engine/tool-dispatch.md).
-- The user-facing side of elicitation: who implements `ElicitationRelay.handle`, how a prompt reaches
-  a human, and the timeout around it — [elicitation-and-user-interaction](../cross-cutting/elicitation.md).
-- How `McpServerConfig` values (including `shared`, `resources`, `env`, `headers`) are assembled from
-  `settings.json` and plugin manifests — [kernel-config-and-agents](../hosts/kernel-config.md). The pool-sharing
-  mode is chosen by the `CLARVIS_MCP_POOL_SHARING` environment default
-  (`packages/capability/src/env.ts`).
-
-**Not investigated**
-
-- ~~Whether any test outside `packages/mcp-client` pins the absence of a `@clarvis/loop` import
-  from this package.~~ **Corrected.** One does, and this entry recorded its absence
-  wrongly: `packages/loop/tests/architecture/optional-package-boundary.test.ts` builds its package
-  set from the engine's own manifest rather than a hand-written list, so `@clarvis/mcp-client` — a
-  plain `dependencies` entry at `packages/loop/package.json` — is in scope
-  (`enginePackageDependencies`). It then scans that package's `src` **and** `tests` trees
-  (`SCANNED_TREES`) for any static, side-effect or dynamic `@clarvis/loop` specifier and
-  requires the offender list to be empty, with a companion case asserting files were
-  actually read, so an empty result means something.
+- `MCPClientHandle.protocolVersion` captures the negotiated version by wrapping
+  `transport.setProtocolVersion` (`packages/mcp-client/src/client.ts`). The MCP SDK's
+  guarantee that this method is called for every transport is external to this repository;
+  the local integration tests do not establish that guarantee for future SDK versions.

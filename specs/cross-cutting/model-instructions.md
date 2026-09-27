@@ -21,7 +21,7 @@ and user-authored extensions are not a fixed inventory.
 | --- | ---: | --- |
 | Coding, files, shell and sessions | 9 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
 | Child spawning | 1 | [lead-tools.ts](../../packages/loop/src/runtime/subagents/lead-tools.ts) |
-| Child listing, polling, waiting, steering and stopping | 5 | `buildTools` in [agents.ts](../../packages/loop/src/runtime/capabilities/agents.ts) |
+| Child listing, polling, steering and stopping | 4 | `buildTools` in [agents.ts](../../packages/loop/src/runtime/capabilities/agents.ts) |
 | Human question and structured completion | 2 | [ask-user-tool.ts](../../packages/loop/src/runtime/tools/ask-user-tool.ts), [submit-result-tool.ts](../../packages/loop/src/runtime/tools/submit-result-tool.ts) |
 | Plans | 5 | [plan/tools.ts](../../packages/plan/src/tools.ts) |
 | Memory | 7 | `MEMORY_TOOL_CONTRACTS` in [tool-contract.ts](../../packages/memory/src/tool-contract.ts) |
@@ -156,9 +156,7 @@ bounds do not semantically certify third-party content or grant extra authority.
 The prompt and tool contracts remain owned by [kernel config](../hosts/kernel-config.md),
 [tool dispatch](../engine/tool-dispatch.md), [planning](../capabilities/plan-capability.md),
 [workflow scheduling](../capabilities/workflows-scheduling.md), and
-[MCP client](../foundations/mcp-client.md). The removed MCP-over-HTTP facade no longer contributes
-public tool descriptions. The public guide is owned by `getclarvis/docs` and needs corresponding
-cleanup.
+[MCP client](../foundations/mcp-client.md). The public guide is owned by `getclarvis/docs`.
 
 ## 8. Open questions
 

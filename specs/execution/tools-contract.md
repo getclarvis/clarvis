@@ -5,7 +5,7 @@
 `@clarvis/tools` exposes a fixed catalog of coding tools. `dispatch` validates a cloned argument
 object against the selected tool's schema, invokes its configured execution port and bounds the result.
 The standalone default port invokes the handler on Host. A Kernel-bound toolset uses a structural authorization port after schema validation and before execution. Relative file paths
-use the workspace as their base; absolute paths remain absolute. Host filesystem permissions
+use the workspace as their base; absolute paths remain absolute. The selected execution policy and host filesystem permissions
 determine actual access.
 If steering or a host policy edit changes the authorization revision during review, `dispatch`
 reissues the same final action with current authorization and policy revisions before launch; a result
@@ -15,7 +15,7 @@ requires a fresh authorization before execution` in
 [action-authorization.test.ts](../../packages/tools/tests/integration/common/action-authorization.test.ts).
 
 Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `resolveConfig` in
-[config.ts](../../packages/tools/src/config.ts), and `resolveToolPath` in
+[config.ts](../../packages/tools/src/config.ts), and `resolveFileToolPath` in
 [paths.ts](../../packages/tools/src/lib/paths.ts). Test:
 [core.test.ts](../../packages/tools/tests/integration/common/core.test.ts) and
 [open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts).
@@ -69,7 +69,7 @@ Sandbox failures with an issued policy retain structured execution identity in
 the error result metadata as well as the serialized error text. Error metadata
 uses the same byte budget; oversized attempt detail is dropped before policy
 identity.
-File operations invoke local handlers. `close` releases run-owned
+File operations invoke handlers through the selected Host executor or Sandbox worker. `close` releases run-owned
 command sessions.
 
 Production: `dispatch`, `boundParts` and `boundMeta` in

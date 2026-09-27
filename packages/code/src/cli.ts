@@ -15,8 +15,9 @@
  * rather than a scripted call, so it can afford the slow path, and delegating
  * keeps validation semantics owned in one place.
  *
- * This file is invisible to coverage (see `coverage.ts`), so it holds no
- * decisions of its own — `resolveEntry` makes them and is tested directly.
+ * This entry is excluded from in-process coverage (see `coverage.ts`).
+ * `parseMode` and `privateEntry` own the parsed mode decisions and have direct
+ * tests; the launcher keeps only their import and exit handoff.
  */
 import { fileURLToPath } from "node:url";
 import { helpText, parseMode, productVersion, versionText } from "./cli-args.ts";

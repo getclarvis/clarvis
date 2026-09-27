@@ -8,7 +8,7 @@ MCP server elicitation is separately controlled by `mcp_elicitations`; an MCP
 call is not automatically a human approval request. `tool_call_started` marks
 dispatch admission, not physical process launch; `execution_attempt` reports
 admission and launch separately. Production: `runDispatch` in
-`packages/loop/src/runtime/loop/loop.ts`, `dispatchMcpTool` in
+`packages/loop/src/runtime/loop/loop.ts`, `executeMcpToolCall` in
 `packages/loop/src/runtime/tools/mcp-dispatch.ts`, `authorizeAction` in
 `packages/loop/src/runtime/tools/authorize-action.ts`. Test:
 `packages/loop/tests/architecture/reviewer-boundary.test.ts` and
@@ -24,8 +24,7 @@ the judge into the engine. Production: `authorizeAction` in
 
 > Implemented at `packages/loop/src/runtime/tools/**`,
 > `packages/loop/src/runtime/open-tool-pool.ts`, `packages/loop/src/runtime/loop/mcp-handler.ts`,
-> and their tests. Every claim below is anchored to a file and a named symbol or test. Open questions are collected in
-> the final section.
+> and their tests. Every claim below is anchored to a file and a named symbol or test.
 
 ## 1. Purpose
 
@@ -148,7 +147,7 @@ a fixed description that names only "finalize" — never the caller's field name
 
 `names.ts` and `grants.ts` — `AGENT_TOOL_NAMES`, `READ_ONLY_TOOL_NAMES`, `EDIT_TOOL_NAMES`,
 `EXEC_TOOL_NAMES`, `FILE_MUTATING_TOOL_NAMES`, `GrantCeiling`, `agentToolCaps`, `agentToolsActive` —
-are catalogued to [grants-and-tool-exposure](../cross-cutting/grants.md), not this document (see §8); `specs/cross-cutting/grants.md`
+are catalogued to [grants-and-tool-exposure](../cross-cutting/grants.md); `specs/cross-cutting/grants.md`
 §2.4 is their full treatment. The table below covers only the toolset-construction symbols this document
 owns.
 
@@ -180,12 +179,10 @@ calling it package-private.
 
 `runtime/tools/index.ts` re-exports `ask-user-call.js`, `ask-user-tool.js`, `mcp-dispatch.js`,
 `result-contract.js`, `submit-result-tool.js`, `tool-arg-validator.js`, `wire-names.js` and
-`builtin/names.js`. It is the actual import path several unit tests use rather than
-importing each module directly — `packages/loop/tests/unit/result-contract.test.ts` and `packages/loop/tests/unit/mcp-dispatch.test.ts` both
-import from `"../../src/runtime/tools/index.ts"`. Its own doc comment describes the
-directory as also serving a built-in `load_skill` tool alongside `ask_user`/`submit_result`, but no
-`load_skill` module exists anywhere under `runtime/tools/` — that tool belongs to `@clarvis/skills`,
-so the comment is stale for this directory.
+`builtin/names.js`. Unit tests import this internal barrel directly, including
+`packages/loop/tests/unit/result-contract.test.ts` and
+`packages/loop/tests/unit/mcp-dispatch.test.ts`. Skill loading is contributed through the separate
+`@clarvis/skills` capability.
 
 ## 3. Data and formats
 
@@ -368,9 +365,9 @@ throws inside the reporter itself.
    base64 is not duplicated; `productive: true`.
 7. On failure, `errText = result.error?.message ?? "tool execution failed"`; `productive =
    result.error?.code !== "mcp_unavailable"` — an `mcp_unavailable` failure sets
-   `productive: false`, the opposite of every other error code (which leaves `productive: true`),
-   and that `false` is what excuses a repeatedly-unreachable server from the convergence guard's
-   unproductive-looping penalty (doc comment).
+   `productive: false`, the opposite of every other error code (which leaves `productive: true`).
+   The engine's progress policy uses `errText === null` and its convergence guard records
+   `errText !== null`; this metadata does not excuse the failure from either policy.
 8. A terminal `tool_call` trace record always fires, carrying both `arguments` (what ran) and, if the
    call was hook-rewritten, `arguments_original` (what the model asked for) via
    `originalArgumentsPatch`.
@@ -623,9 +620,7 @@ Additional invariants derived directly from the code, carrying no INV number of 
 - **`collectCapabilityToolMetadata`'s `toolEffects` merge is last-registration-wins with no conflict
   error.** It is a plain `Object.assign(toolEffects, capability.toolEffects ?? {})` inside the fold
   loop (`packages/loop/src/runtime/capability-tool-metadata.ts`), so two capabilities both declaring an effect for the same
-  wire name silently let the later-registered one win — the doc comment calls this out as intentional
-  ("retain registration-order, last-wins behavior to match the former inline composition in the
-  orchestrator") but the code enforces no uniqueness check.
+  wire name let the later-registered one win. The code enforces no uniqueness check.
 
 ## 6. Failure modes and degradation
 
@@ -634,8 +629,8 @@ Additional invariants derived directly from the code, carrying no INV number of 
 | Unknown MCP wire name | `executeMcpToolCall` (`packages/loop/src/runtime/tools/mcp-dispatch.ts`) | non-productive tool error, model told the available list |
 | MCP arguments truncated/unparsable | `executeMcpToolCall` | non-productive, `malformedArgumentsMessage` |
 | MCP arguments fail schema | `executeMcpToolCall` via `argValidator` | non-productive, `InputValidationError: …` |
-| MCP tool call itself errors, code `mcp_unavailable` | `executeMcpToolCall` | non-productive (excused from convergence-guard penalty) |
-| MCP tool call errors, any other code | `executeMcpToolCall` | productive (a real tool failure, still counted) |
+| MCP tool call itself errors, code `mcp_unavailable` | `executeMcpToolCall` | dispatch reports `productive: false`; the engine's progress policy still uses `errText` |
+| MCP tool call errors, any other code | `executeMcpToolCall` | dispatch reports `productive: true`; the engine's progress policy still uses `errText` |
 | Coding-tool call not in the agent's `names` set | `createAgentToolsetWithAdapter`'s wrapped `dispatch` (`packages/loop/src/runtime/tools/builtin/toolset.ts`) | immediate error result, tool never reached |
 | Abort signal fires mid coding-tool call | `raceAbort` (`packages/loop/src/runtime/tools/builtin/toolset.ts`) | Global cancel returns immediately; selective abort allows bounded settlement grace, then reports unconfirmed termination if needed; listeners always removed |
 | Coding-tool malformed arguments | `executeAgentToolCall` (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`) | traced + guarded as non-productive, `malformedArgumentsMessage` |
@@ -718,31 +713,3 @@ Additional invariants derived directly from the code, carrying no INV number of 
   `packages/kernel/src/policy.ts`, consumed by
   `packages/code/src/adapters/mcp-capabilities.ts` — this document only owns the constant's
   declaration, not its downstream consumers.
-
-## 8. Open questions
-
-- **Why `mcp_unavailable` specifically, and no other code, is excluded from `productive`** is stated
-  as a design rationale in the doc comment (`packages/loop/src/runtime/tools/mcp-dispatch.ts`: "so retrying an unreachable
-  server is not treated as unproductive looping"), but whether any *other* MCP error code might
-  deserve the same treatment is not something the code decides one way or the other — only this one
-  string is special-cased.
-
-- **Whether a profile's `tools` field can name a built-in coding-tool wire name (not just an MCP dotted
-  name)**, and how that would interact with `findInvalidToolRef`'s pool-name check in `openToolPool`,
-  is governed by the request/profile schema — out of this document's scope (see
-  [loop-request-and-settings-schema](request-and-settings-schema.md) / [grants-and-tool-exposure](../cross-cutting/grants.md)). This document only describes the
-  mechanism `openToolPool` runs, not the full universe of legal `tools` entries.
-- (Resolved during reconciliation, kept for the record: `runtime/tools/builtin/grants.ts` and
-  `builtin/names.ts` were explicitly in this document's assigned scope text, but the same two files carry
-  the broader `BuiltinGrant`/`Grant` vocabulary and profile `can_spawn`/`default_spawn` topology that
-  [grants-and-tool-exposure](../cross-cutting/grants.md) treats in full. Nothing in either file's code
-  favors one home over the other — the ambiguity is in the boundary between the two documents, not in
-  the source — so the split follows that boundary: §2.7 and §4.6 above now cite
-  `agentToolCaps`/`GrantCeiling`/`EXEC_TOOL_NAMES`/etc. only where this document's own
-  toolset-construction mechanism consumes them, and defer their definitions to
-  `specs/cross-cutting/grants.md` §2.4/§4.2.)
-- (Resolved during drafting, kept for the record: `packages/loop/tests/unit/toolset.test.ts` does
-  directly pin `createAgentToolsetWithAdapter`'s gate, exec-tool filtering and abort-race behavior —
-  see the updated citations in §4.6/§5 below. The primary-sources list for this document did not name the
-  file explicitly, which is why it was initially missed; it was found by a directory search and is
-  cited throughout this document.)

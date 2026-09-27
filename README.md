@@ -77,8 +77,10 @@ On a clean installation:
    the global user configuration, not in the project.
 4. Describe the work in the composer. Clarvis starts with the built-in `marshall` Lead.
 
-The current directory selects the workspace. File tools can also access absolute paths using the
-host process's permissions. Global configuration defaults to `~/.clarvis`; project-specific
+The current directory selects the workspace. File tools also accept absolute paths, subject to the selected
+execution policy and host permissions. Sandbox is the default: ordinary reads are broadly allowed,
+writes are limited to admitted roots, and network access is disabled. Workspace metadata such as
+`.clarvis`, `.agents`, and `.git` is read-only unless an eligible action receives additional authority. Global configuration defaults to `~/.clarvis`; project-specific
 configuration lives in `<project>/.clarvis`.
 
 Essential controls:
@@ -132,9 +134,12 @@ remote terminals, and current accessibility limits.
 Clarvis is local-first, but it is not an offline application:
 
 - prompts and selected context are sent to the model provider you configure;
-- enabled MCP servers, plugins, hooks, task providers, and commands have their own trust boundaries;
-- shell and file tools execute with the host process's permissions; relative paths use the
-  workspace as their base, while absolute paths remain absolute;
+- enabled MCP servers, plugins, hooks, and commands have their own trust boundaries;
+- built-in shell and file tools use the selected Sandbox or Host policy within the host account's
+  permissions. Sandbox limits writes and network access; it does not implicitly hide credential
+  directories from reads. Relative paths use the workspace as their base;
+- eligible permission requests follow the operator's manual or automatic approval mode. A failed
+  Sandbox setup does not silently switch execution to Host;
 - credentials saved through the managed API-key and subscription flows stay in global files. Installations
   apply owner-only mode bits. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and
@@ -204,7 +209,7 @@ the RC's pinned Bun version. See the
 
 ## Packages
 
-Clarvis is one product made from 18 private, unversioned workspace packages. They are implementation
+Clarvis is one product made from private, unversioned workspace packages. They are implementation
 units and are not published independently.
 
 | Package                                        | Role                | Path                   | Description                                                           |
@@ -218,7 +223,7 @@ units and are not published independently.
 | [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.                |
 | [`@clarvis/sandbox`](packages/sandbox)         | execution service   | `packages/sandbox`     | Native process policy and Linux/macOS launch backends.                |
 | [`@clarvis/execpolicy`](packages/execpolicy)   | execution service   | `packages/execpolicy`  | Deterministic shell command rules and approval classification.        |
-| [`@clarvis/judge`](packages/judge)             | execution service   | `packages/judge`       | Semantic assessment for eligible automatic execution approvals.        |
+| [`@clarvis/judge`](packages/judge)             | execution service   | `packages/judge`       | Semantic assessment for eligible automatic execution approvals.       |
 | [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                         |
 | [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                           |
 | [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                         |
@@ -227,7 +232,7 @@ units and are not published independently.
 | [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                              |
 | [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Semantic formulation, persistent objectives and bounded continuation. |
 | [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                          |
-| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.            |
+| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Native host composition, model/MCP authority and execution policy.    |
 | [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The `clarvis` terminal UI, including conversation prompt scheduling.  |
 
 The [architecture overview](https://clarvis.dev/explanation/how-clarvis-works) explains the product

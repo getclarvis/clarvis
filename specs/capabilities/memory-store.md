@@ -184,7 +184,7 @@ lines verbatim — and always emits `description`, flattened to one line
 description: bun facts
 tags: [bun]
 ---
-Bun is pinned to 1.3.14 via mise
+Bun is pinned via mise
 ```
 
 `DocFrontmatter` is `{ description, tags, authority?, pinned?, extra? }`
@@ -559,11 +559,8 @@ list is itself charged against `batchOperations` via `assertMemoryStorageCount("
 "reindex", changes.length + 1, …)` — a pass needing more than 256 index-file
 rewrites throws.
 
-`ensureDescription`'s own doc comment states it also "repairs the blank description emitted by the
-first wiki implementation" (`packages/memory/src/reindex.ts`), and `ensureIntro` likewise
-"upgrade[s] the old empty scaffold (`# title` immediately followed by `## Contents`) without
-disturbing a human-written introduction" — both are a permanent migration path for
-that earlier implementation's own defects, not purely forward-looking scaffolding.
+`ensureDescription` fills a blank generated description, and `ensureIntro` fills an empty scaffold
+without disturbing a human-written introduction (`packages/memory/src/reindex.ts`).
 
 `writeContents` prefers an existing `reindex:begin`/`end` block; failing that, fills an existing
 `## Contents` heading up to the next `##`; failing that, appends a new `## Contents` section at the
@@ -754,10 +751,8 @@ which is the sibling *memory-indexer-and-jobs* document's.
 asserting through `node:assert/strict`, so an adapter in another package or runner can drive them
 (`packages/memory/src/testing.ts`). A case needing a capability the harness lacks
 (`poke`) returns early rather than failing. The harness contract is
-`{ store, poke?, cleanup }` (`packages/memory/src/testing.ts`). A 32nd case asserted rollback on
-"an adapter that declares itself atomic", gated on an `atomic` harness flag no driver ever set; both
-it and the flag are gone, because neither shipped adapter rolls back and none was ever going to —
-`packages/memory/src/file-store.ts` states "exclusion only, not rollback".
+`{ store, poke?, cleanup }` (`packages/memory/src/testing.ts`). The adapters serialize exclusive sections; staged batches apply on commit, with interrupted writes
+resolved by journal recovery (`packages/memory/src/file-store.ts`, `packages/memory/src/batch.ts`).
 
 `packages/memory/tests/contract/physical/store.test.ts` drives every case against both shipped backends:
 the file store over a fresh temp root (with `poke` writing straight to disk) and the in-memory store
@@ -1205,10 +1200,9 @@ There are **no retries and no timeouts** in this layer other than the tree-lock 
 | `@clarvis/capability` | the `Logger` port and its helpers `NOOP_LOGGER`, `levelEnabled`, `createSampler`, `sanitizeErrorMessage`, and the `bestEffort` / `detachObserved` observation pair (`packages/memory/src/file-store/tasks.ts`, `packages/memory/src/file-store/lock.ts`, `packages/memory/src/reindex.ts`, `packages/memory/src/workspace-state.ts`) |
 | Node built-ins only | `node:crypto`, `node:fs`, `node:path`, `node:readline`, `node:async_hooks`, `node:child_process` — no third-party runtime dependency reaches this layer |
 
-`zod` is a package dependency (`packages/memory/package.json` `dependencies`) but no module in the
-store layer imports it — the frontmatter parser is hand-rolled precisely "to keep the package a leaf
-with `zod` as its only runtime dependency" (`packages/memory/src/frontmatter.ts`), and the schema
-surface lives in `src/schemas.ts` / `src/settings.ts`. `@clarvis/loop`
+`zod` is a package dependency (`packages/memory/package.json`, `dependencies`), but the store
+layer does not import it. Frontmatter parsing is implemented in `packages/memory/src/frontmatter.ts`;
+the schema surface lives in `src/schemas.ts` and `src/settings.ts`. `@clarvis/loop`
 is likewise a package dependency, reached only through `IndexerRuntime`'s `ExecuteRunDeps` **type**
 import (`packages/memory/src/types.ts`) — a type-only edge from this layer's point of view.
 
@@ -1233,26 +1227,17 @@ root (`packages/paths/src/workspace-state.ts`) are two different functions, and
 - `journal.ts` holds the record shape and the **pure** decision; the I/O lives in
   `file-store/journal.ts` and `file-store/recovery.ts`, which the module header names as the reason
   the rule is testable without a filesystem (`packages/memory/src/journal.ts`).
-- `tree.ts` was extracted from the reindex pass so health diagnostics and ranked query ask the same
-  code rather than reimplementing the pyramid (`packages/memory/src/tree.ts`); its consumers are
+- `tree.ts` supplies one pyramid model to health diagnostics and ranked query (`packages/memory/src/tree.ts`); its consumers are
   `packages/memory/src/reindex.ts` and `packages/memory/src/query.ts`.
 - `text/grep.ts` is shared by both adapters — `packages/memory/src/file-store/documents.ts` and `packages/memory/src/testing.ts` — so
   "what counts as a match" has one definition (`packages/memory/src/text/grep.ts`).
 - `similar.ts` imports `paths` and `text/tokenize` but is imported only by
   `packages/memory/tests/component/query.test.ts`, and is not in the barrel
-  (`packages/memory/src/index.ts`). Its own header states it "has no production caller" and is kept as
-  the baseline that keeps the ranker comparison honest (`packages/memory/src/similar.ts`). The
-  same header states why it stopped being one: it used to be the indexer's selector for "which
-  existing documents are relevant to this run", ranking over path, description and tags but never a
-  document's body — "so the one component that decides which document to *rewrite* ranked without
-  reading any of them, and wrote near-duplicates beside the leaves it should have updated"
-  (`packages/memory/src/similar.ts`). The indexer now shares `query.ts`'s BM25 ranker instead.
+  (`packages/memory/src/index.ts`). It provides an overlap-ranker comparison for the production
+  BM25 query path (`packages/memory/src/similar.ts`, `packages/memory/src/query.ts`).
 - `file-store/tasks.ts` is the single shared failure-observation seam for every best-effort file-store
-  side effect: `bestEffortFileStore` and `detachFileStoreTask`, both wrapping `@clarvis/capability`'s
-  `bestEffort`/`detachObserved`. Its own doc comment states the rationale directly — the two used to
-  route through `process.emitWarning`, which "bypasses every logger: no package installs a
-  `process.on(\"warning\")` handler, so Bun's default handler wrote the line straight to the host's
-  stderr — over the TUI's own canvas"
+  side effect: `bestEffortFileStore` and `detachFileStoreTask` wrap
+  `@clarvis/capability`'s `bestEffort`/`detachObserved` and report through `Logger`
   (`packages/memory/src/file-store/tasks.ts`). Five call sites route through it: lock cleanup,
   the stale-lock steal, lock release and the heartbeat (`packages/memory/src/file-store/lock.ts`), job pruning (`packages/memory/src/file-store/jobs.ts`), revision metadata and body pruning
   (`packages/memory/src/file-store/revisions.ts`), the orphan-bookkeeping cleanup on a vanished split wiki
@@ -1283,26 +1268,12 @@ carries `node:assert/strict` and nothing else (`packages/memory/src/testing.ts`)
 
 ## 8. Open questions
 
-1. **`readDescription` and `MemoryMutationFence`.** `readDescription` has exactly one production
-   caller (`packages/memory/src/tools.ts`, sibling document); `MemoryMutationFence`
-   (`packages/memory/src/types.ts`) is declared in this layer but implemented and consumed by the
-   job/drain layer. Both are named here for completeness and specified by the sibling documents.
-
-2. **Durability of the machinery writes is unpinned.** MS-21 states the code calls `writeFileDurable`,
+1. **Durability of the machinery writes is unpinned.** MS-21 states the code calls `writeFileDurable`,
    and `packages/paths/src/atomic.ts` states what that adds, but no test in
    `packages/memory/tests` observes an `fsync` or simulates a power loss. The recovery matrix is
    tested by planting on-disk state, which is a different guarantee.
-
-3. **`poke` is the only backend-capability negotiation left.** Whether other
-   backend-specific behaviours (e.g. cross-process durability, which `MemoryStore.recover`'s doc
-   comment mentions at `packages/memory/src/types.ts`) were meant to become harness flags is not
-   determinable.
-
-4. **Rationale is largely absent from the code and deliberately not inferred here.** Where a doc
-   comment or a test name states a reason — the locale-independent path comparator
-   (`packages/memory/src/paths.ts`), the `applied` marker splitting the recovery policy
-   (`packages/memory/src/journal.ts`), the multiplicative boost clamp
-   (`packages/memory/src/query.ts`), the window-versus-truncate trade
-   (`packages/memory/src/text/grep.ts`), the "never index from inside `exclusive`" rule
-   (`packages/memory/src/file-store/lock.ts`) — it is quoted above. Everywhere else the mechanism
-   is described and the motive left open.
+2. **Zero-cap truncation intent is unresolved.** `truncate("abcdef", 0)` returns `"…"` (one
+   character) in `packages/memory/src/text.ts`, and
+   `packages/memory/tests/unit/text.test.ts` pins that result under the title "never exceeds the
+   cap, including at zero". Normal callers use positive limits; source and test do not establish
+   whether the explicit-zero exception is intended or a defect in the stated cap contract.

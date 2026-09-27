@@ -11,11 +11,10 @@ filter are specified in
 seam and its component-specific ownership rules are specified in
 [`cross-cutting/agent-interop.md`](../../specs/cross-cutting/agent-interop.md).
 
-Nothing else in the monorepo spells `".clarvis"` or `".agents"`. An architecture test in this
-package (`tests/architecture/invariant.test.ts`) enforces that, scanning every package's `src/`
-**and `tooling/`** and failing on any new occurrence. Restricting it to `src/` is what once let a drift through: a
-smoke-test fixture seeded the old global layout by string join, and the failure surfaced four days
-later as a 90-second timeout rather than as anything named.
+Other package source and tooling use this package's builders instead of constructing `".clarvis"`
+or `".agents"` paths. An architecture test in this package
+(`tests/architecture/invariant.test.ts`) scans every package's `src/` and `tooling/` to enforce
+that ownership.
 
 ## Why it exists
 
@@ -142,9 +141,8 @@ process HOME fallback); `globalRoot` and `globalPaths` do not create a test name
 rewrite that contract. Harnesses that need isolation must pass an explicit root/environment to
 their child and derive `globalPaths` from that root, as the Code `SmokeContext` does, rather than
 assuming that a temporary `home` argument can redirect every consumer.
-The second is the name `@clarvis/hooks` already injects into every hook subprocess, so a hook
-that invokes Clarvis inherits a variable that points at the right tree. They replaced
-older component-specific overrides, which are no longer part of the configuration contract.
+`@clarvis/hooks` injects `CLARVIS_WORKSPACE_ROOT` into hook subprocesses, so a hook that invokes
+Clarvis inherits the workspace root.
 
 ## The four trees
 
@@ -174,11 +172,8 @@ tree, so switching Extension Profiles never dirties the repository.
 `keys.json`, `subscriptions.json`, reusable Extension Profile definitions and their trust
 records, `shared-agent.md`, `auth.json` — and nests only what a user never
 edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above), `cache/` (including the models.dev
-snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed:
-it made the global tree disagree with
-the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
-layout stays stable; operator inventory classifies it logically rather than moving files into a new
-hierarchy.
+snapshot and automatic version-check result), `exports/`. Operator inventory classifies this
+physical layout without moving files into a new hierarchy.
 
 `.agents` is not one uniformly read-only tree in native composition. Standalone skills and
 marketplace documents remain foreign/user-authored inputs, while `.agents/plugins/<name>/` is a
@@ -225,15 +220,11 @@ coverage.
 
 `ensureWorkspaceDir` seeds `<ws>/.clarvis/.gitignore` and reconciles the mandatory `worktrees/`
 exclusion into an existing hand-edited file without replacing its other content.
-`ensureWorkspaceSubdir` is how the two generated Markdown trees get created — it seeds the parent ignore file in the same call, so `plans/`
-and `memory/` can no longer arrive before it. Seeding deterministically is a problem of _two
-creators_, and solving it requires that creation have a single owner too. Seeding uses
-exclusive-create, so a hand-edited ignore file survives: determinism comes from every entry point
-calling these, not from overwriting what they find.
+`ensureWorkspaceSubdir` creates the generated Markdown trees and seeds the parent ignore file in
+the same call. Seeding uses exclusive-create, so a hand-edited ignore file survives.
 
 `ensureWorkspaceStateDir` / `ensureWorkspaceLocalDir` are the machinery-side equivalents and seed
-**no** ignore file, because nothing they create is inside a repository. That is also why
-`WORKSPACE_GITIGNORE` no longer lists `local/`, and why `LOCAL_GITIGNORE` is gone.
+**no** ignore file, because nothing they create is inside a repository.
 
 `DIR_MODE` (`0o700`) and `FILE_MODE` (`0o600`) are the posture everything Clarvis creates gets.
 
@@ -399,15 +390,8 @@ the encoding step and let `../escape` leave its owner root. `ownerSegment` remai
 public for flat filenames and stores that do not use one of these builders.
 
 `ownerFromWorkspace` derives the default local owner as `ws_<sha256>` over the
-resolved workspace path. The earlier separator-to-underscore slug was lossy:
-`/a/b` and `/a_b` both became `_a_b`, so their workspace state could be merged.
-The hash is fixed-width, filesystem-safe and preserves the complete path as the
-identity input.
-
-This is a pre-release persistence-format migration. Existing default-owner and
-per-workspace state directories keep their bytes on disk, but the new version
-does not address them through the old lossy slug. Clarvis remains pre-1.0;
-there is no legacy fallback that could reintroduce the collision.
+resolved workspace path. The hash is fixed-width, filesystem-safe and preserves
+the complete path as the identity input.
 
 The two encoders used to live in `@clarvis/loop`, while the loop was their only caller. They moved when
 `@clarvis/trace`'s store, `@clarvis/mcp-client`'s pool and `@clarvis/memory`'s capability adapter

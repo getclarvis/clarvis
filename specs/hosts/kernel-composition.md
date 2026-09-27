@@ -47,8 +47,7 @@ disconnect policy; only its process owner calls the host's `close`. `InProcessKe
 captures effective root/leader configuration without inference, and its single-use start still enters
 the existing execution-id, owner and Extension Profile leases. `serveLocalFileKernel` adds a private
 lease/discovery record, authenticated listener and independent idle lifecycle;
-`connectOrLaunchLocalKernel` discovers or launches its application-selected artifact. Code adoption
-and installed-artifact retention remain separate composition work.
+`connectOrLaunchLocalKernel` discovers or launches its application-selected artifact.
 
 Native construction owns its housekeeping, trace cleanup, host disposal and built Loop resources
 through the existing Kernel lifecycle. One failed disposal does not prevent the other resources
@@ -72,7 +71,7 @@ ownership and limits are in [hosted runs](hosted-runs.md#independent-process-com
 
 `createFileKernel(options)` resolves process environment and paths, discovers the workspace identity,
 creates the Extension Profile manager, opens configuration and secrets, builds
-planning/memory/task/workflow dependencies, constructs the
+planning, memory, and workflow dependencies, constructs the
 in-process kernel, recovers persisted runs, and installs workspace housekeeping. A construction
 failure unwinds already-created resources before rethrowing. It does not start durable memory-index
 recovery; the host releases that background inference through `startMemoryRecovery()` after its
@@ -92,7 +91,7 @@ Test of the composed coordinator/store behavior:
 `packages/mcp-client/tests/integration/oauth-store.test.ts`. The Code host's browser authority
 is documented and tested in [code-bootstrap.md](code-bootstrap.md).
 
-The `builtins` switchboard names `tools`, `skills`, `hooks`, and `tasks`. Memory and planning have
+The `builtins` switchboard names `tools`, `skills`, and `hooks`. Memory and planning have
 their own explicit options. Worktrees are not a runtime builtin: Code selects a checkout before this
 function runs.
 
@@ -136,7 +135,7 @@ Test: `packages/kernel/tests/integration/git-workspace.test.ts`;
 
 The in-process kernel exposes project/workspace identity and owner-scoped services for runs,
 configuration, plugins, Extension Profiles, secrets, model catalogs, provider authentication, workspace
-files, memory, plans, workflows, skills, sessions, tasks, and storage. These are control-plane services; model tool
+files, memory, plans, workflows, skills, sessions, and storage. These are control-plane services; model tool
 surfaces are composed separately by the loop capabilities.
 
 An owner handle is acquired lazily and cached only within this one kernel. The private
@@ -274,10 +273,6 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    `packages/kernel/tests/integration/file-kernel.test.ts` (`retries failed disposal through
    the public kernel close path`).
 
-5. **The kernel exposes no worktree lifecycle service or cross-workspace kernel cache.**
-   Production: `packages/protocol/src/client.ts`; `packages/kernel/src/bootstrap.ts`.
-   Test: protocol contract tests and `packages/code/tests/integration/workspace-client-manager.test.ts`.
-
 6. **Kernel construction starts no memory-index inference; explicit recovery start is idempotent and
    applies once to resident owners plus every later owner generation.**
    Production: `InProcessKernel.startMemoryRecovery` and `buildOwner` in
@@ -328,10 +323,10 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 ## 9. Dependency seams
 
 Kernel depends on the foundation/engine packages it composes and imports `@clarvis/protocol` as
-types. Code and Server consume the kernel entrypoints; neither imports the loop. There is no
-`@clarvis/worktrees` dependency. The loop constructs `@clarvis/mcp-client`'s authorization
-coordinator from the host options; Code supplies the operating-system browser opener, while Server and
-other headless hosts can omit it without changing the wire contract.
+types. Code consumes kernel entrypoints without importing the loop. The loop constructs
+`@clarvis/mcp-client`'s authorization coordinator from host options; Code supplies the
+operating-system browser opener, while headless hosts can omit it without changing the wire
+contract.
 
 ## Public execution trace view
 

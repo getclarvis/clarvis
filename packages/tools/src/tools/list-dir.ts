@@ -26,8 +26,7 @@ export const listDir: ToolDef = {
   description:
     "List the immediate entries of one directory (non-recursive). Directories first, then files; " +
     "directories end with `/` and files show a byte size. Includes dotfiles; does NOT apply " +
-    ".gitignore. To match files by pattern across subdirectories use glob; to search file contents " +
-    "use grep.",
+    ".gitignore. For recursive filename or content searches, use shell when available.",
   inputSchema: {
     type: "object",
     properties: {

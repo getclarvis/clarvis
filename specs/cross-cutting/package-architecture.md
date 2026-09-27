@@ -42,7 +42,7 @@ additional direct application-owned edge
 The kernel is the local host implementation and composition root. Clients and the implementation both
 depend on the transport-neutral protocol. Code obtains its launch and persistence path vocabulary
 through the bounded `@clarvis/kernel/paths` facade; it has no direct foundation package edge.
-The kernel publishes eight owned entrypoints today
+The kernel publishes owned entrypoints
 (`packages/kernel/package.json`, `exports`), and its architecture test prevents the root from
 becoming a barrel for lower packages
 (`packages/kernel/tests/architecture/public-surface.test.ts`, `kernel public surface`).
@@ -181,7 +181,7 @@ development resolves sources without prior `dist` (`packages/code/package.json`,
 `localModuleTarget`, `analyzePackageGraph`).
 
 A package root exports only symbols it owns. Re-exporting lower packages to make all consumers
-depend on one facade is prohibited. Kernel's current six-entry surface and no-generic-barrel rule
+depend on one facade is prohibited. Kernel's owned surface and no-generic-barrel rule
 are pinned by `packages/kernel/tests/architecture/public-surface.test.ts` (`kernel public surface`).
 
 ### 3.3 Graph report
@@ -338,7 +338,7 @@ Production: `packages/code/src/index.tsx`, `packages/code/src/runtime.tsx`,
 Test: `packages/code/tests/architecture/architecture-boundary.test.ts`
 (`confines concrete kernel imports to composition and adapter boundaries`).
 
-**INV-PA7. Kernel exposes only its eight owned entrypoints and its root is not a generic re-export
+**INV-PA7. Kernel exposes only its owned entrypoints and its root is not a generic re-export
 barrel for lower packages. Protocol remains dependency-free.**
 
 Production: `packages/kernel/package.json` (`exports`); `packages/kernel/src/index.ts`;
@@ -484,33 +484,3 @@ The architecture migration is complete because all of the following gates are im
 8. The root manifest is the sole product-version authority; workspaces and their lock entries are
    unversioned, workspaces are private, and the four runtime version consumers are centrally
    allowlisted.
-
-## 8. Open questions
-
-### ~~The role matrix is not yet centralized in tooling~~ — resolved
-
-Resolved by `tooling/lib/package-architecture.ts` (`PACKAGE_ROLES` and
-`packageDependencyViolation`). `analyzePackageGraph` applies that policy to workspace registration,
-declared dependencies and imported edges, while the Code and Server boundary tests import the same
-helpers rather than restating package lists.
-
-### ~~Code still consumes Kernel runtime values outside local composition~~ — resolved
-
-Resolved by the Code-owned policy/configuration adapters named in section 7.2 and the source-wide
-Kernel-import ratchet in `packages/code/tests/architecture/architecture-boundary.test.ts`. Commands,
-onboarding, the run host, Views and feature controllers now consume those adapters rather than
-Kernel entrypoints.
-
-### Extraction of a client-runtime package remains evidence-dependent
-
-The target does not pre-authorize `@clarvis/client-runtime`, `@clarvis/platform` or a split of
-Kernel's `config`, `policy` and `local` subpaths. First remove presentation leakage and inject narrow
-ports. If a cohesive multi-consumer implementation remains below both Code and Server, propose it
-under section 2.3 with its dependency direction and lifecycle; otherwise keep it with its owner.
-
-### ~~The generated report communicates counts, not architecture~~ — resolved
-
-`renderMarkdown` now emits roles, named direct dependencies, optional-edge labels, consumer counts
-and a role-grouped Mermaid graph. `checkDocument` compares the entire marked block in
-[`package-coupling-analysis.md`](../package-coupling-analysis.md), so prose cannot preserve a stale
-diagram while the numeric totals pass.

@@ -187,8 +187,8 @@ Observation storage and its current implementation scope are specified in
 [hosted runs](../../specs/hosts/hosted-runs.md).
 
 `local-host.ts` defines the optional `KernelClient.localHost` operator service, advertised by
-`capabilities.local_host`. It carries process state, browser-request claims and explicit runtime
-retry/restart operations through the kernel RPC. The service contains no provider credentials;
+`capabilities.local_host`. It carries process state, browser-request claims and explicit
+restart/shutdown operations through the kernel RPC. The service contains no provider credentials;
 opening an authorization URL does not approve authorization. Its availability requires hosting
 and the local operator role.
 

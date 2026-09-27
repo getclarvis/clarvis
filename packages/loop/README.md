@@ -60,10 +60,9 @@ does not interpret them; model-aware host configuration surfaces own normalizati
 Provider-native model ids may contain `/`, `.`, and `:` after the provider segment, including local
 server tags such as `local/qwen2.5-coder:7b`.
 
-The engine no longer talks to a provider, implements trace persistence, or speaks
-MCP itself. What remains of the last two is engine _policy_ — when to record and
-when to call — while the transports live in `@clarvis/trace` and
-`@clarvis/mcp-client`.
+The engine calls models through the `LLMProvider` port and applies policy for trace recording
+and MCP calls. Provider transport, trace persistence, and MCP connections live in `@clarvis/llm`,
+`@clarvis/trace`, and `@clarvis/mcp-client` respectively.
 
 A run-scoped tool-interrupt registry listens for operator requests and aborts only the matching
 child controller for an interruptible builtin `shell`. The loop then records an operator
@@ -94,10 +93,10 @@ The durable vocabulary and replay contract are owned by
 
 ## Contract
 
-`buildRunDeps` composes the host-attested `clarvis-docs` provider separately from ordinary skill
+`buildExecuteRunDeps` composes the host-attested `clarvis-docs` provider separately from ordinary skill
 roots. Agents with `use_skills` receive it in their normal catalog. An entry agent without that
-grant receives only the system guide when its immutable ceiling permits editing and the host
-configuration-review port is available. This does not change tool grants, approve a mutation, or
+grant receives only the system guide when the host supplies it, built-in file tools are enabled,
+and its entry grants and immutable ceiling permit editing. This does not change tool grants, approve a mutation, or
 grant the same view to children. See
 [self-configuration](../../specs/hosts/self-configuration.md) and
 [skills](../../specs/execution/skills.md).
@@ -327,8 +326,8 @@ carries a grant declared with `entryCanSpawn: true`. That result alone decides w
 supervision registry and its five tools — there is no feature-name switch or request boolean.
 
 The engine publishes that registry under `AGENT_REGISTRY_PORT` on the run's generic
-`CapabilityServices` before `forRun` begins. Capabilities consume it through `ctx.services`; the old
-special `RunCapabilityContext.agents` channel is gone. Other capability-to-capability ports are read
+`CapabilityServices` before `forRun` begins. Capabilities consume it through `ctx.services`.
+Other capability-to-capability ports are read
 at `attach` time, after providers have activated, so registration order cannot hide a peer.
 The same substrate publishes `RUN_TRACE_PORT` before activation. Its recording handle retains durable
 entries and its bridge buffers their projected journal form until a journal is connected after
@@ -354,7 +353,7 @@ when a tool call counts as progress. It also owns session cleanup, so disabling
 the tools built-in avoids loading tools entirely; generic spill cleanup remains
 on the main path through `@clarvis/paths`. The skills and hooks adapters ship with
 their feature packages instead, each behind that package's `./capability` entry;
-`@clarvis/loop` no longer exports a subpath for any of them. `@clarvis/memory`
+`@clarvis/loop` exports only its tools capability subpath. `@clarvis/memory`
 also ships one, but it is not on this list: the engine does not load it at all.
 
 Run teardown closes command admission, sends `SIGTERM` then `SIGKILL` to tracked trees, and waits
@@ -363,8 +362,8 @@ scratch allocation. Uncertain exit retains
 the scratch and its recovery metadata and emits `tools.session_drain_unconfirmed`. An expired
 cleanup budget also retains the allocation and emits `tools.session_cleanup_budget_exhausted`.
 Pre-authorized system temporary roots are access policy, never cleanup ownership. The global paths sweeper reclaims
-abandoned allocations a same-host record proves dead whose subtree holds no file or symlink, plus
-stale empty legacy run containers left by a crash. Production: `createAgentToolsCapability`,
+abandoned allocations a same-host record proves dead whose subtree holds no file or symlink.
+Production: `createAgentToolsCapability`,
 `ExecutionSessionManager` in `packages/tools/src/lib/execution-session.ts`,
 `allocateShortTemporaryRoot` and `collectAbandonedShortTemporaryRoots` in
 `packages/paths/src/short-temporaries.ts`. Tests: `packages/loop/tests/integration/tools.test.ts`,
@@ -396,8 +395,7 @@ and [request validation](../../specs/engine/request-and-settings-schema.md).
 
 A host supplies or builds:
 
-- an `LLMProvider` — the engine no longer talks to a provider itself;
-  `@clarvis/llm` is the Vercel AI SDK implementation of that port, and
+- an `LLMProvider`; `@clarvis/llm` is the Vercel AI SDK implementation of that port, and
   `buildExecuteRunDeps` wires it by default;
 - a workspace root;
 - trace persistence;
@@ -539,12 +537,9 @@ diff and session-cleanup wiring. Lifecycle verdict/observer policy is unit-teste
 with minimal `LifecycleHook` values, while component cases use a fake
 `Capability` to verify that the engine reaches those hooks.
 
-The suite deliberately uses Bun's shared-global default rather than `--isolate`. During the Bun
-1.4.0 qualification, five isolated runs had a 20.62 s median against 11.15 s on Bun 1.3.11, while
-five shared-global Bun 1.4 runs all passed in 10.07–10.15 s. The suite bans `mock.module()`, restores
-fake timers in `afterEach`, and passed the complete 1,606-test inventory repeatedly, so paying an
-84.9% per-file isolation penalty protected no observed state leak. The explicit 60-second timeout,
-test-home preload and package-local coverage boundary remain unchanged.
+The suite uses Bun's shared-global default, bans `mock.module()`, restores fake timers in
+`afterEach`, and keeps an explicit 60-second timeout, test-home preload and package-local coverage
+boundary. Historical runtime comparisons belong in [known issues](../../specs/known-issues.md).
 
 ## What it logs
 

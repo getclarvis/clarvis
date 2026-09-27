@@ -619,7 +619,7 @@ describe("the payload a hook receives", () => {
 });
 
 describe("createWorkspaceHooksCapability", () => {
-  it("always declares its seed marker, so a stale block is stripped even when off", () => {
+  it("always declares its seed marker, including when hooks are off", () => {
     const capability = createWorkspaceHooksCapability({
       resolveHooks: () => undefined,
       environment: {},

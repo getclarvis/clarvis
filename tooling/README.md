@@ -8,7 +8,6 @@ artifact builders and performance benchmarks in `packages/code/tooling/`.
 | --------------------- | ----------------------------------------------------------------------------- |
 | `checks/`             | Executable repository policy and consistency checks                           |
 | `release/`            | Release preparation and Gitflow tag orchestration                             |
-| `runtime/`            | Immutable isolated-runtime image planning and release identity manifests      |
 | `lib/`                | Importable implementation shared by checks and their tests                    |
 | `test-runtime/`       | Process setup loaded by Bun before repository tests                           |
 | `tests/unit/`         | In-memory checker and library contracts                                       |
@@ -71,8 +70,8 @@ Bun 1.4 GitHub-runner canary records at least 30 successful `@clarvis/code` cove
 of the historical signal exits. Its evidence and retirement condition live in
 [`../specs/known-issues.md`](../specs/known-issues.md#bun-dies-by-signal-in-the-clarviscode-suite).
 
-`release/prepare.ts` promotes the curated `CHANGELOG.md` `Unreleased` entry and updates the three
-release identity authorities: root `package.json` and `install.sh`. It validates
+`release/prepare.ts` promotes the curated `CHANGELOG.md` `Unreleased` entry and updates the
+product version and installer default: root `package.json` and `install.sh`. It validates
 SemVer ordering and the existing cross-file identity before writing, and never commits, tags, or
 publishes. Public documentation resolves the newest complete distribution release independently, so
 it is not part of this source mutation.
@@ -90,7 +89,7 @@ and never force-pushes. See [RELEASING.md](../RELEASING.md#automation-setup) for
 `source-v1` installation contract, and publishes source prereleases.
 `packages/code/tooling/candidate-install.ts` consumes that contract for explicit development
 installs, verifying the source snapshot and its pinned Bun version. The stable release workflow
-publishes the six portable targets after package, smoke and asset checks.
+publishes the Linux and macOS x64/arm64 portable targets after package, smoke and asset checks.
 
 ## Prompt-cache evidence
 

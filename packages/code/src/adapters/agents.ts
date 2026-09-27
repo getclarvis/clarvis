@@ -28,7 +28,11 @@ export interface GrantSpec {
  *   on a profile are preserved and rendered by their raw id.
  */
 export const GRANT_CATALOG: readonly GrantSpec[] = [
-  { id: "read_workspace", label: "read", detail: "read-only coding tools (read/list/glob/grep)" },
+  {
+    id: "read_workspace",
+    label: "read",
+    detail: "read-only coding tools (read_file, read_image, list_dir)",
+  },
   { id: "edit_workspace", label: "edit", detail: "mutating file tools; implies read" },
   { id: "run_commands", label: "exec", detail: "bash host commands; implies edit" },
   { id: "ask_user", label: "ask", detail: "human elicitation tool (entry agent)" },

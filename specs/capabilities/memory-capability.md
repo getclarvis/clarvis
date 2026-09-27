@@ -108,9 +108,8 @@ Returns a `ToolHandler` whose `matches` is `toolset.names.has(call.name)` (packa
 (`!result.isError`) and names a mutating tool (`isMutatingTool(call.name)`), and only when
 `args.path` is a `string` — the payload is `{ tool: call.name, path }` (packages/memory/src/handler.ts). This is
 how the background indexer learns what it changed without re-deriving it from tool results.
-Within this document's own scope, `createMemoryRunCapability` never supplies `onMutation` when it
-builds either handler — the field is declared here but unexercised by this
-document's own wiring; see §8.
+Foreground `createMemoryRunCapability` handlers omit `onMutation`; indexer handlers supply it to
+record successful writes in the pyramid ledger (`packages/memory/src/indexer/capability.ts`).
 
 ### 2.4 `createMemoryCapability` (`packages/memory/src/capability.ts`)
 
@@ -326,8 +325,7 @@ three fields: `totals` from `summarizeTotals` (packages/memory/src/review.ts), w
 therefore exceeds `topics + memories` by exactly one when `PROFILE.md` exists; `recent`, the
 `RECENT_LIMIT = 10` (packages/memory/src/review.ts) most-recently-updated documents sorted by `updated_at`
 descending; and `undescribed`, every path for which `isUndescribed` (packages/memory/src/review.ts) — a blank or
-absent `description` — holds. `reviewDigest` is not itself re-exported from `src/index.ts` or
-`./capability` (see §8); it backs `Memory.review()`, owned by the sibling [capabilities/memory-store.md](memory-store.md) document.
+absent `description` — holds. `reviewDigest` backs `Memory.review()` in the facade ([capabilities/memory-store.md](memory-store.md)); it is not a public subpath export.
 
 ## 4. Behavior
 
@@ -379,6 +377,9 @@ Production: `prepareMemoryRunInternal`, `createMemoryCapability` and `prepareMem
   also attaches the provider's write toolset + handler. A subagent therefore gets exactly the four
   reads; an entry agent gets all seven only for a write-enabled provider
   (pinned by `packages/memory/tests/architecture/capability-flag-surface.test.ts`).
+  The foreground handlers do not supply `onMutation`; isolated and continuation indexer handlers
+  supply it to record successful writes in their pyramid ledger
+  (`packages/memory/src/indexer/capability.ts`, `buildMemoryToolsHandler`).
 - `onRunEnd` is present **iff** `opts.enqueueOnRunEnd !== false` **and** `memory !== undefined`:
   - If `provider.writeTools === undefined` (a read-only provider): `onRunEnd` emits a single
     `MEMORY_INGEST_EVENT` notice `{ phase: "done", skipped: true, note: "provider-read-only" }` and
@@ -478,17 +479,12 @@ equality) (`Object.hasOwn(...,"onRunEnd")` differs and only that).
 defined, the entry system section contains `"## Memory"`, the entry agent has 7 tools and the
 subagent has 4. Test: `packages/memory/tests/architecture/capability-flag-surface.test.ts`.
 
-Why INV-091/092 hold `seedBlock` to the same standard as `onRunEnd`, per the test file's own header
-comment: an indexing pass continues the run it indexes and so registers this capability twice —
-once for real, once with the enqueue suppressed so the pass does not queue itself forever — and
-that only works while the pass is served from the provider's prefix cache, with `seedMarker`,
-`seedBlock`, `systemSection` and the tool array all ahead of the appended instruction. Widening the
-flag to also suppress `seedBlock` would look like a tidy optimisation, but a downstream consumer
-(`buildEntrySeed`, outside this document's scope) decides whether to keep a carried seed block by
-checking whether the capability's `seedMarker` is still *live* — a capability that emits no block
-at all has no live marker, so the carried block is dropped out of the middle of the transcript and
-every token behind it is re-billed by the provider's prefix cache. The engine measured one such
-boundary at **115,432 tokens**. Cite: `packages/memory/tests/architecture/capability-flag-surface.test.ts`.
+An indexing pass registers this capability with enqueue suppressed so it does not queue itself.
+The marker, seed, system section and tool array remain identical for prefix continuity. Engine
+`buildEntrySeed` also retains an already-carried block byte-for-byte when the capability is
+inactive. Production: `packages/loop/src/runtime/entry-seed.ts`. Test:
+`packages/memory/tests/architecture/capability-flag-surface.test.ts` and
+`packages/loop/tests/unit/entry-seed-markers.test.ts`.
 
 **INV-097.** `memorySettingsSpec` serves the store's own `memoryConfigSchema` by identity (not a
 duplicate), registers under `MEMORY_CAPABILITY_NAME`, is `merge: "lastWins"` and not
@@ -504,12 +500,9 @@ and carries no `Logger` reference or `log`-named schema key. Production:
 `packages/memory/tests/architecture/settings-ownership.test.ts` (regex-scans the source for
 value imports, and string-scans for `"./factory.ts"`/`"./capability.ts"`/`"Logger"`).
 
-`settings.ts`'s own module doc comment states the mechanism INV-097/098 exist to hold: the module
-"used to live inside `@clarvis/loop`" purely so the engine's own settings schema could spread it
-statically, which forced the block's schema and the capability's name to be declared twice and
-pinned equal by a drift test; it moved here once the settings schema learned to accept blocks
-registered at runtime — "the same route `@clarvis/plan` and `@clarvis/workflows` already take"
-(`packages/memory/src/settings.ts`).
+`settings.ts` keeps schema registration on the kernel's eager configuration path while provider
+construction remains in the capability runtime. Production: `packages/memory/src/settings.ts` and
+`packages/kernel/src/config/capability-registry.ts`.
 
 **INV-099.** `checkWrite` allows the `owner` intent to `replace` or `delete` a pinned document
 unconditionally. Production: `packages/memory/src/policy.ts` (early return before any pin/
@@ -674,11 +667,10 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
   independent of `builtins.memory`.
 - `packages/memory/src/factory.ts` (sibling document) constructs `createMemoryCapability` nowhere
   itself; the **host** does. `packages/kernel/src/native-kernel.ts` calls
-  `createMemoryCapability(memoryFactory)` unconditionally — even with `memoryFactory === undefined`
-  — "because the engine collects `seedMarker` from every **registered** capability, active or not,
-  which is what strips a stale `<memory>` block from a continuation whose run has memory switched
-  off" (`packages/capability/src/contract.ts`, collected in
-  `packages/loop/src/runtime/orchestrator.ts`). `packages/kernel/src/memory/pass-deps.ts` builds a **second** instance with
+  `createMemoryCapability(memoryFactory)` unconditionally — even with `memoryFactory === undefined`.
+  The registered marker lets `buildEntrySeed` recognize the capability's carried block; it retains
+  that block byte-for-byte when Memory is inactive (`packages/loop/src/runtime/entry-seed.ts`,
+  `packages/loop/tests/unit/entry-seed-markers.test.ts`). `packages/kernel/src/memory/pass-deps.ts` builds a second instance with
   `{ enqueueOnRunEnd: false }` for the deps an indexing pass continues under, which is exactly the
   scenario INV-091/092 exist to protect.
 - `packages/kernel/src/kernel.ts` constructs `createMemoryService({ factory: opts.memoryFactory,
@@ -694,12 +686,6 @@ defines.
 
 ## 8. Open questions
 
-- **`MemoryToolsHandlerDeps.onMutation` is declared but never supplied within this document's own
-  scope.** `createMemoryRunCapability`'s `forAgent` builds both the read and write handlers with a
-  bare `{ base, toolset }` in `createMemoryRunCapability` — neither passes `onMutation`. Whether some
-  other caller of `buildMemoryToolsHandler` supplies it (the per-run indexer, owned by the sibling
-  [capabilities/memory-indexer.md](memory-indexer.md) document, is the plausible candidate given the mechanism reaches into
-  `./indexer/pyramid.ts`) is outside this document's scope.
 - **Read/write call-budget asymmetry is unpinned.** `CLARVIS_MEMORY_TOOL_CALL_LIMIT` (default 12)
   bounds read tools while write tools carry `Number.MAX_SAFE_INTEGER`
   (`WRITE_CALL_LIMIT` and `createMemoryRunCapability` in `packages/memory/src/capability.ts`),
@@ -714,21 +700,11 @@ defines.
   provider always matches canonically already, per `assertProviderVocabulary`'s separate check in
   `packages/memory/src/provider.ts`) or a genuine defense against a provider that passes the vocabulary check but
   supplies different prose is not stated anywhere in the code or its comments.
-  `assertProviderVocabulary` throws at construction on a wrong tool *name* or non-canonical
-  descriptor (packages/memory/src/provider.ts), which would make `canonical()`'s override appear unreachable for
-  any provider that passed construction — but `canonical()` is unconditional regardless, and the
-  provider-registry call sites are outside this document's scope, so whether
-  `assertProviderVocabulary` is invoked before every `createMemoryRunCapability` call is unconfirmed
-  (that wiring lives in `factory.ts`/`provider-registry.ts`, owned by sibling documents).
-- **`review.ts`'s `reviewDigest` is not part of any public export path this document's scope covers.**
-  It backs `Memory.review()` (`packages/memory/src/memory-contract.ts` and `packages/memory/src/memory.ts`, sibling document [capabilities/memory-store.md](memory-store.md)) but is not itself
-  re-exported from `packages/memory/src/index.ts` or `./capability`. Whether any host actually calls
-  `Memory.review()` is outside this document's scope.
-  `MemoryToolResult`/`GrepHit`/most of `types.ts`'s persistence-facing interfaces (`MemoryTx`,
-  `MemoryBatch`, `MemoryUnitOfWork`, `MemoryStore`, `MemoryMutationFence`, etc.) are used by this
-  document's tool bodies but their *implementation* (the file store, the batch/journal machinery) is
-  explicitly delegated to [capabilities/memory-store.md](memory-store.md) — only the type declarations needed to describe
-  `tools.ts`'s call sites are in scope here, not the store's internals.
+  `wikiMemoryProvider` invokes `assertProviderVocabulary` at construction, rejecting wrong names
+  and non-canonical descriptors (`packages/memory/src/wiki-provider.ts`,
+  `packages/memory/src/provider.ts`). A custom `MemoryFactory.providerFor` can return another provider
+  directly, so `canonical()` remains a defensive boundary for that interface.
+
 - **The exact wording threshold for INV-108's "user asking" phrase** is matched by the test as the
   substring `"when the user asks"` (packages/memory/tests/architecture/write-policy.test.ts), which appears in the production text
   as `"write only when the user asks you to remember, record or correct something"`

@@ -1,7 +1,7 @@
 # Agents, workflows and sessions screens
 
 > Implemented at `packages/code/src/**` and `packages/code/tests/**`. Every claim below is anchored
-> to a file and line. Open questions are collected in the final section.
+> to a file and a named symbol or test. Open questions are collected in the final section.
 
 ## 1. Purpose
 
@@ -627,7 +627,7 @@ specific to these files.
 | Workflow list/tree/node fetch fails | `packages/code/src/views/config/WorkflowsHub.tsx` | `loadError` is set and rendered above the body; the previous data is retained |
 | Workflow refresh never settles | `packages/code/src/views/config/WorkflowsHub.tsx` | "Refresh is still pending; the backend may be unavailable"; still one in-flight request |
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx` |
-| Leader node has no `task` (legacy record) | `packages/code/src/views/config/WorkflowsHub.tsx` | "Task unavailable for this legacy workflow"; `[t]` is unbound |
+| Leader node has no `task` | `packages/code/src/views/config/WorkflowsHub.tsx` | "Task unavailable for this legacy workflow"; `[t]` is unbound |
 | Any detached async operation rejects unobserved | `packages/code/src/core/tasks.ts` | a `task.failed` diagnostic event is emitted with the operation name; nothing is thrown into the render tree |
 
 Degradation that is deliberately silent: `AgentsPanel.openConflictPicker`'s pick discards a `null`
@@ -687,53 +687,6 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 ## 8. Open questions
 
-1. **Why `SessionsHub.tsx` is outside the ASCII sweep.**
-   `packages/code/tests/architecture/ascii-source-boundary.test.ts` omits this view,
-   which renders a literal em dash. Whether the sweep is intentionally selective
-   is not stated in source.
-
-3. ~~**`AGENT_TEMPLATES` is a `Record<string, AgentTemplate>` with exactly one key, and
-   `createFromTemplate` hard-codes `AGENT_TEMPLATES.explorer!`**~~ **Resolved — collapsed
-   to `NEW_AGENT_TEMPLATE: AgentTemplate`** (`packages/code/src/adapters/agent-files.ts`), and the
-   `!` is gone with it. Whether more templates were once planned is still not stated, but the
-   question the map raised is answered by the flow's own shape: `createFromTemplate(name)` takes the
-   *agent's* name and never a template's, so there was no argument by which a second entry could have
-   been selected. A `Record` read as a picker whose other entries had not been written; a single
-   constant reads as what it is. Its docstring now records why one, and why a read-only investigator
-   is the right floor: every grant a new agent ends up with is then one the user added on purpose.
-
-4. **Workflow node identities are internal.** Detail screens present task titles and lifecycle
-   rather than per-mount short IDs. `WorkflowsHub` uses stable run IDs only for backend reads,
-   live merging and retained selection.
-
-5. **`AgentsController.openDraft` drops `invalid` and `overlay`** when copying the file into the draft
-   (`packages/code/src/features/agents/controller.ts`). Since `openSelected` refuses `invalid`
-   agents this is consistent for `invalid`, but the loss of `overlay` means the editor cannot show
-   what a shipped agent's overlay did once the draft is open. Whether that is deliberate is not
-   recorded.
-
-6. **`AgentsStore.reload`'s epoch guard (invariant 16) is unpinned.** No test in
-   `packages/code/tests` interleaves two reloads.
-
-7. **`GrantId` is a closed union in `packages/code/src/adapters/agents.ts`, but the panel writes it through
-   `patchFm({ grants })` onto an `AgentFrontmatter`** whose grant vocabulary is the kernel's open
-   registry. The doc comment at `packages/code/src/adapters/agents.ts` says "Unknown grants already
-   stored on a profile are preserved and rendered by their raw id", and `grantBadges` does fall back
-   to the raw id — but `toggleGrant` only ever receives a `GrantId`
-   (`packages/code/src/features/agents/controller.ts`), so how an unknown grant reaches the
-   toggle path, if ever, is not determinable from this package.
-
-8. ~~**`features/notice.ts` is a type re-export** whose header calls it a "Compatibility
-   surface for feature presenters".~~ **Resolved — deleted.** What it was compatible
-   *with* is not in the code because it was compatible with nothing: it re-exported `Notice` and
-   `NoticeTone` from `ui/notice.ts` for two consumers (`features/providers/events.ts`,
-   `features/agents/events.ts`), both of which took only `Notice`, while the boundary its header
-   implied is contradicted two files over — `features/run/status-presenter.ts` and
-   `features/providers/request-params.ts` both import from `ui/` directly, and no architecture test
-   forbids it. The two consumers now import from `../../ui/notice.ts` like everything else.
-
-10. **`WorkflowsHubDeps.refreshSlowMs` is described in-source as an internal test seam** but is also
-    the only way to shorten the slow-operation warning. Whether
-    production ever sets them — and what the default `slowMs` is when they are omitted — depends on
-    `core/diagnostic-events.ts`, which is outside this document's scope; the registration site in
-    `packages/code/src/app/commands.tsx` passes none.
+- `SessionsHub.tsx` renders a literal em dash but is outside the ASCII-source architecture sweep. No source policy explains that exception.
+- `AgentsController.openDraft` drops the source document's `overlay` field. The editor refuses invalid agents, but whether omitting overlay provenance from a valid draft is intentional is not stated.
+- `AgentsStore.reload` has an epoch guard, yet no focused test interleaves two reloads to pin the later-result-wins behavior.

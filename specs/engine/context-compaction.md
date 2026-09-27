@@ -2,7 +2,6 @@
 
 > Implemented at `packages/loop/src/runtime/context/**` and
 > `packages/kernel/src/runs/compaction-queue.ts`. Every claim below is anchored to a file and a named symbol or test.
-> Open questions are collected in the final section.
 
 ## 1. Purpose
 
@@ -30,7 +29,7 @@ historical publication contract, the eviction and summarization policies, the pa
 
 ## 2. Surface
 
-### Exported from the package (via `context-compaction.ts` and `index.ts`)
+### Internal context-module exports (via `context-compaction.ts` and `index.ts`)
 
 The facade `packages/loop/src/runtime/context/context-compaction.ts` re-exports, by identity:
 
@@ -52,8 +51,9 @@ everything from `llm-compaction.ts`, `compaction-prompt.ts` and `tool-spill.ts` 
 `summarizeContext`, `runCompaction`, `attemptCompaction`, `buildCompactionMessages`,
 `applicableContributions`, `CONTRIBUTION_MAX_CHARS`, `CONTRIBUTIONS_BLOCK_MAX_CHARS`,
 `compactionOutputTokens`, `CompactionAnchor`, `DEFAULT_COMPACTION_PROMPT`,
-`COMPACTION_UPDATE_INSTRUCTION`, and `createToolSpill`/`ToolSpill` are all reachable from the
-package's public surface, just not from the narrower `context-compaction.ts` facade.
+`COMPACTION_UPDATE_INSTRUCTION`, and `createToolSpill`/`ToolSpill` are reachable through the
+internal context barrel, but not through the narrower `context-compaction.ts` facade. Neither
+module is a package-manifest public entrypoint.
 
 **Deliberately not exported anywhere** (INV-071, INV-072): `createLiveEntryStore`
 (`packages/loop/src/runtime/context/live-entry-store.ts`), `createCompactionSelector` (`packages/loop/src/runtime/context/compaction-selection.ts`) and
@@ -284,8 +284,8 @@ therefore `rebuildDroppingTools`, `replaceSpanWithSummary`'s in-place anchor rew
 
 The level is `debug` when `cause` is in `PRICED_CAUSES = { "compaction", "summary_anchor" }`
 (`packages/loop/src/runtime/context/live-entry-store.ts`) — the two rewrites the pricing model in §1 already accounts for — and
-`warn` for every other cause (`"remove"`, `"replace"`, `"image_budget"`, and the unreached
-`"rewrite"` — §8). The `levelEnabled(logger, level)` check (`packages/loop/src/runtime/context/live-entry-store.ts`) runs
+`warn` for other emitted causes (`"remove"`, `"replace"`, `"image_budget"`). The
+`levelEnabled(logger, level)` check (`packages/loop/src/runtime/context/live-entry-store.ts`) runs
 **before** the O(index) `char_offset` scan, so a logger with `debug` disabled skips that scan on
 every priced (i.e. the common) cause.
 
@@ -349,8 +349,8 @@ while open, `false` once `close()` has been called; `drain()` returns and emptie
    running char total (`packages/loop/src/runtime/context/live-context.ts`, `packages/loop/src/runtime/context/live-entry-store.ts`).
 2. A `createCompactionSelector` is built over the store's live `entries`/`totalChars` closures and
    the given `config` (`packages/loop/src/runtime/context/live-context.ts`).
-3. `enforceToolImageBudget()` runs once immediately, before any method is exposed, because a
-   continuation may hydrate a snapshot written by an older, unbounded runtime
+3. `enforceToolImageBudget(true)` runs once immediately, before any method is exposed, to reject
+   an oversized persisted image snapshot
    (`packages/loop/src/runtime/context/live-context.ts`).
 
 ### 4.2 Appending (`packages/loop/src/runtime/context/live-context.ts`)
@@ -745,7 +745,7 @@ below the automatic threshold and appends user text after hooks") and
 | Settled run has no `final_context` | `{ status: "skipped", reason: "no_context" }` | `packages/kernel/src/runs/run-service.ts` |
 | Mechanical fitting cannot reach the target high-water mark without dropping protected context | `{ status: "skipped", reason: "cannot_fit" }`; persisted context is unchanged | `packages/loop/src/runtime/context/stored-context-compaction.ts`, persistence only after a compacted result at `packages/kernel/src/runs/run-service.ts` |
 | `needsCompaction()` on a disabled config | `false` (selector short-circuits on `!config.enabled`) | `packages/loop/src/runtime/context/compaction-selection.ts` |
-| Continuation hydrates a snapshot from an older, unbounded runtime (oversized inline images) | `enforceToolImageBudget()` runs once at construction, before any method is exposed, to bound it retroactively | `packages/loop/src/runtime/context/live-context.ts` |
+| Continuation hydrates a snapshot with oversized inline images | `enforceToolImageBudget(true)` rejects it at construction, before any method is exposed | `packages/loop/src/runtime/context/live-context.ts` |
 
 Nothing in this subsystem throws out of a `LiveContext` method under ordinary operation — `compact`,
 `forceEvictOldest`, `replaceSpanWithSummary`, `appendToolMessage` etc. are all synchronous and
@@ -826,43 +826,3 @@ See [generic execution ports](capability-composition.md).
 - `packages/code/src/app/commands.tsx` and `packages/code/src/views/App.tsx` — the TUI's `/compact`
   slash command and its wiring to `RunHandle.compact`, reaching this subsystem only through the
   protocol type, never the implementation.
-
-## 8. Open questions
-
-- **Why `MIN_COMPACTION_HYSTERESIS` is exactly `0.2`**, beyond the arithmetic the comment at
-  `packages/loop/src/runtime/subagents/subagent-profiles.ts` walks through (the "roughly one full miss per fifty iterations"
-  claim for the *default* 0.8/0.5 pair specifically) — no test asserts that specific
-  ratio for arbitrary operator-chosen fractions; the floor's own value is a judgment call the code
-  states but does not derive from anything measured in this repository's test suite.
-- **Whether `rewrite` (`PrefixBreakCause`, `packages/loop/src/runtime/context/live-entry-store.ts`) has ever fired in production.**
-  The type comment says it "has no producer today" and is reserved for "the next in-place message
-  mutator" — no call site anywhere in `runtime/context/**` passes `"rewrite"` to
-  `reportPrefixBreak`. This is dead vocabulary by the code's own admission, not an inferred
-  defect. `"replace"` — the default parameter value of `LiveEntryStore.replace`
-  (`packages/loop/src/runtime/context/live-entry-store.ts`) — is equally unreached by the same standard: both production call
-  sites of `store.replace` bind an explicit cause instead of taking the default
-  (`packages/loop/src/runtime/context/live-context.ts` binds `"compaction"`, `packages/loop/src/runtime/context/live-context.ts` binds `"image_budget"`), and no
-  test in scope invokes the default either. Of six `PrefixBreakCause` members, two are
-  dead in production.
-- **The precise shape of `CompactionAnchor.label`/`.body`** for a real lead vs. a real sub-agent run.
-  `packages/loop/src/runtime/loop/run-agent.ts` supplies a `staticAnchor` fallback when no `folded.anchor` closure is given, but
-  constructing what a lead's or sub-agent's anchor actually contains is orchestration logic in
-  `runtime/loop/run-agent.ts` and `runtime/subagents/*`, outside `runtime/context/**`; it is not traced
-  further here because it belongs to a different document's scope (loop/subagent orchestration).
-  `llm-compaction.ts` only consumes `{ label, body }` as opaque strings (`packages/loop/src/runtime/context/llm-compaction.ts`).
-- **Whether `attemptCompaction`'s `"scheduled"` and forced `ctx.compact()` fallback paths can ever
-  double-count a summarization's usage against the ledger if `runCompaction` itself throws after
-  `args.ledger.consume(usage)` but before returning.** No code path in scope exhibits that specific
-  sequencing failure (the consume call and the return are not separated by anything that can
-  throw in the source), so it is recorded only as a structural observation, not a confirmed
-  defect.
-- **The exact behavior of `pre_compact` as an *external*-dialect hook event** (its wire shape, the
-  `{"kind":"context","text":...}` verdict format mentioned at `packages/capability/src/hooks-config.ts`,
-  and how a foreign-authored hook's output is normalized into a `CompactionContribution`) is the
-  [hooks-execution](../execution/hooks.md) document's territory; what is confirmed here is only that `COMPACTION_HOOK_EVENTS = ["pre_compact"]`
-  exists (`packages/capability/src/hooks-config.ts`) and that `collectCompactionContributions` is this subsystem's
-  consuming edge, not the hook dispatch mechanism itself.
-- **The ledger/budget arithmetic `TokenLedger.consume` performs** (how `usage` translates into a
-  spent/remaining figure, escalation, or budget-exceeded signaling) is explicitly
-  [loop-budgets-clocks-and-guards](budgets-and-guards.md)' scope; `../budget/budget.ts` is outside this document's
-  scope beyond the confirmed type import.

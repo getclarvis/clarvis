@@ -3,8 +3,7 @@
 > Implemented at
 > `packages/loop/src/runtime/{budget,guards,usage,usage-accounting,extension-admission}*` and
 > `packages/capability/src/{compute-clock,output-budget,extension-admission,semaphore,convergence-guards}.ts`.
-> Every claim below is anchored to a file and a named symbol or test. Open questions are collected in the final
-> section.
+> Every claim below is anchored to a file and a named symbol or test.
 
 ## 1. Purpose
 
@@ -452,7 +451,7 @@ remains unknown and cannot support completion. Production: `createStewardExecuti
 `settleStewardEvaluation`. Test: `Goal Steward coordinator` in
 [goal-steward.test.ts](../../packages/kernel/tests/unit/goal-steward.test.ts).
 
-The legacy separate semantic Goal formulation run is also hard stop-mode, but its allowance is not the
+The separate semantic Goal formulation run is also hard stop-mode, but its allowance is not the
 persisted Goal pursuit budget. Its omitted token allowance equals the ordinary run budget resolved
 from merged settings or the host fallback, while `goals.agent.formulation.max_net_tokens` may
 override it; the host token ceiling still caps either value. The effective allowance is shared by
@@ -691,8 +690,8 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
 28. **Reservation settlement on failure has exactly three outcomes, in this priority order**: (a) real
     accumulated/partial usage present → settle that amount regardless of error kind; (b)
     `producedNoBillableOutput` (`!streamStarted && no accumulatedUsage && no partialUsage`) → release in
-    full; (c) otherwise → settle (charge) the *entire* reservation. Production: `packages/loop/src/runtime/loop/output-budget.ts`. Test: `packages/loop/tests/unit/output-budget.test.ts` (five scenarios, including the historical-regression
-    case "a rate limit does not consume a shared tree ceiling").
+    full; (c) otherwise → settle (charge) the *entire* reservation. Production: `packages/loop/src/runtime/loop/output-budget.ts`. Test: `packages/loop/tests/unit/output-budget.test.ts` (including
+    "a rate limit does not consume a shared tree ceiling").
 29. **An unbounded (`Infinity`) output budget never throws `OutputBudgetExhaustedError`** and takes a
     lighter accounting-only path that never calls `reserveOutput`. Production: `packages/loop/src/runtime/loop/output-budget.ts`.
     Test: `packages/loop/tests/unit/output-budget.test.ts` pins successful accounting, measured
@@ -776,7 +775,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
 | A run's loop promise rejects **after** the clock already declared `"timeout"` | The rejection is observed and logged at `debug` (`capability.compute_clock.loop_rejected`) rather than becoming an unhandled rejection | `packages/capability/src/compute-clock.ts`; test `packages/capability/tests/unit/compute-clock.test.ts` |
 | Output-token budget has no headroom before a call | `OutputBudgetExhaustedError` thrown synchronously before the provider is ever called | `packages/loop/src/runtime/loop/output-budget.ts` |
 | A model call fails after streaming had genuinely begun, or with an unclassified error carrying no usage evidence | The **entire** reservation is charged, deliberately erring toward exhausting the shared ceiling rather than under-charging an uncertain case | `packages/loop/src/runtime/loop/output-budget.ts`, comment |
-| A model call fails with provably no billable output (`producedNoBillableOutput`) | The reservation is released in full — this is the fix for the historical 429-drains-the-tree defect | `packages/loop/src/runtime/loop/output-budget.ts`; test `packages/loop/tests/unit/output-budget.test.ts` |
+| A model call fails with provably no billable output (`producedNoBillableOutput`) | The reservation is released in full | `packages/loop/src/runtime/loop/output-budget.ts`; test `packages/loop/tests/unit/output-budget.test.ts` |
 | A capability's `forRun` activation exceeds `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | Logged as `capability.setup_timeout`; the capability contributes nothing (`activated === null`), the run proceeds without it | `packages/loop/src/runtime/orchestrator.ts` (timeout branch) |
 | A capability's `forRun` activation or its activated `seedBlock` call is refused by the extension admission gate | Logged as `capability.extension_saturated`; the activation or seed block is treated as absent rather than the run failing | `packages/loop/src/runtime/orchestrator.ts` (`forRun`), `packages/loop/src/runtime/extension-admission.ts` (`seedBlock`) |
 | A `LifecycleHook` method (not `seedBlock`) is refused by the admission gate | The `ExtensionCallUnavailableError` propagates unhandled to whatever awaited that hook | `packages/loop/src/runtime/extension-admission.ts` (no catch on any of these branches); test `packages/loop/tests/unit/extension-admission.test.ts` shows every one of these is a direct passthrough with no degradation path exercised |
@@ -837,14 +836,9 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
 
 ## 8. Open questions
 
-- **Delegated in full, not re-described here per the document's own scope**: the LLM-side admission
-  controller construction (owned by [llm-provider-layer](../foundations/llm.md)), finalize gates and nudges (owned by
-  [loop-capability-composition](capability-composition.md)), and workflow fan-out budgets/ledger semantics (owned by
-  [workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md), including `WorkflowLedger`'s own reservation-sizing formula at
-  `packages/workflows/src/ledger.ts` and its concurrency tests).
-- **A second, analogous terminology collision**: `packages/loop/tests/component/max-output-tokens-clamp.test.ts`
-  is named after "output budget" but tests an entirely different mechanism — clamping a run's configured
-  `max_output_tokens` to fit inside the model's context window (prompt + completion), exercised through
-  `executeRun` directly, with no `OutputTokenBudget`/`withOutputTokenBudget`/reservation involved at all.
-  A keyword search on "output budget" in `packages/loop/tests` will surface it as if it belonged to this
-  document's reservation mechanism (§4.4). Cite: `packages/loop/tests/component/max-output-tokens-clamp.test.ts`.
+The source establishes several guard and budget rules without focused assertions: the soft
+checkpoint's priority over an exhausted hard ledger (INV-4), simultaneous doom/stagnation trip
+priority (INV-13), stable activation keys across fresh capability objects (INV-26), pre-exhausted
+output-budget admission before inference (INV-31), trace and child-activity clock pokes (INV-32),
+unchanged ledger accounting during a human wait (INV-33), and simultaneous doom-loop soft-tier
+priority (INV-36). The cited tests in §5 cover adjacent behavior but do not close these cases.

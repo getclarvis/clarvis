@@ -1,7 +1,6 @@
 # The kernel wire: framing, methods, codecs, client and server
 
-> Implemented at `packages/kernel/src/transport/**`. Every claim below is anchored to a file and
-> symbol or exact range. Open questions are collected in the final section.
+> Implemented at `packages/kernel/src/transport/**`. Claims cite source symbols and tests.
 
 ## 1. Purpose
 
@@ -166,7 +165,7 @@ envelope, an optional `requestOptions(...args)` extracting transport-only metada
 serialized, and `invoke(services, params, signal?)` calling the matching service method.
 
 `KernelOperationMetadata` is `{ access: "read" | "write"; sensitivity?: "files" | "plugins" |
-"secrets" | "provider_auth" | "tasks" }` (`KernelOperationMetadata` in
+"secrets" | "provider_auth" }` (`KernelOperationMetadata` in
 `packages/kernel/src/transport/operations.ts`), built by the `read()`/`write()` helpers in that file.
 
 `serviceOperations<Service, Excluded>` in `packages/kernel/src/transport/operations.ts` is the type-level completeness device:
@@ -207,6 +206,8 @@ The special operations and their metadata:
 | `runs.present` | write | — |
 | `config.subscribe` | read | — |
 | `config.unsubscribe` | read | — |
+| `goals.subscribe` | read | — |
+| `goals.unsubscribe` | read | — |
 
 `M` names the special operations and selected ordinary aliases (`packages/kernel/src/transport/wire.ts`);
 the remaining ordinary methods are reached through the service proxies. The
@@ -214,11 +215,13 @@ whole DTO vocabulary each method carries belongs to **protocol-kernel-contract**
 
 Ordinary operations' individual `access`/`sensitivity` pairing is declared by
 `OPERATIONS` in `packages/kernel/src/transport/operations.ts`.
-Five service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
-`secrets`, `providerAuth`, `files`). Extension Profiles deliberately shares the `plugins`
+Six service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
+`secrets`, `providerAuth`, `files`, `changes`). Extension Profiles deliberately shares the `plugins`
 sensitivity because selecting or editing one changes the active executable extension set. Models uses `provider_auth` only for its two entitled-catalog
-operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills`,
-`sessions` and `storage` carry access metadata without a sensitivity tag:
+operations; `localHost` uses `plugins` for inspection and `provider_auth` for browser responses,
+while its process controls have no tag. `goals`, `hosting`, `runs`, `config`, `memory`, `plans`,
+`workflows`, `skills`, `sessions` and `storage` carry access metadata without a sensitivity tag.
+Selected ordinary entries illustrate the metadata; `OPERATIONS` is the complete catalog:
 
 | Service | Method | `access` | `sensitivity` |
 | --- | --- | --- | --- |
@@ -304,6 +307,7 @@ operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills
 | `runResult` | `run.result` | `RunResultNote { execution_id, result }` | `packages/kernel/src/transport/wire.ts` |
 | `runStreamEnd` | `run.stream_end` | `RunStreamEndNote { execution_id }` | `packages/kernel/src/transport/wire.ts` |
 | `configChange` | `config.change` | `ConfigChangeNote { subscription_id, change }` | `packages/kernel/src/transport/wire.ts` |
+| `goalChange` | `goals.change` | `GoalChangeNote { subscription_id, change: { session_id } }` | `packages/kernel/src/transport/wire.ts` |
 | `hostedObservation` | `hosting.observation` | `HostedObservationNote { subscription_id, kind, ... }` | [hosting-codec.ts](../../packages/kernel/src/transport/hosting-codec.ts) |
 
 `run.elicitation` carries no `execution_id` of its own — the run is identified by
@@ -437,18 +441,19 @@ randomUUID()` (`packages/kernel/src/transport/client.ts`). Config subscription i
 
 ### 3.6 The run-event registry
 
-`RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts` holds **41** entries, one per `RunEvent`
+`RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts` holds one entry per `RunEvent`
 discriminator, closed by `satisfies Record<RunEvent["type"], z.ZodType>`. Shared fragments:
 `attributed` = `{ at, agent, subagent_id? }`, `planProjection`, `planTask`, `memoryIngestDetail` as a five-phase discriminated union. Every object schema
 is `.strict()`.
 
 The complete discriminator list: `run_started`, `run_ended`, `iteration_started`,
-`iteration_completed`, `tool_call_started`, `tool_call`, `tool_output_delta`, `tool_control_released`, `tool_input_delta`,
+`iteration_completed`, `tool_call_started`, `tool_call_announced`, `tool_call`, `tool_output_delta`, `tool_control_released`, `tool_input_delta`,
 `reasoning`, `text_delta`, `model_error`, `model_retry`, `delegation_created`, `delegation_started`,
 `delegation_completed`, `delegation_failed`, `workflow_run_started`, `workflow_title_updated`,
 `workflow_sequence_state`, `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed`, `plan_created`,
 `plan_updated`, `plan_removed`, `plan_review_requested`, `plan_review_resolved`, `soft_limit_check`,
 `compaction_started`, `compaction`, `compaction_skipped`, `elicitation_requested`,
+`approval_requested`, `approval_resolved`, `execution_policy_result`, `execution_attempt`,
 `elicitation_resolved`, `steering_applied`, `memory_ingest`, `capability_event`, `events_dropped`,
 `mcp_degraded` (`RUN_EVENT_SCHEMAS`). *Which* events exist and why belongs to
 **kernel-run-service-and-events**.
@@ -470,17 +475,18 @@ In the order the function runs (`packages/kernel/src/transport/client.ts`):
 2. Register `transport.onClose` **before** anything else, so a disconnect during the handshake is
    observed. Its handler sets `closed`, settles every live run `unavailable`, clears the
    subscription maps and detaches the observers.
-3. Register the five notification observers, each with its own validator.
+3. Register the ordinary run and config notification observers, each with its own validator.
 4. Build `HelloParams` and issue `M.hello`.
 5. On a throw: mark closed, clear subscriptions, detach observers, `await transport.close()` inside a
    `try/catch` whose comment reads "Teardown is secondary and no client was returned", then rethrow
    the **original** error.
 6. On a structurally invalid result: same teardown, then throw
    `` `kernel selected an invalid or unsupported Clarvis wire contract '${selected}'` ``.
-   The checks are `hasOnly` over the permitted keys, `wire_version === 6`, `capabilities` /
+   The checks are `hasOnly` over the permitted keys, `wire_version === CLARVIS_WIRE_VERSION`, `capabilities` /
    `project` / `workspace` objects, string `project.id`, `workspace.id`, `workspace.projectId`,
    `workspace.label`, a `workspace.kind` in `primary | external_worktree`, and a
-   `principal` that, if present, is an object with a string `id`.
+   `principal` that, if present, is an object with a string `id`. The local-host, Goal,
+   hosted-generation and native-runtime capability shapes are also validated.
 7. Build the ordinary service proxies, the subscribe-aware `config` wrapper, and the streaming `runs`, and return the `RemoteKernel` carrying `hello.capabilities`, `hello.project`,
    `hello.workspace` and, when present, `hello.principal`.
    A valid `capabilities.hosting.host_generation` additionally constructs the optional hosting
@@ -515,7 +521,20 @@ In the order the function runs (`packages/kernel/src/transport/client.ts`):
 | `hostingSteer` | `subscription_id`, `message` |
 | `hostingCompact` | `subscription_id`, `request` |
 | `hostingCancel` | `subscription_id` |
+| `hostingInterruptTool` | `subscription_id`, `tool_execution_id` |
 | `hostingRespond` | `subscription_id`, `response` |
+| `hostingPresent` | `subscription_id`, `presentation` |
+| `runsStart` | `params` |
+| `runsSteer` | `execution_id`, `message` |
+| `runsCompact` | `execution_id`, `request`, `options` |
+| `runsCancel` | `execution_id` |
+| `runsInterruptTool` | `execution_id`, `tool_execution_id` |
+| `runsRespond` | `execution_id`, `response` |
+| `runsPresent` | `execution_id`, `presentation` |
+| `configSubscribe` | `kinds`, `subscription_id` |
+| `configUnsubscribe` | `subscription_id` |
+| `goalsSubscribe` | `session_id`, `subscription_id` |
+| `goalsUnsubscribe` | `subscription_id` |
 
 `hosting.controlObservation` is an operator mutation in the ordinary service operation catalog.
 It accepts `observation_id` and `control: "acquire" | "takeover"`, returning a `HostedRunRef`
@@ -523,13 +542,6 @@ without creating another subscription. Production: `OPERATIONS.hosting.controlOb
 in [operations.ts](../../packages/kernel/src/transport/operations.ts). Test: existing-observation
 takeover over loopback and local IPC in
 [hosted-transport.test.ts](../../packages/kernel/tests/integration/hosted-transport.test.ts).
-| `runsStart` | `params` |
-| `runsSteer` | `execution_id`, `message` |
-| `runsCompact` | `execution_id`, `request`, `options` |
-| `runsCancel` | `execution_id` |
-| `runsRespond` | `execution_id`, `response` |
-| `configSubscribe` | `kinds`, `subscription_id` |
-| `configUnsubscribe` | `subscription_id` |
 
 `specialParams` derives the allowed set from this per-method table; an absent entry has an empty
 set and therefore rejects any supplied key (`packages/kernel/src/transport/server.ts`).
@@ -635,7 +647,7 @@ only through the service-level call for a settled run.
 | `run.event` | `hasOnly(["execution_id","event"])`, string id, `decodeRunEvent(params.event) !== null` (`packages/kernel/src/transport/client.ts`) | `clientRuns.get(id)?.stream.push(event)` |
 | `run.result` | `hasOnly(["execution_id","result"])`, `result.execution_id === execution_id`, status in `completed\|failed\|cancelled` | resolve `done`, set `resultReceived`, delete the entry if the stream already ended |
 | `run.stream_end` | `hasOnly(["execution_id"])` | close the stream, resolve `closed`, delete the entry if the result already arrived |
-| `run.elicitation` | `hasOnly(["request"])`; string `request.id`/`execution_id`/`kind`/`prompt`; when `detail` is present, `isCommandDetail` requires exactly `command`, `cwd`, `reason`, `warning?`, with the first three strings and `warning` absent or a string (`packages/kernel/src/transport/client.ts`, `isCommandDetail` and the `N.runElicitation` observer) | buffer into `pendingElicits` when no handler yet, else fan out |
+| `run.elicitation` | `hasOnly(["request"])`; string `request.id`/`execution_id`/`kind`/`prompt`; optional `window_ms` is a positive safe integer and `detail` must be absent (`packages/kernel/src/transport/client.ts`, `N.runElicitation` observer) | buffer into `pendingElicits` when no handler yet, else fan out |
 | `run.elicitation_settled` | `hasOnly(["execution_id","elicitation_id"])` and both members strings (`packages/kernel/src/transport/client.ts`, the `N.runElicitationSettled` observer) | drop the still-buffered request with that id, then call every `onElicitSettled` handler of `clientRuns.get(execution_id)` |
 | `config.change` | `hasOnly(["subscription_id","change"])`, change `hasOnly(["kind","scope","at"])`, kind in `settings\|agents\|context`, finite `at`, scope `global\|workspace` or absent | `configSubs.get(id)?.(change)` |
 
@@ -727,7 +739,8 @@ hello deadline. The client connection timeout defaults to five seconds. Invalid 
 opening a channel. Listener close releases sockets and connections, not the kernel's own lifetime.
 
 The Unix socket directory must be owned by the current account with mode `0700` and cannot be a
-symlink. The adapter never removes an occupied endpoint before listen. without the `readableAll`/`writableAll` relaxations. A local host composition must supply both
+symlink. The adapter never removes an occupied endpoint before listen. A local host composition
+must supply both
 `resolveConnection` and `authorize` to authenticate the account and limit operations; filesystem
 placement by itself is not authorization. This adapter alone does not detach or preserve a run.
 
@@ -838,8 +851,8 @@ Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`. The underlyin
 application of them.
 
 **INV-208.** When oversized `details` must be truncated, the reconciliation flags survive:
-`outcome_unknown` (boolean) plus the string keys `task_code`, `memory_code`,
-`current_revision`, `expectedRevision`, `actualRevision`, each `terminalSafe`'d and sliced to 1 024
+`outcome_unknown` (boolean) plus recognized classification strings such as `memory_code`,
+`current_revision`, `expectedRevision`, and `actualRevision`, each `terminalSafe`'d and sliced to 1 024
 characters, and a `truncated: true` marker is added.
 Production: `PRESERVED_ERROR_STRING_DETAILS` `packages/kernel/src/transport/stdio.ts`, `preservedErrorDetails`
 `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/stdio.ts`.
@@ -975,10 +988,11 @@ Production: `packages/kernel/src/transport/wire.ts` (every value is an `OPERATIO
 Production: `packages/kernel/src/transport/stdio.ts` (`satisfies Record<KernelErrorCode, true>`) against
 `packages/protocol/src/common.ts`. Compile-time only; unpinned by a test.
 
-**INV-T3.** `RUN_EVENT_SCHEMAS` must carry an entry for every `RunEvent` discriminator.
+**INV-T3.** `RUN_EVENT_SCHEMAS` must carry an entry for every `RunEvent` discriminator,
+and `CodecFieldDrift` checks each variant's declared fields against its schema in both directions.
 Production: `RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts`
-(`satisfies Record<RunEvent["type"], z.ZodType>`). Compile-time
-only — it constrains the **keys**, not the payload shape (see §8).
+(`satisfies Record<RunEvent["type"], z.ZodType>` and `AssertNoDrift<CodecFieldDrift>`).
+This is a compile-time invariant.
 
 **INV-T3b.** `tool_input_delta.stream_chars`, when present, is finite;
 `tool_input_delta.complete`, when present, is exactly `true`; extra lifecycle fields are
@@ -1305,124 +1319,23 @@ of the service it is given (`ServiceOperations` and `serviceOperations` in the s
 - `loopback.ts` and `stdio.ts` both import `KernelServer` as a **type** (`packages/kernel/src/transport/loopback.ts`,
   `packages/kernel/src/transport/stdio.ts`), so a transport can host any structurally compatible server.
 
-## 8. Open questions
-
-~~**A confirmed schema drift: `run_ended.code` is rejected by the client codec.**~~ **Resolved.**
-The diagnosis held exactly as written. The protocol declared `code?: string`
-(`run_ended` in `RunEvent`), the kernel's engine mapper emitted it whenever the trace
-entry carried one (`packages/kernel/src/runs/map-events.ts`), and
-`RUN_EVENT_SCHEMAS.run_ended` was `.strict()` over `type/at/status/reason` alone — so a failed run's
-error code decoded to `null`, the client read that as a protocol violation, and one field nobody had
-ever round-tripped settled every live run `unavailable` and closed the transport. The
-`RUN_EVENT_SCHEMAS.run_ended` schema now declares `code: text.optional()`, and
-`packages/kernel/tests/contract/memory/transport-codecs.test.ts` — "carries a failed run's error code
-instead of killing the connection" — holds both halves: the event survives `decodeRunEvent`
-unchanged, and the transport's `closeCount` stays `0`. The field's own remark now states what it is
-for (`run_ended.code` in `RunEvent`): a resumed session is rebuilt from the persisted trace
-alone, so without it a run that failed came back saying only that it had failed. **Why** it reached
-the protocol without the codec is still not in the code, and no longer needs to be.
-
-The sentence of the original that is now false — deliberately — is "the compiler cannot see this". It
-could not, because `satisfies Record<RunEvent["type"], z.ZodType>`
-on `RUN_EVENT_SCHEMAS` constrains the table's key set and never a payload's shape.
-`CodecFieldDrift` now compares every
-variant's declared field names against its schema's inferred ones in **both** directions, and
-`AssertNoDrift` fails to compile on any mismatch, naming the variant
-and the drifted field. A field added to `RunEvent` and forgotten in the codec — or the reverse — is a
-build error rather than a session that ends the first time the field appears on the wire.
-
-The trap for whoever edits that type next is recorded on `RunEventVariant`.
-`Extract<RunEvent, { type: K }>` is the obvious spelling of "the variant whose discriminator is `K`"
-and it is the wrong one: a member may declare a *union* discriminator, a union is not assignable to
-one of its own literals, so `Extract` answers `never`, `keyof never` widens to
-`string | number | symbol`, and the guard reports drift on a variant that has none. `RunEventVariant`
- asks instead whether `K` is one of the member's own types, which is the question that
-survives a shared member. One correction to that remark, which names two such members: `RunEvent`
-carries exactly one today — `delegation_completed | delegation_failed`
-(`RunEvent` in `packages/protocol/src/runs.ts`). The "workflow pair" it also names does not exist; every
-`workflow_*` member declares a single literal, and the codec
-gives each its own schema. The trap is real and the guard is right to avoid `Extract`; only the
-count is off.
-
-**`notify`'s cross-transport asymmetry is dead surface, not an undecided design.** `createStdioTransport.notify`
-writes a `note` frame (`packages/kernel/src/transport/stdio.ts`) that `serveKernelOverStdio` discards, because it
-only handles `cancel` and `req` (`packages/kernel/src/transport/stdio.ts`, itself documented: "Non-`req` frames on the
-input are ignored"). `createLoopbackTransport.notify` instead dispatches straight into `conn.handle`
-(`packages/kernel/src/transport/loopback.ts`) — the *same* dispatch path `request()` uses — so, unlike stdio, it would
-actually execute whatever real `KernelServer` operation the method name happens to name, with side
-effects, before discarding the result. This is a genuinely divergent implementation of one interface
-member, but it has no live consequence today: a repo-wide search of `packages/kernel/src`,
-`packages/code/src` for a client-side call to `KernelTransport.notify`
-(as opposed to the unrelated `deps.notify`/UI toast helper of the same name in `@clarvis/code`, or the
-*server-side* `notifications.notify` used to push `run.event`/`config.change`/etc. — `packages/kernel/src/transport/server.ts`)
-finds none; the only exerciser is `packages/kernel/tests/unit/loopback-transport.test.ts`'s isolated unit test. §7 of
-this document already establishes that `connectKernelClient`/`createLoopbackTransport`/`createStdioTransport`
-are used only by kernel tests, with no in-repo production consumer at all — so this is not two live
-readings of an intended feature; it is two independently-written implementations of an unused
-interface member that nothing ever forced to agree. If a client→server notification channel is ever
-wired to a real caller, the two transports' current behavior would have to be reconciled (most likely
-by giving stdio's server side a `note`-handling branch symmetric with loopback's, or by having
-loopback refuse an unknown notification method the way stdio silently drops it) — but that is future
-work, not a fact this corpus can settle today.
-
-**Validation depth across the five notifications tracks whether each payload's type is closed, not an
-arbitrary asymmetry.** `run.event` is validated by a strict `zod` discriminated-union schema because
-`RunEvent`'s variants are a closed set with no open member
-(`decodeRunEvent` decoding the type at `packages/protocol/src/runs.ts`'s closed
-`RunEvent` union). `config.change` applies `hasOnly` to its nested payload because `ConfigChange` is a
-closed, fixed-key shape over a closed enum (`ConfigChangeKind`, `packages/protocol/src/config.ts`).
-`run.elicitation` applies `hasOnly` only at the top level and checks four scalar fields of `request`
-without constraining its key set (`packages/kernel/src/transport/client.ts`) precisely because `ElicitationRequest`
-is declared open on purpose: `kind` is `"ask_user" | "plan_review" | "workflow_review"
-| (string & {})`, documented "so a kernel may add kinds without a protocol bump" |
-(`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`), and `schema` is `JsonSchema = Record<string, unknown>`, documented "a JSON
-Schema passed through opaquely" (`packages/protocol/src/common.ts`). Applying a closed `hasOnly` to `request`
-today would reject a future `kind`'s legitimate extra fields, defeating the exact extensibility `kind`
-was made open for — so the omission is the correct reading, not an arbitrary weakening.
-
-The request keeps an open `kind` and opaque `schema`; the transport rejects the retired command-detail field and validates the optional countdown duration. Production: `observe` for `N.runElicitation` in [client.ts](../../packages/kernel/src/transport/client.ts). Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts).
-
-**`transport.frame_dropped` with `reason: "serialization"` is unpinned.** It is emitted at
-`packages/kernel/src/transport/stdio.ts` and is the only one of the six reasons absent from the drop-reason suite
-(`packages/kernel/tests/contract/memory/stdio-codec.test.ts`). INV-210 covers the *behaviour* (a clean
-`unavailable`) but not the log record.
-
-**`decodeOperationParams` validates only the key set** — it checks no required key is missing and no
-value's type; `invoke` then casts (`decodeOperationParams` and `OPERATIONS` in
-`packages/kernel/src/transport/operations.ts`). The function's TSDoc claim that "domain services
-remain responsible for their nested DTOs" is not merely asserted: it is verified true
-for at least two representative operations, one on each side of the read/write split. `runs.start`'s
-`invoke` passes the cast params straight into `startReserved` → `assembleRunRequest` →
-`executeRun({ rawBody, … })` (`packages/kernel/src/runs/run-service.ts`), and `executeRun` calls
-`validateBody(rawBody, deps.env, requestRegistry)` before doing anything else with it
-(`packages/loop/src/runtime/execute-run.ts`) — a real schema pass, exercised by
-`packages/loop/tests/component/request-schema-facade.test.ts` and others. `config.updateSettings`'s
-`invoke` reaches `ConfigService.updateSettings`, whose merge closure runs
-`kernelSettingsSchema.safeParse(next)` and throws `invalid_request` on failure
-(`packages/kernel/src/config/config-service.ts`). So the two-layer design the TSDoc describes is real,
-not aspirational: the transport layer's job is exactly and only the closed top-level envelope (which
-`decodeOperationParams` does check), and the domain service one layer down is where wrong-typed values
-are actually rejected — with its own dedicated tests, not the transport's. No test *at the
-`operations.ts` layer* pairs a well-keyed envelope with wrong-typed values, but that absence reflects
-where the corpus's tests are organized (one layer down, per operation), not an unsettled question about
-whether such validation happens at all.
-
 The notification channel retains its independent 16 MiB aggregate backpressure budget in
 `createKernelServer`. This also applies to loopback, which has no physical framing. On stdio,
 notifications within that channel budget can exceed the 8 MiB physical frame cap and travel as
-fragments under the common 64 MiB logical-message contract. Exhausting the notification stream's
-own budget still fails that connection rather than silently dropping ordered events.
-Production: `createKernelServer` in [server.ts](../../packages/kernel/src/transport/server.ts) and
-`createStdioTransport` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts). Test:
+fragments under the common 64 MiB logical-message contract. Exhausting the notification stream
+fails that connection. Production: `createKernelServer` in
+[server.ts](../../packages/kernel/src/transport/server.ts) and `createStdioTransport` in
+[stdio.ts](../../packages/kernel/src/transport/stdio.ts). Test:
 [stdio-codec.test.ts](../../packages/kernel/tests/contract/memory/stdio-codec.test.ts).
 
-**Deliberately delegated.**
-- The DTO shapes every method carries, and `KernelClient`'s required named services →
-  **protocol-kernel-contract**.
-- Which run events exist, what they mean, and the coalescing/droppability policy behind
-  `DEFAULT_RUN_EVENT_BUFFER` → **kernel-run-service-and-events**.
-- The redaction rule set behind `sanitizeDeep`/`sanitizeErrorMessage` and what "credential-shaped"
-  means → **security-confinement-and-redaction**.
-- `createFileKernel`, the Code host's single-workspace lifetime wrapper and the authenticated
-  `createFileRunHost` composition → [kernel composition](kernel-composition.md) and
-  [hosted runs](hosted-runs.md). The hosted file composition supplies both connection policy hooks.
+## 8. Open questions
+
+- **Client-to-server `notify` differs between transports.** `createStdioTransport.notify` writes
+  a `note` frame that `serveKernelOverStdio` ignores, while `createLoopbackTransport.notify`
+  dispatches through `conn.handle` and can execute a named operation. No production client call
+  to this interface member or cross-transport equivalence test was found; its intended semantics
+  are not settled. Production: `packages/kernel/src/transport/{stdio,loopback}.ts`.
+- **Serialization drop diagnostic coverage is incomplete.** `transport.frame_dropped` with
+  `reason: "serialization"` is emitted by `packages/kernel/src/transport/stdio.ts`, but that
+  reason is absent from the drop-reason assertions in
+  `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.

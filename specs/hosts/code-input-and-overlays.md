@@ -58,7 +58,7 @@ formulation/progress state and uses Plan's title, lifecycle-tone, metadata and k
 the full view binds the same key to return directly to the transcript.
 The sidebar footer remains structural and shows only its `Ctrl+X S` close action while open; Goal
 navigation stays on the Goal row and is not duplicated in that footer.
-The full view omits its former explanatory subtitle and presents the semantic definition before
+The full view presents the semantic definition before
 compact budget and actionable review state. Source digests are abbreviated visually; internal
 execution IDs, full digests, detailed accounting and candidate narration do not compete with the
 definition. A Plan projection whose tasks are all done renders `Completed` and no current-task
@@ -265,12 +265,11 @@ and either `on` or `off` to `review`, then writes the workspace scope through
 `patchPlansSettings`, preserving retention, provider and pending-task nudges. Repeated invocations
 serialize their writes and re-read effective state after the preceding write, so two quick `/plan`
 commands still perform both halves of the toggle. An active run keeps its submitted mode and the
-notification says the change applies to the next run. The command registry has no `/plans` history
-route and no `/planning` hierarchy. Production:
+notification says the change applies to the next run. `/plan` is the public review-mode command.
+Production:
 `packages/code/src/app/commands.tsx` (`plan.toggleReview` registration). Test:
-`packages/code/tests/integration/app-commands.test.tsx` (`/plan` toggle/serialization and removed
-registrations) and `packages/code/tests/integration/app-shell-render.test.tsx` (`/plan`, `/plans`,
-`/planning`).
+`packages/code/tests/integration/app-commands.test.tsx` (`/plan` toggle/serialization) and
+`packages/code/tests/integration/app-shell-render.test.tsx` (`/plan`).
 
 `StorageView` is an unscoped operator view. On mount and Ctrl+R it calls `storage.inspect`; category
 rows show logical bytes/file/directory counts and highlight reclaimable bytes. Credential rows show
@@ -1194,39 +1193,5 @@ nothing beyond `@clarvis/protocol` types and are themselves leaves within `packa
 
 ## 8. Open questions
 
-- **The exact combination of a slash line submitted while `submissionBlocked` is simultaneously
-  set** is not exercised by a test in this document's scope. The source shows `onSlashCommand` is invoked
-   unconditionally before the `submissionBlocked` check (`packages/code/src/views/InputDock.tsx`), and — one
-  layer up, in `packages/code/src/views/App.tsx` (outside this document) — the concrete `onSlashCommand`
-  implementation applies its own memory-pressure gate per slash name. Whether every other host of
-  `InputDock` (there appears to be exactly one, `App.tsx`) relies on this same double-gating, or
-  whether a slash command could bypass a blocked-submission reason the plain-text/bang paths would
-  have honored, is a design property stated by reading the code, not proven by a test that submits
-  both simultaneously.
-- **The absence of a `KernelClient`/guard call on the `!` path (Invariant 30)** is documented in a
-  source comment on `runLocalBash` in `packages/code/src/adapters/local-shell.ts`. ~~No test can assert "no call was
-  made" as directly as it can assert a positive behavior; this is inherently an
-  absence-property.~~ **Pinned** by
-  `packages/code/tests/architecture/local-bash-bypasses-the-kernel.test.ts`, which asserts the absence
-  structurally — the module names no kernel client, no `GuardContext`, and no shell analysis. Writing
-  it corrected the claim in one respect: the module _does_ import `@clarvis/kernel`, but from
-  `./local`, the host process/shell adapter surface, which is precisely what keeps `!` from diverging
-  from the shell the agent's own commands run through. The test asserts that distinction — exactly one
-  kernel import, and it is `/local` — rather than a blanket absence that would have been false.
-- **`AgentProfilePicker`'s comment** ("Offering a profile that cannot run, with nothing said, is invariant
-  2 read backwards" — `packages/code/src/views/overlays/AgentProfilePicker.tsx`) references a numbered invariant list
-  the source itself never names. The claim is recorded verbatim as evidence of intent, but which list
-  its "invariant 2" belongs to is not resolved here.
-- **Whether `keys/commands.ts`'s registry (`createCommands`, tested in
-  `tests/unit/commands.test.ts`/`commands-revision.test.ts`) belongs partially to this document** is
-  ambiguous from the file list alone: `app/commands.tsx` (`registerAppCommands`, in this document's scope)
-  is a thin _consumer_ of that registry, which is specified in
-  [hosts/code-keyboard.md](code-keyboard.md) §2.5. This spec treats the registry itself, and the deep-linking/
-  hub-child mechanics tested at length in `tests/integration/app-commands.test.tsx` (planning-mode
-  settings writes, doctor gates, debug session, first-run/recovery routing), as belonging to sibling
-  items ([hosts/code-keyboard.md](code-keyboard.md), [hosts/code-bootstrap.md](code-bootstrap.md), [capabilities/plan-capability.md](../capabilities/plan-capability.md))
-  and describes only the surface `app/commands.tsx` exposes for internal/slash wiring.
-- **`tests/integration/secret-input-render.test.tsx`** exercises `views/config/view-host.tsx`'s
-  `createFieldEditor` secret-entry mode, not anything under `views/overlays/*` or `views/input/*`; it
-  is out of this document's scope (it belongs with the config-view host, not among the files this
-  document specifies) and is not cited further above.
+- `InputDock.submit` invokes `onSlashCommand` before its local `submissionBlocked` check. `App` applies its own memory-pressure gate per slash command, but no test submits a slash line while the general gate is active to pin the combined behavior.
+- `AgentProfilePicker` references "invariant 2" in a source comment without identifying its owning invariant list. The runnable-profile behavior is covered, but the comment's reference remains ambiguous.

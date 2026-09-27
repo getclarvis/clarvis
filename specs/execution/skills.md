@@ -1,6 +1,6 @@
 # Skill discovery, parsing, precedence and progressive disclosure
 
-> Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
+> Implemented at `packages/skills/src/`, with host composition in `packages/kernel/src/skills/` and `packages/loop/src/runtime/capabilities/`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
 
 ## 1. Purpose
@@ -183,7 +183,7 @@ skill names are" — a manifest field that failed validation would fail the whol
 drop the plugin's skills along with it, so a bad value is instead "reported at resolution time
 and skipped" (the `foreign_root`/`not_found`/etc. gates of §4.13).
 
-### 2.6 Extension Profile gate
+### 2.6 Environment gate
 
 | Variable | Parser | Default | Source |
 | --- | --- | --- | --- |
@@ -256,11 +256,9 @@ because degrading it "would *widen* what the skill may do"
 (`packages/skills/src/schema.ts`); pinned at
 `packages/skills/tests/unit/schema.test.ts`.
 
-The `argument-hint` `.catch` carries its own measured justification: `argument-hint: [file,
-directory]` is a YAML flow sequence, not the bracketed text its author typed, and a bare
-`z.string()` rejected it — since a frontmatter failure is not local to one field, the whole skill
-vanished from the catalog along with its slash command. "Nine skills in a public catalog of 196
-plugins were lost to exactly that." (`packages/skills/src/schema.ts`.)
+The `argument-hint` `.catch` accepts `argument-hint: [file, directory]` as a YAML flow sequence
+as well as a string; an unusable display hint does not invalidate the whole skill.
+Production: `packages/skills/src/schema.ts`. Test: `packages/skills/tests/unit/schema.test.ts`.
 
 An Agent Plugins v1 skill root selects `validation: "agent-skills"`; it does not use those tolerant
 defaults for portable fields. `assertRootValidation` in `packages/skills/src/registry.ts` requires
@@ -346,8 +344,9 @@ policy:
 `allowedTools?`, `userInvocable`, `catalogSuppressed?`, `presentation?`, `dependencies?`, `defaulted?`, `scope`,
 `source`, `root`, `dir`, `executionRoot?`, `resourceAccess?`, `path`, `shadowed?`. `SkillContent` extends it with `body`
 and `resources`, plus optional `identityFiles`: absolute manifest, selected-sidecar, and resource
-paths whose bytes produced the effective content and allow-list. The sidecar path is identity-only
-and does not become a readable resource (`SkillContent` in `packages/skills/src/types.ts` and
+paths whose bytes produced the effective content and allow-list. The sidecar is excluded from
+resource enumeration; a caller with its explicit path can still read it through the resource API
+(`SkillContent` in `packages/skills/src/types.ts` and
 `SkillRegistry.get` in `packages/skills/src/registry.ts`). `ResolvedSkill` retains the selected
 sidecar path internally so the public disclosure can identify it without exposing its contents.
 Test: `createAgentSkills public facade` in `packages/skills/tests/integration/api.test.ts` and the
@@ -479,6 +478,13 @@ collection, and discovery never descends into its resources.
 
 The remaining traversal rules are pinned in `packages/skills/tests/integration/scan.test.ts` by the
 grouping, multi-level nesting, nesting-bound, width-bound and early-stop cases.
+The host may observe visited directories, including empty candidates, to arm catalog monitors
+without traversing resource subtrees as additional skills. Prospective manifests use
+`validateSkillDocument` with the owning root's validation mode. Production: `listSkillDirs` in
+`packages/skills/src/scan.ts` and `validateSkillDocument` in `packages/skills/src/registry.ts`.
+Test: delayed manifest discovery in
+`packages/kernel/tests/integration/extension-profile-manager.test.ts` and root validation in
+`packages/skills/tests/integration/execution-snapshot.test.ts`.
 
 ### 4.4 Building one skill (`buildResolvedSkill`)
 
@@ -556,9 +562,8 @@ pass, not per skill. Pinned at
 | `size` | any | live map size | `packages/skills/src/registry.ts` |
 
 Pinned: the three resource outcomes at
-`packages/skills/tests/integration/registry-resource.test.ts`; harness-directory refusal
-(both spellings and through an aliasing symlink) at
-`packages/skills/tests/integration/sidecar.test.ts`.
+`packages/skills/tests/integration/registry-resource.test.ts`; exclusion from enumeration and
+explicit harness-sidecar reads at `packages/skills/tests/integration/sidecar.test.ts`.
 
 ### 4.7 Resource enumeration (`enumerateResources`)
 
@@ -634,19 +639,19 @@ placeholder description (`packages/skills/tests/integration/sidecar.test.ts`).
 
 | Stage | Condition | Result | File |
 | --- | --- | --- | --- |
-| `forRun(ctx)` | `!ctx.env.CLARVIS_SKILLS_ENABLED` **or** no provider | `null` — capability inert | `packages/skills/src/capability.ts` |
-| `systemSection(id)` | agent lacks `use_skills` | `undefined`, and nothing is scanned | `packages/skills/src/capability.ts` |
+| `forRun(ctx)` | ordinary provider disabled or absent, and no eligible host-attested guide | `null` — capability inert | `packages/skills/src/capability.ts` |
+| `systemSection(id)` | agent lacks `use_skills` and is not eligible for the host-attested entry guide | `undefined`, and no ordinary catalog is scanned | `packages/skills/src/capability.ts` |
 | `systemSection(id)` | catalog empty after dependency filtering | `undefined` | `packages/skills/src/capability.ts` |
 | `systemSection(id)` | catalog non-empty but every entry suppressed **and** no bootstraps | `undefined` (rendered section is `""`) | `packages/skills/src/tool.ts` |
-| `forAgent(scope)` | same grant + non-empty-catalog test | `null` or an `AgentCapability` | `packages/skills/src/tool.ts` |
+| `forAgent(scope)` | granted ordinary catalog or eligible entry guide is non-empty | `null` or an `AgentCapability` using only the selected provider | `packages/skills/src/capability.ts` |
 | `attach(bc)` | — | two strict tools (`load_skill`, `read_skill_resource`), one handler, `advertised: false` | `createSkillsRunCapability` |
 
 The dependency-filtered catalog is scanned **once per run** and memoized, and the bootstraps are resolved at
 most once behind an explicit boolean flag rather than `??=`, so "no valid bootstrap" does not
 re-resolve and re-warn on every agent spawn. Pinned at
 `packages/skills/tests/component/capability.test.ts` (one `bootstraps()` call, two loads, one
-warning, identical section for lead and spawned agent) (an ungranted agent triggers zero
-scans, zero loads, zero warnings).
+warning, identical ordinary section for granted lead and spawned agent) (an ungranted agent
+triggers zero ordinary scans, loads or bootstrap warnings).
 
 ### 4.11 System-prompt section
 
@@ -955,12 +960,12 @@ to this document.
     `packages/skills/src/capability.ts`, `packages/loop/src/runtime/build-run-deps.ts`.
     Pinned: `packages/skills/tests/component/capability.test.ts`,
     `packages/loop/tests/integration/skills-grant-gating.test.ts`.
-28. **Neither the catalog section nor either skill tool reaches an agent without the
-    `use_skills` grant, and an ungranted agent triggers no scan at all.**
+28. **An agent without `use_skills` receives only an eligible host-attested entry guide, or no
+    skill section and tools; it triggers no ordinary catalog scan.**
     Production: `createSkillsRunCapability` in `packages/skills/src/capability.ts`. Test:
     `packages/skills/tests/component/capability.test.ts` and
     `packages/loop/tests/integration/skills-grant-gating.test.ts`.
-29. **An empty catalog yields neither the section nor the skill tools**, even with the grant.
+29. **An empty selected catalog yields neither the section nor the skill tools**, even with the grant.
     Production: `catalogFor` and `createSkillsRunCapability` in
     `packages/skills/src/capability.ts`. Test: "suppresses both prompt section and tool when the
     catalog is empty" in `packages/skills/tests/component/capability.test.ts` and the empty-catalog
@@ -1102,7 +1107,7 @@ line that names the whole pass's outcome.
 
 | Situation | Outcome | Source |
 | --- | --- | --- |
-| `CLARVIS_SKILLS_ENABLED` false, or no provider | capability `forRun` returns `null`; the run has no section and no tool | `packages/skills/src/capability.ts` |
+| `CLARVIS_SKILLS_ENABLED` false or no ordinary provider, with no eligible host-attested guide | capability `forRun` returns `null`; the run has no section and no tool | `packages/skills/src/capability.ts` |
 | `builtins.skills = false` | package never loaded; `reportBuiltinDisabled` debug record | `packages/loop/src/runtime/build-run-deps.ts` |
 | initial `createAgentSkills` throws | `skills.discovery_failed` (`scope: "initial"`), deps built without skills | `packages/loop/src/runtime/build-run-deps.ts` |
 | rescan throws (dynamic roots) | `skills.discovery_failed` (`scope: "rescan"`), last good scan served; if there was none, an empty provider whose resource methods throw `"skills are unavailable"` | `packages/loop/src/runtime/build-run-deps.ts` |
@@ -1128,7 +1133,6 @@ to drive the adapter's memory-only availability predicate.
   become a prefix of what its author wrote (`packages/skills/src/sidecar.ts`).
 - A colour in a notation other than 3-/6-digit hex is dropped with no record
   (`packages/skills/src/sidecar.ts`).
-  with no record (`packages/skills/src/sidecar.ts`).
 - `metadataShortDescription` silently ignores a bucket that is not an object, a value that is not a
   string, and one over 512 chars (`packages/skills/src/registry.ts`).
 
@@ -1191,49 +1195,19 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts` and owned
 
 ## 8. Open questions
 
-1. **A block of module-level exports is reachable only from inside the package**, and nothing
-   outside it — in `packages/*/src` or `packages/*/tests` — imports any of them:
-   `parseSkill`, `readSkillSidecar`, `findSkillSidecar`, `resolveResourcePath`,
-   `skillFrontmatterSchema`, `SkillError`/`fsError`, `StartupError`,
-   `DEFAULT_STRICT`/`DEFAULT_FOLLOW_SYMLINKS` — the `StartupError` and `fsError` here being this
-   package's, not the live `@clarvis/tools` symbols of the same names. None is re-exported from
-   `packages/skills/src/index.ts`, so `@clarvis/skills` does not publish them; `HARNESS_CONFIG_DIR`
-   (`packages/skills/src/scan.ts`) is not exported at module level either. `splitFrontmatter`
-   (`packages/skills/src/parse.ts`) is in the same position and is exercised only by
-   `packages/skills/tests/unit/parse.test.ts`. What the source does **not** say is whether the
-   package-internal ones are meant to become public again or to be inlined at their single call
-   sites.
-2. **The per-root overflow counter under-reports.** `scanRoot` calls `listSkillDirs` with the fixed
-   ceiling `MAX_SKILLS_PER_ROOT + 1` (`packages/skills/src/registry.ts`), so the scan stops at 257
-   candidates. `stats.dropped += candidates.length - MAX_SKILLS_PER_ROOT`
-   (`packages/skills/src/registry.ts`) therefore always adds exactly `1`, and the strict error's
-   `actual` field is capped at 257, regardless of how many manifests the root really holds.
-   Nothing states whether that is intended.
-3. **Catalog-overflow eviction is only approximately "the first 512 by name".** The warning text says
-   "retaining the first 512 by name" (`packages/skills/src/registry.ts`), but the algorithm
-   evicts the currently largest name only when the arriving name sorts before it,
-   which depends on arrival order across roots. The test asserts only that a small name is retained
-   and a large one is not (`packages/skills/tests/integration/bounds.test.ts`).
-4. **`defaultWarnSink` writes directly to `process.stderr`** (`packages/skills/src/lib/log.ts`)
-   and is the default for every entry point that takes diagnostics
-   (`packages/skills/src/lib/log.ts`). The loop supplies a per-instance logger-routing sink
-   (`packages/loop/src/runtime/build-run-deps.ts`), while `packages/kernel/src/plugins/plugin-service.ts`
-   supplies its own and `createAgentSkills` called without one falls back to stderr. Whether the
-   stderr default is intended to remain reachable is not determinable.
-5. **Why the first `.yaml`/`.yml` by sorted name wins when several harness sidecars exist is
-   unstated.** The `agents` directory name itself is intentional interoperability vocabulary, as
-   documented at `HARNESS_CONFIG_DIR` (`packages/skills/src/scan.ts`); only the
-   multiple-file tie-break lacks a stated rationale.
-6. **`SkillPresentation.starterPrompt` and `displayName` have no consumer in this document's scope** beyond
-   the protocol DTO and the kernel projection; how (or whether) a UI renders them is a
-   `@clarvis/code` question, not answered here.
-7. **Delegated to sibling documents, deliberately not re-derived here:** the `.agents` precedence
-   rule as an interop contract; plugin skill-root construction, the plugin budget and manifest
-   parsing (`pluginSkillScanRoots` in `packages/kernel/src/plugins/plugin-manifest.ts`,
-   `PLUGIN_SKILL_ROOT_BUDGET` and `skillRoots` in
-   `packages/kernel/src/plugins/plugin-contributions.ts`); and skill-driven agent routing through
-   `createAgentWorkflowPolicy.isManagerRun` and `resolveSkillRun`
-   (`packages/kernel/src/runs/settings-assembler.ts`).
-The host may observe directories visited by `listSkillDirs`, including empty candidates, to arm catalog monitors. Observation follows the existing discovery budgets and does not traverse resource subtrees as additional skills. Prospective manifests use `validateSkillDocument` with the owning root validation mode, preserving the distinction between Clarvis naming defaults and shared Agent Skills requirements.
-Production: `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts) and `validateSkillDocument` in [registry.ts](../../packages/skills/src/registry.ts).
-Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts) and root validation in [execution-snapshot.test.ts](../../packages/skills/tests/integration/execution-snapshot.test.ts).
+- **Per-root overflow diagnostics undercount.** `scanRoot` requests only
+  `MAX_SKILLS_PER_ROOT + 1` candidates from `listSkillDirs`, so `stats.dropped` and the strict
+  error's `actual` field report at most one excess candidate even when more exist
+  (`packages/skills/src/registry.ts`). The intended diagnostic precision is unspecified.
+- **Catalog overflow eviction does not prove a global first-by-name order.** The algorithm
+  conditionally evicts the current largest name as roots arrive; the integration test asserts only
+  representative retained and dropped names (`packages/skills/src/registry.ts`,
+  `packages/skills/tests/integration/bounds.test.ts`).
+- **The default warning sink writes to `process.stderr`.** Product hosts supply their own sinks,
+  while a direct `createAgentSkills` caller receives this default. Whether that direct-call default
+  should remain available is not settled (`packages/skills/src/lib/log.ts`,
+  `packages/loop/src/runtime/build-run-deps.ts`).
+- **`starterPrompt` has no located Code consumer.** `displayName` reaches the command list through
+  `packages/code/src/adapters/kernel-capabilities-client.ts` and
+  `packages/code/src/keys/commands.ts`; the parallel starter-prompt presentation path is not
+  established by those consumers (`packages/skills/src/types.ts`).

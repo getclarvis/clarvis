@@ -33,10 +33,6 @@ Three distinctions are load-bearing:
    session reconstruction, provider responses, MCP responses, traces and renderer objects have
    independent ceilings. Their temporary copies and native overhead can coexist.
 
-The performance review in section 8 was requested after interactive sessions were observed near 700 MB
-RSS. It establishes real reproduction paths and a prioritized reduction plan, but does not claim
-that one isolated mechanism explains every such peak.
-
 ## 2. Surface
 
 ### 2.1 Measurement commands and controls
@@ -167,8 +163,7 @@ cannot itself become an unbounded amplifier (`packages/code/src/adapters/diagnos
 ### 3.3 Runtime evidence
 
 Runtime soak results are evidence, not persisted application data and not timeless requirements.
-They are recorded under the matching headings in [`../known-issues.md`](../known-issues.md), including
-the OpenTUI `FloatFrame` leak and the historical workflow-remount incident. A new measurement must
+They are recorded under the matching headings in [`../known-issues.md`](../known-issues.md). A new measurement must
 retain its runtime version, terminal dimensions, cycle count, sampling point and whether an explicit
 GC occurred; otherwise it must not be compared to a post-GC floor.
 
@@ -281,15 +276,10 @@ The deterministic benchmark uses 120 rows, 500 exploration members and 90 stream
 [transcript-budget-render.test.tsx](../../packages/code/tests/integration/transcript-budget-render.test.tsx).
 A p95 of 33 ms and no comparable stabilized-RSS or interaction regression above 10% are engineering
 targets, not results implied by passing assertions. Artifact, environment, dimensions, owner counts
-and sampled frames must accompany measurements; historical batch-architecture measurements below
-are not a baseline for the row architecture.
+and sampled frames must accompany measurements.
 
 With `CLARVIS_TRANSCRIPT_MEASURE=1`, the fixture spaces streaming updates at 30 FPS and collects
-before each sample. A Linux/Bun 1.4.0/OpenTUI 0.5.9 run measured p95 update/layout durations of
-2.979, 3.005 and 3.139 ms; RSS was 244,109,312, 253,657,088 and 257,298,432 bytes, with 261 native
-renderables and 44 direct content children in each sample. This is renderer-fixture evidence, not
-real-provider latency or a stabilized RSS verdict. The historical architecture benchmark exited
-137 without a valid numerical baseline, so these samples do not establish the 10% regression budget.
+before each sample. This fixture does not establish real-provider latency or a stabilized RSS verdict.
 trace is available. Manager turns still never use `continue_from`: immediately before the next
 manager request, `fullRequestMessages` reconstructs the complete chain from persisted traces and
 refuses an incomplete rebuild (`packages/code/src/run-host.ts`, `fullRequestMessages`,
@@ -305,9 +295,8 @@ not be created inside a conditionally mounted `FloatFrame`, and Portal content m
 `dispose-on-close`: both forms reproduced accumulating renderer lifecycle passes
 (`packages/code/src/ui/patterns/surface-lifecycle.tsx`, `SurfaceBoundary`, `SurfacePortal`).
 `ListPicker` windows its rows before mounting them because every mounted row amplifies renderer
-churn (`packages/code/src/views/overlays/ListPicker.tsx`, `maxVisibleRows`, `win`). Help is not part
-of the floating family: `/help` lazily mounts the full-page `Help` view, and no F1-owned retained
-tree exists (`packages/code/src/app/commands.tsx`, `help.open`;
+churn (`packages/code/src/views/overlays/ListPicker.tsx`, `maxVisibleRows`, `win`). `/help` lazily
+mounts the full-page `Help` view (`packages/code/src/app/commands.tsx`, `help.open`;
 `packages/code/src/views/overlays/Help.tsx`, `Help`).
 
 The existing render tests prove layout and cleanup-visible behavior, not post-GC native RSS. The
@@ -319,20 +308,18 @@ The high-cardinality retained Catalog Picker discards 220 finite traversal cycle
 creates and disposes one legitimate key layer and OpenTUI/native allocator arenas continue warming
 after the global ten-cycle default. These are per-case warm-ups, not weaker gates: both still run in
 fresh processes at 120x32 and 80x24, keep the 5 MiB RSS/PSS-per-100 ceiling, and require renderable,
-lifecycle-pass and live-key-layer balance. The Catalog Picker measured 2.12 and
-1.39 MiB RSS/100; two repeated elicitation matrices measured 2.00–2.79 and 3.20–3.59 MiB RSS/100,
-respectively. Production and test ownership:
+lifecycle-pass and live-key-layer balance. Production and test ownership:
 `packages/code/tooling/benchmarks/overlays.tsx` (`SoakCase.warmupCycles`,
 `catalog-picker-retained-100-rows`, `elicit-guard-confirm`, `runParent`).
 
-The floating family is larger than the two historically measured entry points:
+The floating family includes these surfaces:
 
-| Surface | Mount path | Variable allocation risk | Current evidence |
-| ------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| agent picker and default-scope picker | `App` -> retained `AgentProfilePicker` -> `ListPicker` -> `FloatFrame` | windowed agent rows, preview and optional second picker | remount +12.71; retained -0.23 MiB PSS/100 |
-| provider/model/enum picker | config view -> retained `CatalogPicker` -> `ListPicker` -> `FloatFrame` | windowed rows, fuzzy-highlight spans, optional input, and a fixed nine-row first-run splash intro only when 76×24 fits | remount +14.26; retained -1.49 MiB PSS/100 (pre-intro measurement) |
-| activity detail | `App` -> retained `ActivityDetail` -> `FloatFrame` | Markdown block count and parser-native renderables; payload is cleared on close | -16.92 MiB PSS/100 in the 200-section remount case; no confirmed slope |
-| clean-worktree exit prompt | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame` | fixed, small body | +0.44 MiB PSS/100 in the remount case; no confirmed slope |
+| Surface | Mount path | Variable allocation risk |
+| --- | --- | --- |
+| agent picker and default-scope picker | `App` -> retained `AgentProfilePicker` -> `ListPicker` -> `FloatFrame` | windowed agent rows, preview and optional second picker |
+| provider/model/enum picker | config view -> retained `CatalogPicker` -> `ListPicker` -> `FloatFrame` | windowed rows, fuzzy-highlight spans, optional input, and a fixed nine-row first-run splash intro only when 76×24 fits |
+| activity detail | `App` -> retained `ActivityDetail` -> `FloatFrame` | Markdown block count and parser-native renderables; payload is cleared on close |
+| clean-worktree exit prompt | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame` | fixed, small body |
 
 `HintToast` is also conditionally instantiated while any host or transient overlay is open
 (`packages/code/src/views/App.tsx`, `packages/code/src/views/Footer.tsx`). A full-app
@@ -693,610 +680,22 @@ details remain owned by [build-and-ci.md](../cross-cutting/build-and-ci.md); exa
 transcript semantics remain owned by [sessions.md](sessions.md),
 [code-run-host.md](code-run-host.md) and [code-transcript.md](code-transcript.md).
 
-## 8. Open questions and measured review
-
-### 8.1 Measurement snapshot
-
-The official benchmark ran with Bun 1.4.0, 16 cores, AC power, `performance` governor/profile,
-approximately 4.5 GHz observed CPU frequency, low per-core load, five measured repetitions plus one
-discarded warm-up, and returned `trusted: true`.
-
-| Arm | `--version` median | header median | input-ready median |
-| ------------- | -----------------: | ------------: | -----------------: |
-| source | 15.9 ms | 1,131.3 ms | 1,131.3 ms |
-| direct bundle | 261.9 ms | 1,131.1 ms | 1,131.1 ms |
-| launcher/bin | 16.8 ms | 1,132.1 ms | 1,132.1 ms |
-
-The direct-bundle `--version` arm intentionally loads the application entry; the launcher answers
-that flag before importing it. For an interactive launch, the diagnostic interval from process start
-to `app.boot.begin` was approximately 259 ms, consistent with application graph load. Two live debug
-boots painted according to the in-process event at 669-670 ms. Their measured sub-spans included
-58 ms for Markdown initialization/preload, 45-46 ms for workspace/kernel construction, 7-8 ms for
-agent listing and approximately 55-60 ms between settings completion and agent-file loading while the
-catalog was parsed/projected.
-
-Three configured PTY boots using the local connected subscription separated the first header from a
-conversation-only marker:
-
-| Sample | header | conversation usable | gap |
-| ------ | -------: | ------------------: | -------: |
-| 1 | 727.6 ms | 1,336.7 ms | 609.0 ms |
-| 2 | 726.6 ms | 1,356.0 ms | 629.4 ms |
-| 3 | 725.2 ms | 1,265.1 ms | 539.9 ms |
-
-Source inspection and the mounted-view diagnostics show that `recovery.open` existed during that
-gap and closed after subscription readiness changed. It is therefore a supported inference — not a
-network trace — that the pending entitled-catalog check is the dominant configured-only delay in
-this sample.
-
-Healthy idle settled near 175-180 MiB RSS with about 33 MiB JS heap. One 100-cycle Help open/close
-churn moved process RSS from 173,328 KiB to 253,872 KiB before an explicit collection. A following
-100-cycle agent-picker churn moved it from 241,488 KiB to 305,692 KiB. Those immediate deltas include
-collectable JS/external allocations and are not leak rates.
-
-A second Help run used a 220 MiB fuse so the then-supported `/recover-memory` path would rebuild the
-backend and invoke `Bun.gc(true)`. After 30 cycles, the settled process remained at 203,392 KiB versus
-176,548 KiB before churn, about 26 MiB higher. Backend reconstruction is a historical confounder, so
-this run shows a retained residue in that full-process path but does not replace the controlled rates
-in
-[`../known-issues.md`](../known-issues.md#every-floatframe-overlay-leaks-native-memory-per-rendered-row).
-The current fuse no longer rebuilds the backend to collect.
-It also demonstrated that a low fixed fuse can never rearm when 70% of its limit is below healthy
-idle RSS.
-
-The expanded fresh-process runner then exercised real production components at 120x32. The first
-100-cycle screen identified four high remount cases: Context Help +21.32, Agent Profile Picker +13.39,
-Catalog Picker +16.68 and the 64-agent activity drawer +30.38 MiB PSS/100. Activity Detail with 200
-Markdown sections (-16.92), Worktree Exit (+0.44), elicitation guard (+2.25), HintToast (-4.25) and
-Splash (+1.63) did not show the same positive slope. Three-hundred-cycle confirmation measured
-Context Help +19.54, Agent Profile Picker +12.71, Catalog Picker +14.26 and the drawer +19.15 MiB PSS/100.
-The corresponding retained variants were +0.72, -0.23, -1.49 and +0.13 MiB/100. Renderable counts
-returned to baseline and JS heap decreased, locating the high remount slopes in renderer/native
-lifecycle residue rather than reachable Solid objects.
-
-Context Help was not retained in production: a clean real-PTY probe made immediate PSS grow by
-roughly 94-100 MiB over 100 rapid retained visibility cycles, and a 20-cycle paced run was worse than
-the conditional remount. Windowing and replacing the two-level `EntityRow` tree with four compact
-stable action rows instead reduced the controlled 300-cycle result from +19.54 to +5.77 MiB PSS/100.
-An empty and one-row `FloatFrame` measured +1.30 and +1.21 MiB PSS/100 respectively. This is a large
-reduction, but +5.77 is still growth and narrowly misses the proposed 5 MiB criterion; the F1
-residual was left open at this measurement stage and is addressed by the follow-up below.
-
-The retained Agent Profile Picker, Catalog Picker and drawer variants are flat after forced collection and
-are now used lazily after first open. Their full-process immediate samples can still rise before the
-runtime reclaims native arenas; retention is a leak correction, not a promise that the instantaneous
-RSS number falls on close.
-
-An additional, less-confounded autocomplete probe kept a non-empty `x ` draft so Splash remained
-unmounted, then completed 100 screen-verified `@` popup open/close cycles in the same 120x32 PTY.
-Immediate RSS rose from 195,552 KiB to 239,656 KiB; PSS rose from 167,558 KiB to 211,662 KiB; and
-`Private_Dirty` rose from 142,544 KiB to 186,456 KiB. A later sample without explicit GC had already
-fallen to 202,192 KiB RSS and 148,992 KiB private dirty. This makes autocomplete a candidate for the
-post-GC matrix, but does **not** establish a 44 MiB leak. The controlled forced-GC scrolling case
-was added in the follow-up below.
-
-The current bundle was 3.75 MB and its detached source map named 691 startup-entry modules. Source
-content represented substantial eager surfaces from `code`, `kernel`, `loop`, `memory`, `plan`,
-`workflows`, `trace`, `mcp-client`, `tasks` and their third-party dependencies. This is a bundle
-composition observation, not a claim that source byte count maps linearly to runtime cost.
-
-No intentional model workload was part of this audit. During overlay driving, PTY input-ordering
-mistakes submitted malformed `/settings/settings` and `slashhelp` text. Both were cancelled as soon
-as they were noticed; neither response was used as performance evidence. The local subscription was
-otherwise exercised only by startup readiness/catalog. A controlled real-model, multi-run soak with
-MCP and an external process-tree watchdog remains unperformed.
-
-#### Historical current-memory slash, scroll and former F1 follow-up
-
-A bare `/` followed by Backspace reproduced a different symptom from the retained-owner leak: close
-samples climbed by roughly 5–6 MiB per cycle and then fell without explicit collection after the
-process sat idle. Source attribution found that each bare-slash query rebuilt the complete command
-catalog twice, constructed nested command rows that the browse path discarded, sorted a new browse
-array and recomputed fuzzy highlight runs for unchanged text. F1 also reprojected the footer actions
-and restarted the retained `FloatFrame` timeline on every activation. These were collectable
-allocation bursts, not monotonically reachable overlay owners, but they raised current RSS/PSS fast
-enough to be operationally significant.
-
-The correction cached the command catalog against registry revision and keyboard environment,
-cached the bare-slash projection while rechecking dynamic eligibility, used fixed slots for both
-autocomplete and the former Context Help surface, rendered unfiltered rows without fuzzy run arrays,
-reused the footer action projection and animated a retained float only on its first activation. No
-opportunistic or periodic GC was added. The former Context Help/F1 production surface and its soak
-cases were later removed; the measurements below remain historical attribution
-evidence, not a current product matrix.
-
-In a fresh 120x32 source PTY, ten `/`+Backspace cycles moved PSS from 225,704 to 234,532 KiB, with
-plateaus and a decline, rather than the prior repeated 5–6 MiB step. Ten Down selections in the open
-command popup moved 233,484 to 235,672 KiB, including a decline at selection six. After the first
-retained F1 activation, close samples two through five moved 238,200 to 240,636 KiB and included one
-decline; a delayed sample after the combined exercise was 233,276 KiB. Immediate endpoints remain
-allocator/GC observations, not leak rates.
-
-The fresh-process, forced-GC 100-cycle matrix measured autocomplete visibility at +0.58 MiB PSS/100,
-autocomplete scrolling at -22.32, retained Context Help at +1.64 and retained Context Help with
-action reprojection at +2.20. The negative scrolling endpoint is collection of warm-up arenas, not a
-memory saving. Every case kept live renderables, lifecycle passes and key layers at delta zero, and
-all production cases remained below the 5 MiB PSS/100 policy threshold. The longer 300-cycle
-confirmation measured autocomplete scrolling at -10.07 MiB PSS/100 and reprojected retained Context
-Help at +1.25 MiB PSS/100; both again kept every ownership delta at zero. The positive Context Help
-endpoint is therefore reported as bounded residual growth below the policy threshold, not described
-as a memory reduction or a zero slope. Production:
-`packages/code/src/keys/commands.ts` (`commandCatalog`),
-`packages/code/src/views/input/command-completion.ts`,
-`packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`),
-`packages/code/src/views/input/AutocompletePopup.tsx`,
-`packages/code/src/views/overlays/FloatFrame.tsx`. Test:
-`packages/code/tests/unit/commands.test.ts`,
-`packages/code/tests/integration/autocomplete-popup-render.test.tsx`, and
-`packages/code/tooling/benchmarks/overlays.tsx`.
-
-#### Marketplace-heavy startup and real-run follow-up
-
-An isolated profile installed all nine plugins present in the pinned official marketplace revision
-used by the run (`aws-core`, `context7`, `expo`, `mattpocock-skills`, `observability`, `pulumi`,
-`supabase`, `superpowers`, `terraform`). Its selected contribution surface contained 138
-`SKILL.md` files and 722 Markdown files. Before attribution, repeated semantic contribution
-validation made Extension Profile readiness take about 32.9 seconds. The same filesystem was being parsed
-and cryptographically hashed through multiple projections.
-
-The first correction pinned the parsed contribution snapshot for control-plane projections but kept
-one full raw-byte revalidation at run admission. Warm individual plugin snapshots then completed
-within about 235 ms and the combined nine-plugin Extension Profile resolved in about 330 ms; kernel
-readiness was about 391 ms. That design removed duplicate control-plane scans but still put
-plugin-count-dependent synchronous filesystem/hash work directly after `prompt.send`.
-
-The follow-up removes snapshot validation from run admission entirely. The exact skill
-roots are consumed once while kernel run dependencies are built, bodies are materialized then, and
-the admitted resource paths become a fixed allow-list. Asynchronous `watchFile` maintenance flips a
-memory-only availability latch when an admitted manifest/resource drifts; the skill is withheld and
-Code renders an informational warning, while the user's run continues. Production:
-`acquireExtensionProfileRunLease` and `pluginSkillRoots` in `packages/kernel/src/file-kernel.ts`,
-`observeSkillCatalog` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`, and
-`snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts`. Tests: `withdraws plugin skill
-drift without rejecting the next run` in `packages/kernel/tests/integration/file-kernel.test.ts` and
-`skill drift is a transient warning while the conversation remains untouched` in
-`packages/code/tests/integration/app-shell-render.test.tsx`.
-
-The same fixture exposed a separate human-time wait: missing Expo and Supabase OAuth held initial
-connection acquisition for about 302 seconds each, producing a roughly seven-minute run. Background
-authorization now opens the browser, marks only the challenged MCP inactive for that run and lets
-other work continue. In the repeated real PTY run, Context7 connected at 518 ms, Expo degraded as
-authorization-pending at 776 ms, a separate AWS connection failed at 1,755 ms, Supabase degraded as
-pending at 2,284 ms, and the run still completed in about 44 seconds. It used an installed skill, a
-working Context7 MCP and exactly two parallel subagents while both authorization pages were ignored.
-
-One forced three-sample bundle benchmark was intentionally marked untrusted because load was
-4.42/12 cores = 0.369, just above the 0.35 gate. It remains useful only as local stage evidence:
-
-| Stage | min | median | max |
-| ------------------ | -----: | -----: | -----: |
-| module graph | 127 ms | 136 ms | 140 ms |
-| minimal shell | 181 ms | 182 ms | 183 ms |
-| startup composer | 181 ms | 182 ms | 183 ms |
-| complete header | 674 ms | 675 ms | 704 ms |
-| complete app input | 674 ms | 675 ms | 704 ms |
-
-A single nine-plugin real launch reached the startup composer in 264 ms and the complete app in
-1,110 ms. Those single-run configured timings are not comparable to the clean controlled batch, but
-they demonstrate the product boundary: input and submission no longer wait for complete hydration.
-The strict complete-app 500 ms goal remains unmet. A non-split build made both startup and full paint
-worse; Bun bytecode produced a CommonJS artifact unable to load OpenTUI's asynchronous ESM graph,
-while attempting to absorb OpenTUI into the bundle failed on its top-level-await modules. These are
-direct Bun/OpenTUI constraints recorded as exact experiments, not an excuse for the repository-owned
-hashing or OAuth waits above.
-
-#### Transcript-stability startup revalidation
-
-The final transcript-stability artifact, including OpenTUI 0.5.9 and the shared first-frame Clarvis
-splash, was measured in three unforced supported bundle benchmark batches on the same macOS host and
-Bun 1.4.0. Every batch passed the load gate (`2.26/12 = 0.188`, `2.23/12 = 0.186`, and
-`4.17/12 = 0.347`); the benchmark cannot detect macOS power state and reported `power=unknown`, while
-the host's `pmset` reported AC power. Each batch used one discarded warm-up plus seven measured
-boots:
-
-| Stage | Batch one min / median / max | Batch two min / median / max | Batch three min / median / max |
-| ------------------------------------------ | ---------------------------: | ---------------------------: | -----------------------------: |
-| module graph | 112 / **114** / 115 ms | 110 / **114** / 115 ms | 102 / **108** / 117 ms |
-| minimal shell and focused startup composer | 158 / **160** / 184 ms | 157 / **160** / 183 ms | 154 / **156** / 179 ms |
-| complete header and application input | 746 / **750** / 773 ms | 746 / **749** / 766 ms | 682 / **686** / 785 ms |
-
-The comparable earlier bundle median was 784 ms for the complete application, so these batches
-do not reproduce a 900 ms first-paint regression. The clean-HOME smoke after the third batch settled
-all artifact/diagnostic assertions in 920 ms while its process-relative diagnostics recorded the
-startup shell at 184 ms and complete app at 753 ms. That outer smoke value includes 100 ms polling
-and Markdown diagnostic settlement, and its output now labels it accordingly. The strict complete-app
-500 ms goal remains unmet even though the first usable composer remains below its target.
-
-After the final Sidebar auto-open, fixed Lead activity row and transcript-runway changes, one further
-unforced seven-sample bundle batch passed the load gate at `3.75/12 = 0.313`. It recorded module graph
-110 / **117** / 123 ms, minimal shell and focused startup composer 154 / **180** / 183 ms, and complete
-header/application input 705 / **733** / 765 ms. The benchmark reported `power=unknown`; `pmset`
-simultaneously reported an AC-power heading and a discharging battery, so this remains a
-host-qualified batch rather than a power-normalized comparison. Its clean-HOME smoke settled all
-artifact and diagnostics checks in 918 ms, with process-relative shell paint at 165 ms and complete
-application paint at 738 ms. The 918 ms outer result is therefore not a first-paint measurement.
-
-After the final immutable syntax remeasurement correction, a fresh seven-sample bundle batch passed
-the load gate at `2.30/12 = 0.192`. It recorded module graph 116 / **123** / 138 ms, minimal shell and
-focused startup composer 179 / **182** / 184 ms, and complete header/application input
-761 / **789** / 815 ms. The corresponding clean-HOME artifact smoke settled in 921 ms while its
-process-relative diagnostics recorded shell paint at 175 ms and complete application paint at
-767 ms. As above, the outer polling/diagnostic duration is not first paint; the first focused input
-remained available at 182 ms median. The complete-app 500 ms goal remains unmet.
-
-After the directional runway, retained Lead/child projections and atomic explicit-tail swap were
-finalized, the supported seven-sample bundle batch passed the load gate at `2.07/12 = 0.172`. It
-recorded module graph 102 / **103** / 105 ms, minimal shell and focused startup composer
-156 / **157** / 159 ms, and complete header/application input 637 / **639** / 664 ms. The benchmark
-reported `power=unknown` and qualified the host as battery-powered, so comparisons remain
-host-local. The immediately preceding clean-HOME artifact smoke settled all artifact and diagnostic
-assertions in 819 ms while its process-relative diagnostics recorded shell paint at 155 ms and
-complete application paint at 679 ms with deferred catalogue loading. The first focused input and
-complete application are therefore both below the owner's 800 ms usability reference in this run;
-the strict complete-app 500 ms goal remains unmet.
-
-### 8.2 Prioritized changes and implementation status
-
-1. **Remove subscription entitlement from the blocking startup path.** Treat locally connected but
-   not-yet-checked readiness as pending rather than repair-worthy; perform the remote entitlement
-   check at the first subscription-dependent action. **Implemented:** ordinary boot and internal
-   settings writes only rerun local gates; Doctor's explicit recheck owns remote inspection;
-   nested Escape does not start that inspection.
-2. **Make catalog deferral temporal, not merely unawaited.** **Implemented:**
-   `loadFoundation` does not call `client.models.get()`; a catalog-bearing view crosses the
-   single-flight `ensureModelsCatalog` boundary.
-3. **Close every overlay leak demonstrated by the matrix in section 8.4 — implemented for the
-   current matrix.** Retained autocomplete, Plan/Diff, Agent Profile Picker, Catalog Picker and activity
-   drawer lifecycles close their controlled slopes. The former Context Help surface was first bounded
-   and retained, then removed with its F1 route; `/help` now owns Help without a floating tree. Small
-   fixed modals were measured and left disposable because they did not
-   reproduce a high positive slope.
-4. **Release manager history at idle.** **Implemented:** durable traces release the resident chain;
-   the next manager turn rebuilds it before sending the required full request.
-5. **Create one aggregate memory ledger.** **Implemented:** resident prose bytes, hydrated tool bytes, session
-   message count/payload, transcript/renderable node count, trace/event queue bytes and manager
-   history bytes enter bounded debug diagnostics. Event queues and stores maintain O(1) counters;
-   renderer traversal runs only while a diagnostic sink exists.
-6. **Separate efficiency warning from catastrophic fuse.** **Implemented:** the advisory uses
-   absolute, baseline-growth and recent-slope gates without abort or GC; positive fuse overrides
-   have a 512 MiB floor, and the product default is now 2 GiB.
-7. **Split cold routes and capabilities.** **Implemented:** the entry paints `StartupComposer` before
-   dynamically importing the complete runtime; ordinary run prepares the exact dynamic kernel
-   factory concurrently. Settings panels, domain hubs and Help retain cached Solid lazy boundaries,
-   while `cold-surfaces.ts` groups their linker fan-out. Artifact checks reject representative cold
-   markers in the startup entry.
-8. **Paint a functional composer before non-visual boot work.** **Implemented:** the lightweight root
-   first paints a focused `StartupComposer`; queued submission begins when the run host exists and
-   does not await `<App>`. Complete-app paint precedes Markdown warm-up, and restored session Markdown
-   still waits for both grammars.
-9. **Extend measurement coverage.** Add a configured-home fixture with a shell-only ready marker, a
-   long manager-session soak, and a real-model multi-run process-tree sampler. **Partially
-   implemented:** artifact smoke asserts the shell marker and catalog deferral; the controlled
-   first-paint benchmark records minimal shell, functional startup input and complete app separately;
-   overlay soaks run at two sizes under a parent RSS/time watchdog and enforce the production
-   threshold. One marketplace-heavy real-model run now covers a skill, a working MCP, two subagents
-   and ignored OAuth; long-manager and multi-run process-tree soaks remain intentionally
-   user-controlled external measurements.
-10. **Remove plugin-count and human-time waits from run admission.** **Implemented:** contribution
-    projections and skill bodies are captured once while the kernel is built; run admission performs
-    no skill discovery or raw-byte rehash. Asynchronous drift monitoring withdraws only the changed
-    skill and informs Code without blocking the run. An OAuth challenge likewise degrades only that
-    MCP while its browser flow continues in the background.
-
-### 8.3 Acceptance and review gates
-
-The production overlay gate is implemented; the remaining absolute values are review criteria until
-they have a named reference host and owner acceptance:
-
-- no external network or human OAuth response blocks the startup composer or a run using other
-  capabilities;
-- focused startup-composer median near 250 ms and below 500 ms on a named comparable reference host;
-- submission from that composer begins before complete-app hydration once the run host is ready;
-- complete-app hydration is reported separately, with a desired sub-500 ms target rather than being
-  hidden behind the earlier functional marker;
-- healthy idle below 200 MiB RSS at 120x32 on that host;
-- no more than 5 MiB post-GC PSS growth after 100 repeated opens of every production-policy overlay
-  case on Linux, or RSS where PSS is unavailable — **enforced by `bench:code-overlays`**;
-- no single-agent multi-run soak exceeds 512 MiB RSS after transient response buffers settle;
-- process-tree measurements report external MCP/shell memory separately from Clarvis self-RSS.
-
-Absolute thresholds require a named reference machine and separate Linux and macOS evidence.
-The non-overlay absolute thresholds remain review criteria rather than release gates.
-
-### 8.4 Overlay leak implementation and correction plan
-
-This plan covers every current overlay and overlay-like mount path. It deliberately distinguishes a
-**confirmed leak**, a **source-confirmed member of a leaking family**, and a **candidate requiring a
-post-GC control**. Fixing only F1 would leave the agent/catalog/activity/worktree `FloatFrame` paths,
-autocomplete, full-region pages and drawer lifecycle unguarded.
-
-#### Implementation status
-
-The correction followed the attribution order and was widened beyond F1:
-
-1. `bench:code-overlays` added fresh-process post-GC controls plus production Context Help,
-   Activity Detail, Worktree Exit, Agent Profile Picker, Catalog Picker, elicitation, drawer, HintToast,
-   Splash and empty Workflows cases alongside primitive, autocomplete and `PageFrame` cases.
-2. `@opentui/core`, `@opentui/keymap` and `@opentui/solid` moved together from 0.4.3 to 0.5.7. The
-   30-row primitive changed from the historical row-proportional slope to +0.77 MiB PSS per 100
-   cycles. That positive number means residual growth, not memory saved; production components
-   exposed larger lifecycle amplifiers that the primitive-only result did not predict.
-3. `SurfaceBoundary` now owns lazy construction, `dispose-on-close`/`retain-one`, activation identity,
-   root-portal placement, focus release and stale-async guards. Every root-Portal surface uses
-   `retain-one`; Agent Profile Picker and every Catalog Picker do the same in
-   their respective hosts. The component-local `*Mounted` latches and retained-spec proxy are gone.
-   Inactive key layers use stable reactive matchers, and a catalog resets filter and cursor state
-   when its spec changes.
-4. The non-float audit found a repeatable Plan page residue. `OverlayRegion` now keeps the shell
-   mounted behind Plan/Diff, lazily retains those pages after first use, and gates their inactive key
-   layers. The later full-region continuity contract also keeps that shell mounted and paused behind
-   configuration and Workflow views without retaining popped configuration frames. Plan PSS changed
-   from about +15.1 MiB to +2.15 MiB per 100 real PTY cycles.
-5. `InputDock` now lazily retains one autocomplete container with ten stable row/header slots;
-   Help uses stable indexed section/row ownership. Prompt/editor layers register once and are gated
-   by reactive visibility/state matchers. The retained autocomplete primitive measured -1.48 MiB
-   PSS per 100 post-GC cycles, so its earlier immediate increase is not classified as a leak.
-   Configuration/onboarding level layers use the same policy: activation, editor, confirmation and
-   picker gates no longer create another layer registration unless the level structure itself
-   changes.
-6. Floating boundaries own a stable root `Portal`; `FloatFrame` no longer creates a portal inside
-   its remounted subtree. The rejected intermediate design grew the 30-row primitive by +48.21 MiB
-   PSS/100 and accumulated 3,200 renderer lifecycle passes. A subsequent absolute counter found that
-   even a stable outer Portal orphaned two text lifecycle passes per disposable cycle when its host
-   visibility or layout changed during recursive removal. Portal placement now requires bounded
-   `retain-one`, and the regression test requires its post-first-open lifecycle set to stay constant.
-7. The former Context Help retained its bounded four-action projection after first use. Its last disposable
-   stable-portal 100-cycle run was non-monotonic and ended at +2.39 MiB PSS/100; retained and
-   reprojected controls ended at -2.85 and -1.59. The old +5.77 result remains historical evidence,
-   but the current retained policy is driven by the deterministic lifecycle ownership counter rather
-   than that noisy memory slope. The component, action and active soak cases were subsequently
-   removed; the row remains historical evidence for the lifecycle decision.
-8. Configuration navigation keeps its intentional stack ownership: inactive parents remain mounted,
-   and popped frames dispose once. Stable matchers avoid layer registration churn, Workflow polling
-   and provider countdowns pause while inactive, and Plan invalidates in-flight read identities on
-   deactivation. Activity Detail and Worktree Exit retain their Portal subtrees with inactive key
-   gates; Activity Detail replaces its Markdown payload with an empty value on every close.
-   Elicitation, Splash and non-portal HintToast keep their existing conditional/disposable ownership
-   because their independent cases did not reproduce a high post-GC slope. No opportunistic `Bun.gc`
-   was added.
-9. Diff and Plan now use Solid `lazy`/`Suspense`, and the build plus artifact smoke reject a bundle
-   that absorbs their marker content into `dist/index.js`. The final build produced a 2.35 MB entry,
-   32 lazy chunks, 33 detached maps and 66 outputs. Its clean-HOME artifact smoke reached first paint
-   in 1,140 ms with `app.boot.painted` at 624 ms. The controlled AC/performance n=7 bundle benchmark
-   measured a 268 ms median module graph and a 1,105 ms median for both header paint and input ready
-   (1,104-1,132 ms, 28 ms spread). Lifecycle retention and module-graph deferral remain separate
-   policies. The entry is 1.40 MB smaller than the 3.75 MB audit snapshot, but no controlled
-   pre-change n=7 run exists, so the spec makes no causal first-paint latency claim from that byte
-   delta alone.
-10. The same reusable `lazyView` boundary now covers every Code-owned cold full-page command route,
-    while lightweight Settings/Extensions metadata stays eager. The overlay runner executes the
-    default 120x32 and 80x24 matrix under a parent 120-second/1-GiB watchdog, fails production-policy
-    cases above 5 MiB PSS/100 (RSS off Linux), and requires renderable, lifecycle-pass and live-key
-    ownership to balance. The post-change developer build produced a 0.51 MB entry, 85 lazy chunks,
-    86 detached maps and 172 outputs. Its clean-HOME smoke reached the parser-free shell at 300 ms,
-    the usable app diagnostic at 647 ms and the observed input at 732 ms, with
-    `deferred_catalog=true`. A subsequent trusted AC/performance n=7 bundle benchmark measured a
-    270 ms median module graph, 312 ms parser-free shell, 641 ms complete header and 641 ms
-    input-ready frame; the shell spread was 2 ms and the complete-frame spread was 29 ms. The
-    then-current complete 12-case production-policy soak passed 100 cycles at both dimensions: the highest
-    positive PSS endpoint was elicitation at +2.85 MiB/100 on 120x32 and +1.17 MiB/100 on 80x24;
-    every case returned live renderables, lifecycle passes and key layers to baseline. Negative
-    endpoints mean warm-up memory was collected, not that closing a surface "saved" that amount.
-The final 120x32 native-render matrix used ten warm-up cycles and 100 measured cycles per fresh
-process. These are endpoint PSS changes after forced collection, not amounts of memory "saved" when
-negative:
-
-| Case | PSS MiB/100 | Cumulative registrations during measured cycles |
-| ----------------------------------------------------- | --------------------: | ----------------------------------------------: |
-| no-overlay control | +0.27 | 0 |
-| `FloatFrame`, 30 rows | -1.16 | 0 |
-| autocomplete remount / retained | +4.41 / +0.60 | 0 / 0 |
-| former Context Help remount / retained | +3.27 / -2.04 | 100 / 0 |
-| former Context Help retained with reprojected actions | -2.11 | 0 |
-| Agent Profile Picker remount / retained | +11.42 / -1.65 | 100 / 0 |
-| retained Safety Preset Picker | +1.56 | 0 |
-| Catalog Picker remount / retained | +8.01 / -1.53 | 200 / 0 |
-| 64-agent drawer remount / retained | +25.13 / -1.46 | 0 / 0 |
-| retained Activity Detail, 200 Markdown sections | -28.55 | 0 |
-| retained worktree prompt | -4.12 | 0 |
-| empty Workflows page remount / retained | +2.81 / +1.17 | 200 / 0 |
-| elicitation / Splash / HintToast | +1.79 / +1.36 / -0.18 | 100 / 0 / 0 |
-
-The remount rows remain attribution controls and intentionally expose the behavior the production
-policy avoids. Every retained comparator had zero additional layer registrations after warm-up;
-focused renderer tests separately require constant renderable/lifecycle ownership after first use.
-
-The runner now records live renderables, renderer lifecycle passes, live key layers, cumulative layer
-registrations and whether native frame composition was enabled. `OTUI_NO_NATIVE_RENDER=true` did not
-reduce the noisy 40-cycle remount projections, so those samples do not justify assigning the residue
-to native composition. Compact-terminal coverage, the parent RSS/time watchdog, production-policy
-threshold and current production consumer set are implemented. Exact timeline counts and real-model
-multi-run process-tree sampling remain future measurement work. The implemented correction closes
-the demonstrated Agent Profile Picker, Catalog Picker, drawer and Plan/autocomplete slopes. The former
-Context Help slope is historical because that production surface no longer exists. This does not
-make the non-overlay candidate values in section 8.3 release gates.
-
-#### Phase 0 — build an attribution harness before changing lifecycle code
-
-Add a package-owned soak runner that executes each case in a fresh process against the production
-bundle and a real OpenTUI renderer. Each case must:
-
-1. run at 120x32 and at one compact supported size;
-2. warm up, force `Bun.gc(true)`, record RSS/PSS/private-dirty plus JS heap/external/array-buffer
-   counters, then sample post-GC floors after fixed cycle batches;
-3. record live renderable-node, keymap-command/layer and timeline counts before opening and after
-   closing;
-4. have both a no-op render/capture control and a state/input mutation control with no overlay;
-5. run under a parent-process RSS/time watchdog so event-loop starvation cannot hide growth; and
-6. fail with the cycle number, screen capture, runtime versions and raw samples needed to reproduce
-   the slope.
-
-Run every row below independently so one surface cannot inherit another's retained memory:
-
-| Family | Required cases |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| controls | no overlay; draft mutation with Splash held either mounted or unmounted; empty `HintToast` lifecycle |
-| `FloatFrame` primitive | empty fixed-size frame; frame with fixed row counts of 1, 10 and 30 |
-| `AgentProfilePicker` | primary agent list; default-scope second step; empty and maximum practical lists |
-| `CatalogPicker` | compact enum; filtered provider/model catalog; empty/manual row; maximum visible window |
-| `ActivityDetail` | short plain text; long Markdown with code blocks and lists |
-| `WorktreeExitPrompt` | cancel path, using an isolated disposable clean-worktree fixture |
-| autocomplete | slash and workspace-file triggers; zero, one and ten visible rows; fixed non-empty draft so Splash does not churn |
-| full-region pages | full Help; empty and populated Diff; empty, task-heavy and Markdown-heavy current Plan; root and nested Settings views |
-| shell overlays | activity panel; Splash visibility; terminal-floor resize transition; editor expansion control |
-
-The harness becomes the regression gate; one-off `ps` snapshots remain diagnostic evidence only.
-
-#### Phase 1 — decide the shared OpenTUI remediation
-
-Re-run the complete matrix against the newest compatible OpenTUI release before writing a local
-workaround. If the post-GC slopes are flat, upgrade `@opentui/core`, `@opentui/keymap` and
-`@opentui/solid` together at exact versions, refresh the lockfile and run the artifact, renderer and
-smoke contracts. If the primitive still leaks, reduce it to an upstream reproduction and keep the
-Clarvis workaround in owned source; do not patch `node_modules`.
-
-When an upstream fix is unavailable, introduce one application-lifetime floating host. Keep its
-scrim, card chrome and bounded row-slot pool mounted, switch data and visibility in place, and prove
-that hiding, changing overlay kind and closing restore node/key/timeline counts. Merely retaining the
-outer card is insufficient if variable children are still destroyed on every cycle.
-
-#### Phase 2 — remove amplifiers and migrate every floating consumer
-
-1. The former Context Help was windowed by visible rows before the product surface was retired; it
-   is no longer a production consumer or required soak case.
-2. Move both `AgentProfilePicker` stages and every `CatalogPicker` caller onto the
-   persistent host. Keep a fixed number of row slots and update their cells/previews rather than
-   recreating native rows.
-3. Give `ActivityDetail` a bounded Markdown projection or a full-page reader if Markdown blocks
-   cannot be safely pooled. Test small and large content separately.
-4. Route `WorktreeExitPrompt` through the same host despite its low frequency so the primitive has no
-   exceptional mount path.
-5. Keep `HintToast` mounted for the application lifetime and toggle/update its one row in place, so
-   full-app measurements do not add a sibling lifecycle to every overlay cycle.
-
-#### Phase 3 — fix non-`FloatFrame` candidates from evidence
-
-- Keep one autocomplete container and a fixed pool of at most ten result/header slots mounted in
-  `InputDock`; hide and rewrite them when completion closes. Pin a control that holds Splash out of
-  the tree. This work is required if the forced-GC matrix confirms a slope; the current immediate
-  PTY result is not enough by itself.
-- Measure `PageFrame` and configuration `ViewFrame` separately. If flat, add the soak regression and
-  do not complicate their ownership. If they retain native memory, keep one full-region frame rooted
-  and swap bounded content; window Help rows and bound current-plan task/Markdown and large Diff
-  projections.
-- Preserve the existing configuration stack rule: inactive parents remain mounted, a popped frame
-  disposes once, and closing the root disposes the complete stack. Add exact mount/factory/dispose
-  counter assertions around async updates.
-- Apply the same evidence rule to the activity drawer and Splash. Prefer `visible`/in-place updates
-  for any confirmed repeated-mount residue; leave one-shot FatalBoot and rare terminal-floor paths
-  simple unless their dedicated case fails.
-
-#### Phase 4 — acceptance, rollout and ordering
-
-Implement in reviewable slices: (1) harness and counters, (2) OpenTUI upgrade decision, (3) shared
-floating host, (4) bounded floating consumers, (5) profile/catalog/activity/worktree migration,
-(6) autocomplete, and (7) only the full-region/drawer fixes that their independent cases justify.
-After every slice, run the affected integration render tests and the full soak matrix in addition to
-the normal `@clarvis/code` build, typecheck, lint, test, artifact and smoke checks.
-
-The implemented gate in section 8.3 requires that no **production-policy** case grow more than 5 MiB
-per 100 post-GC cycles, its regression slope must not remain
-monotonically positive across successive batches, and node/keymap/timeline counts must return
-exactly to baseline. Deliberate remount comparators may exceed the memory candidate only to preserve
-attribution and must have a paired production case. The final manual gate is a source-release 120x32 PTY
-pass through every reachable surface, followed by a multi-run process-
-tree soak. The work is complete only when every confirmed slope is flat or an explicitly accepted
-upstream residual is documented with a lower operational bound and watchdog coverage.
-
-### 8.5 Reusable surface-lifecycle implementation plan
-
-**Implemented.** The numbered decisions below are retained as the implementation
-record. The product does not depend on an upstream patch: Clarvis closes the deterministic OpenTUI
-Portal-removal residue with a bounded retained-host policy. A reduced upstream report remains useful,
-but no `node_modules` patch is part of this correction.
-
-The component-specific `*Mounted` latches introduced while attributing the overlay soaks are an
-intermediate correction, not the target architecture. They mix four independent policies at each
-call site: when code is imported, when native renderables are first constructed, whether they are
-disposed or retained after close, and how their non-visual behavior is deactivated. OpenTUI's
-`visible=false` removes a subtree from Yoga layout and native painting but does not destroy it or
-automatically suspend descendant focus, key layers, timers, timelines or asynchronous work.
-
-The implementation therefore proceeds through one code-owned `SurfaceLifecycle` capability rather
-than another family of component-local booleans:
-
-1. **Introduce the lifecycle contract.** A `SurfaceBoundary` owns lazy first mount and one explicit
-   retention policy: `dispose-on-close` or `retain-one`. It provides `mounted`, `active` and a
-   monotonically increasing `activation` accessor through Solid context. A retained boundary hides
-   one bounded subtree after deactivation; a disposable non-portal boundary preserves Solid's
-   ordinary owner disposal. Portal placement statically requires `retain-one`; retention is never an
-   implicit call-site default.
-2. **Make components participate.** Shared hooks register activation/deactivation work, keep key
-   layers registered behind their active predicate, release descendant focus on deactivation and
-   invalidate stale asynchronous completions. A visual wrapper alone is not accepted as lifecycle
-   ownership.
-3. **Centralize floating ownership.** Each floating `SurfaceBoundary` owns one stable root `Portal`,
-   outside clipped page regions, and retains exactly one bounded descendant tree after first use.
-   The host becomes invisible while inactive so it cannot intercept mouse input. This constraint is
-   load-bearing: changing host visibility, size or z-order during conditional recursive removal
-   leaves orphaned lifecycle-pass nodes in OpenTUI 0.5.7. `FloatFrame` plays its timeline on
-   activation and pauses it on deactivation. Putting `Portal` inside
-   `FloatFrame` is a tested regression because Portal cleanup then escapes the local remount owner.
-4. **Keep allocation bounds separate.** A stable-slot/window projection owns list virtualization.
-   `overflow="hidden"` and ScrollBox viewport culling remain paint/layout controls and must not be
-   described as allocation bounds. Retained surfaces declare a finite native-row/renderable budget.
-5. **Migrate by measured policy.** Autocomplete, every root-Portal float, Agent Profile Picker, Catalog
-   Picker, Plan and Diff use `retain-one`; bounded floats gate inactive
-   keys and Activity Detail clears its document payload on close. Configuration parents retain only
-   while present in their existing stack and dispose on pop. Elicitation, Splash, HintToast and
-   other non-Portal conditional surfaces keep measured disposal semantics.
-6. **Separate first-load deferral.** The lifecycle boundary delays native construction but a static
-   import still enters the startup module graph. Cold full-page routes gain an optional dynamic
-   `load()` boundary only after their retained/disposable behavior is correct; artifact tests must
-   prove the resulting chunks stay outside the startup entry.
-7. **Measure ownership and native residue independently.** The soak records renderables, key layers,
-   renderer lifecycle passes and activation/deactivation balance beside RSS/PSS/private dirty. An
-   `OTUI_NO_NATIVE_RENDER=true` control distinguishes native frame/composition pressure from the
-   remaining Yoga/TextBuffer/allocator path. Post-GC PSS is called a native residue until a native
-   ownership metric or allocator control proves unreachable memory.
-8. **Escalate a remaining residual upstream.** The package-owned primitive cases compare normal
-   rendering with the no-native-render control after reconciler microtasks settle. Clarvis does not
-   patch `node_modules`; an upstream issue is required only when the minimal case retains a
-   repeatable monotonic slope after the application-owned portal and lifecycle counters balance.
-
-Implementation evidence: `packages/code/src/ui/patterns/surface-lifecycle.tsx` owns the capability;
-`SurfaceBoundary` call sites replace the old mount latches; `CatalogPicker` owns the latest live spec
-without a proxy component; retained list surfaces have finite windows; inactive layers use OpenTUI
-reactive matchers; retained polling/countdowns pause; and the surface, picker, overlay-region,
-workflow and artifact tests pin those seams. Immediate peak and idle floor remain acceptance inputs:
-a retained tree that flattens the latter while materially worsening the former is not a successful
-remediation.
-
-### 8.6 External implementation basis
-
-The reusable lifecycle and GC decisions were checked against upstream documentation and source:
-
-- [OpenTUI renderer lifecycle](https://github.com/anomalyco/opentui/blob/main/packages/web/src/content/docs/core-concepts/renderer.mdx)
-  assigns renderer destruction to its creator; Clarvis keeps that ownership in the single `runApp`
-  root and does not create a second application renderer.
-- [OpenTUI renderer source](https://github.com/anomalyco/opentui/blob/main/packages/core/src/renderer.ts)
-  exposes lifecycle-pass ownership used by the deterministic overlay regression counters. Clarvis's
-  retained Portal rule is a repository measurement-driven workaround, not an upstream guarantee.
-- [Bun benchmarking guidance](https://bun.sh/docs/project/benchmarking) distinguishes explicit
-  synchronous and asynchronous GC. Clarvis uses the synchronous form only inside explicit recovery
-  while `physicalWorkActive()` is false; it never enables periodic production GC or `--smol` as a
-  leak workaround.
-
-The syntax-surface handoff was checked again against the upstream OpenTUI documentation and source
-through a version-aware documentation index:
-
-- [Markdown](https://github.com/anomalyco/opentui/blob/main/packages/web/src/content/docs/components/markdown.mdx)
-  defines `streaming` for incremental content and `internalBlockMode="top-level"` for incremental
-  block commits; Clarvis retains those modes instead of replacing OpenTUI's parser.
-- [Rendering diagnostics](https://github.com/anomalyco/opentui/blob/main/packages/web/src/content/docs/test-and-debug/rendering-diagnostics.mdx)
-  states that `frame` fires only after a pass reaches the rendered state, while `idle()` covers
-  scheduler idleness. `waitForSyntaxFrame` therefore requests and observes real rendered frames but
-  separately awaits the installed `CodeRenderable.highlightingDone` contract.
-- [Renderer source](https://github.com/anomalyco/opentui/blob/main/packages/core/src/renderer.ts)
-  shows that `requestRender()` schedules through the renderer rather than through a userland
-  microtask. The handoff uses that API and does not add an arbitrary delay or a second render loop.
+## 8. Open questions
+
+The overlay lifecycle regression gate is implemented in
+`packages/code/tooling/benchmarks/overlays.tsx` and its current limits are
+described in §2.3 and §5. Other absolute startup and resident-memory targets
+remain review criteria until an owner names a comparable reference host and
+accepts the limits. The benchmark records focused-composer and complete-app
+paint separately; a passing focused-composer time does not establish complete
+hydration or real-provider readiness.
+
+A controlled multi-run process-tree soak with a real model, external MCP
+servers and shell work has not been qualified here. The TUI RSS sampler excludes
+external children, so those resources need separate host measurements. Native
+Linux and macOS, physical terminal, subscription and provider paths each need
+their own attributable evidence before they can be called qualified.
+
+Historical startup, overlay and implementation measurements are retained in
+[known issues](../known-issues.md), where their exact environment and
+diagnostic limits can be kept without turning old runs into current behavior.

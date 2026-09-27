@@ -13,7 +13,7 @@
 ## 1. Purpose
 
 An **Extension Profile** selects which already-installed extensions compose the active Clarvis kernel. It
-does not install plugins, copy `settings.json`, select a model or Agent Profile, carry secrets,
+does not install plugins, copy `settings.json`, select a model or Agent Profile, or carry secrets. An
 Extension Profile is a complete allow-list of exact plugin installations and standalone skills; plugin
 contributions remain atomic. (`ExtensionProfileDefinition` in
 `packages/protocol/src/extension-profiles.ts`; `resolveProfileData` in
@@ -32,7 +32,7 @@ excludes `.system` directories and that reserved name from inventory, and `pinne
 offer them as selected standalone roots. The host provides the verified system skill separately to
 the loop; ordinary user and plugin definitions cannot replace its identity. Production:
 `standaloneCatalog` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts` and
-`buildRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`. Test:
+`buildExecuteRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`. Test:
 `packages/kernel/tests/integration/extension-profile-manager.test.ts` and
 `packages/kernel/tests/integration/configuration-surface.test.ts`.
 
@@ -237,8 +237,8 @@ projected per discovered skill: `buildResolvedSkill` exposes only that skill's e
 `SkillInfo.executionRoot`, never the collection root or plugin checkout. The loop consumes those
 exact skill directories when it resolves command execution roots. Production: `skillRoots` in
 `packages/kernel/src/plugins/plugin-contributions.ts`, `buildResolvedSkill` in
-`packages/skills/src/registry.ts`, and `resolveSkillExecutionRoots` composition in
-`packages/loop/src/runtime/build-run-deps.ts`. Test: "exposes only the selected skill directory when
+`packages/skills/src/registry.ts`, and `snapshotSkills`/`captureSkillExecution` composition in
+`packages/loop/src/runtime/build-run-deps.ts` and `packages/skills/src/execution-snapshot.ts`. Test: "exposes only the selected skill directory when
 its root approves helper execution" in `packages/skills/tests/integration/api.test.ts`.
 
 An exact empty root set is intentional: the loop exposes an empty skills provider without appending
@@ -428,6 +428,10 @@ extension snapshot (Extension Profile comparison in `resumeSession`,
 `packages/code/src/run-host.ts`). Newly started turns are
 stamped with the current process snapshot (`createSession.beginTurn` in
 `packages/code/src/adapters/session.ts`).
+
+Standalone refresh arms directory monitors through the skills package’s bounded discovery walk, including newly created empty directories. A manifest written later therefore schedules another generation without requiring an unrelated filesystem event. This scan runs on catalog observation/invalidated idle refresh, never on every submission.
+Production: `observeSkillRoots` in [skill-catalog-monitor.ts](../../packages/kernel/src/extension-profiles/skill-catalog-monitor.ts) and `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts).
+Test: delayed-manifest directory observation in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).
 
 ## 5. Invariants
 
@@ -641,7 +645,7 @@ and cannot remove bytes other than the revision the caller inspected.
 | A standalone skill changes after snapshot resolution | queue a validated idle generation; captured executions keep their resource bytes and an invalid replacement retains the prior catalog. |
 | A selected plugin skill changes after snapshot resolution | withdraw the affected plugin skill; existing plugin trust/recomposition policy applies. |
 | Workspace trust changes or selected plugin update/uninstall is requested during a run | `conflict`; the trust store and selected checkout remain unchanged. |
-| A selected plugin update/uninstall completed but the kernel was not reconnected | the old parsed process snapshot remains active; changed monitored skills are withdrawn when observed, and reconnect activates the new selection bytes. |
+| A selected plugin update/uninstall completed but the kernel was not reconnected | subsequent runs are refused as `unavailable` until reconnect captures the new selection and fingerprint. |
 | Global definition catalog is absent | listing creates it with private directory permissions and continues with `builtin:default`. |
 | Workspace definition catalog is absent | listing treats it as empty and does not create repository content. |
 | Definition directory or file exceeds a resource bound | list/get reports an invalid entry; it never returns a partial silently usable definition. |
@@ -672,14 +676,3 @@ The package dependency graph is unchanged: the feature uses existing `kernel -> 
 and `code -> kernel|protocol|paths` edges. The loop's optional `skills` dependency remains behind its
 existing lazy capability boundary; Extension Profile resolution happens in the file-backed host before run
 construction (`packages/kernel/src/file-kernel.ts`).
-
-## 8. Open questions
-
-There are no unresolved version-one contract questions. Version pinning, Extension Profile inheritance,
-memory, secrets, and automatic repository activation are deliberately out of scope. A user who
-needs a variation clones an Extension Profile and edits the complete allow-list; any expansion of that
-scope requires a new schema version and an explicit product decision.
-
-Standalone refresh arms directory monitors through the skills package’s bounded discovery walk, including newly created empty directories. A manifest written later therefore schedules another generation without requiring an unrelated filesystem event. This scan runs on catalog observation/invalidated idle refresh, never on every submission.
-Production: `observeSkillRoots` in [skill-catalog-monitor.ts](../../packages/kernel/src/extension-profiles/skill-catalog-monitor.ts) and `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts).
-Test: delayed-manifest directory observation in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).

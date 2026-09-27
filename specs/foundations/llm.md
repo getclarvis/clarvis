@@ -767,10 +767,10 @@ against cycles.
 `packages/loop/src/runtime/build-run-deps.ts` builds, innermost first:
 
 ```
-createAiSdkProvider(...)                       :453
-  → withModelCallAdmission(provider, gate)     :466
-  → withCallLogging(..., logger)               :466
-  → withTransportRetry(..., {...})             :465
+createAiSdkProvider(...)
+  → withModelCallAdmission(provider, gate)
+  → withCallLogging(..., logger)
+  → withTransportRetry(..., {...})
 ```
 
 and `packages/loop/src/runtime/execute-run.ts` wraps that again per run with
@@ -780,6 +780,21 @@ and `packages/loop/src/runtime/execute-run.ts` wraps that again per run with
 physical attempt takes one permit.
 
 ---
+
+### 4.17 Persisted replay and serialized-prefix diagnostics
+
+Tool-call provider metadata retains an existing Responses item ID separately from `call_id`.
+`withResponsesReplayIds` restores that item ID if the SDK omits it, without inventing IDs for
+optional user/tool-output items. `SerializedPrefixWatch` compares bounded content hashes at the
+actual JSON fetch boundary and reports the first changed instruction/catalog/history surface.
+`cacheUsageKnown: false` distinguishes absent cache counters from observed zero.
+Production: [`withResponsesReplayIds`](../../packages/llm/src/ai-sdk/responses-replay.ts),
+[`SerializedPrefixWatch`](../../packages/llm/src/ai-sdk/request-prefix.ts),
+[`buildCallResult`](../../packages/llm/src/ai-sdk/result.ts).
+Test: [`wire-cache-diff.test.ts`](../../packages/llm/tests/integration/wire-cache-diff.test.ts) and
+[`request-prefix.test.ts`](../../packages/llm/tests/unit/request-prefix.test.ts).
+See the [prompt-cache contract](../cross-cutting/prompt-cache.md) for per-instance composition,
+provider-specific fields and performance qualification.
 
 ## 5. Invariants
 
@@ -902,7 +917,8 @@ text is `client`) (overload text with no definitive 4xx is transient)
 
 **LLM-17.** A 2xx status reaching the classifier is `transient`, but explicit text signals override
 it.
-Production: `packages/llm/src/classify-provider-error.ts`, ahead of the / guards.
+Production: `packages/llm/src/classify-provider-error.ts`, after text-signal checks and before
+the other status guards.
 Test: `packages/llm/tests/unit/classify-provider-error.test.ts`.
 
 **LLM-18.** A structured provider error delivered *inside* a 200 stream is classified on its own
@@ -1282,73 +1298,11 @@ takes one value import, `contentToText`).
 
 ## 8. Open questions
 
-1. **LLM-9 generation is pinned.** `packages/llm/tests/component/ai-sdk-adapter.test.ts`
-   asserts `maxRetries: 0` in the SDK generation arguments. The streaming branch shares the same
-   assembled `callArgs` (`packages/llm/src/ai-sdk-adapter.ts`).
-
-2. ~~**`AiSdkGuardrails.timeoutMs` is documented as the only guardrail on the constructor's `@param`
-   line.**~~ **Resolved: the TSDoc was stale.** All three fields are used, and the `@param` now says
-   so — `timeoutMs` becomes the per-call default when a call names none, and the other two are handed
-   to `createBoundedFetch`, each falling back to its package default
-   (`packages/llm/src/ai-sdk-adapter.ts`). The interface itself was undocumented and now
-   carries a member comment each.
-
-4. ~~**The bridge-minted timeout error carries no attempt cost.**~~ **Resolved for observable
-   evidence.** `markStreamStarted` now puts the stream-start fact on the bridge's
-   `ModelCallInactivityError`, and the adapter handles every timed-out catch before the generic
-   `ProviderError` passthrough so available `partialUsage` is retained. Usage remains absent when the
-   provider emitted no usage frame before cancellation; that is unknown evidence, not a synthesized
-   zero. Tests: `packages/llm/tests/unit/model-call-timeout-bridge.test.ts` and
-   `packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts`.
-
-6. **The `bestEffort`/`detachObserved` neighbours of `suppressSecondaryRejection`
-   (`packages/capability/src/tasks.ts`) accept an `options.logger`, but
-   `suppressSecondaryRejection` ignores its `observedBy` argument beyond a non-empty
-   check**. So `detachCancellation`'s two distinct `observedBy` strings
-   (`packages/llm/src/ai-sdk/bounded-fetch.ts`) reach no sink. Whether that is a
-   deliberate documentation-only convention or an unfinished channel is not stated in the source.
-
-7. **`MarkerSite` correctness is asserted against a reading of the SDK's own
-   `convertToOpenAICompatibleChatMessages`** (`packages/llm/src/ai-sdk/request-options.ts`),
-   which is inside `@ai-sdk/openai-compatible` and outside this document's scope. The integration test at
-   `packages/llm/tests/integration/provider-request-shape.test.ts` exercises the real SDK, so
-   the behaviour is pinned; the *derivation* is not verifiable from this repository.
-
-8. **The measurements quoted in TSDoc are not reproducible here.** The `deepseek-v4-pro` affinity
-   probe (`packages/llm/src/ai-sdk/request-options.ts`;
-   `packages/llm/tests/integration/wire-cache-diff.test.ts`), the "~95 chars/s a real run
-   streams at" (`packages/llm/src/ai-sdk/streaming.ts`), the "~3000 reports per call at ~1 ms
-   inter-arrival" and the "229 tests" coverage incident
-   (`packages/llm/src/stream-metrics.ts`) are all statements in comments. They are recorded as what
-   the code claims, not as verified facts.
-
-9. **`ResolvedProviderConfig.promptCache` semantics table** lives in `@clarvis/capability`
-   (`packages/capability/src/llm-port.ts`) rather than here. This package implements it at
-   `packages/llm/src/ai-sdk/request-options.ts`; whether every row of that table is fully
-   exercised is a question for the provider-resolution document.
-
-10. **No test in scope asserts the `TypeError` messages from `positiveInteger`/`nonnegativeInteger`**
-    (`packages/llm/src/model-call-admission.ts`), despite the package's 100% line floor.
-    No coverage report was run, so whether another test reaches them incidentally, or whether the
-    floor is currently satisfied by some untraced path, is undetermined.
-
-11. **Two `ModelCallAdmissionController` edge paths are unpinned.** The already-aborted-signal-at-
-    `acquire` short-circuit (`packages/llm/src/model-call-admission.ts`) and the synchronous-throw-from-
-    `inner.call` release path both have code (added to the section 4.13 state table
-    above) but no test in `packages/llm/tests/unit/model-call-admission.test.ts` exercises either
-    one.
-
-## Persisted replay and serialized-prefix diagnostics
-
-Tool-call provider metadata retains an existing Responses item ID separately from `call_id`.
-`withResponsesReplayIds` restores that item ID if the SDK omits it, without inventing IDs for
-optional user/tool-output items. `SerializedPrefixWatch` compares bounded content hashes at the
-actual JSON fetch boundary and reports the first changed instruction/catalog/history surface.
-`cacheUsageKnown: false` distinguishes absent cache counters from observed zero.
-Production: [`withResponsesReplayIds`](../../packages/llm/src/ai-sdk/responses-replay.ts),
-[`SerializedPrefixWatch`](../../packages/llm/src/ai-sdk/request-prefix.ts),
-[`buildCallResult`](../../packages/llm/src/ai-sdk/result.ts).
-Test: [`wire-cache-diff.test.ts`](../../packages/llm/tests/integration/wire-cache-diff.test.ts) and
-[`request-prefix.test.ts`](../../packages/llm/tests/unit/request-prefix.test.ts).
-See the [prompt-cache contract](../cross-cutting/prompt-cache.md) for per-instance composition,
-provider-specific fields and performance qualification.
+- `suppressSecondaryRejection` accepts an `observedBy` label but does not send it to a logger
+  (`packages/capability/src/tasks.ts`). The two labels supplied by `detachCancellation` in
+  `packages/llm/src/ai-sdk/bounded-fetch.ts` therefore produce no distinct diagnostic. The
+  intended observability contract is unstated.
+- The already-aborted signal at `ModelCallAdmissionController.acquire` and a synchronous
+  throw from `inner.call` are not explicitly exercised by
+  `packages/llm/tests/unit/model-call-admission.test.ts`. Their intended resource-release
+  behavior is implemented but unpinned.

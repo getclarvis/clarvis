@@ -2,10 +2,12 @@
 
 `@clarvis/tools` exposes three observing tools: `read_file`, `read_image` and
 `list_dir`. A read-only run advertises exactly these tools. Relative paths resolve
-from the workspace root; absolute paths use host filesystem permissions.
+from the workspace root; absolute paths remain absolute. Reads are subject to the selected
+execution policy and host permissions, including explicit deny-read paths when configured.
+File-tool paths reject `~` home shorthand; use an absolute path instead.
 
 Production: `toolDescriptors` in [registry.ts](../../packages/tools/src/tools/registry.ts)
-and `resolveToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts).
+and `resolveFileToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts).
 Test: [tool-surface.test.ts](../../packages/tools/tests/integration/common/tool-surface.test.ts)
 and [open-authority.test.ts](../../packages/tools/tests/integration/common/open-authority.test.ts).
 

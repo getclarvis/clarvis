@@ -76,7 +76,7 @@ the proposed result and fences without another model call. Production: `prepareH
 `createFileRunHost`. Test:
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 
-Legacy Goal formulation uses the same authenticated controller but is not a hosted conversation turn. The
+Goal formulation uses the same authenticated controller but is not a hosted conversation turn. The
 host rejects it before inference when a Goal or physical run already owns the conversation. Its
 separate semantic execution is persisted in the owner-scoped run/trace store, while the session lock
 is released. After a ready result passes the full-session revision CAS, the host publishes Goal and
@@ -283,8 +283,8 @@ deltas` in [hosted-projection.test.ts](../../packages/kernel/tests/unit/hosted-p
 File storage splits the logical byte stream into private 64 MiB segments. Only the current writer
 remains open; a page read opens at most one historical segment at a time. Rotation synchronizes the
 previous segment and directory before continuing. Snapshot offsets and sequence numbers do not reset
-at segment boundaries, including boundaries inside UTF-8 or JSON records. The default no longer
-imposes a lifetime history quota. Acknowledgement removes the exact segment namespace; unrelated
+at segment boundaries, including boundaries inside UTF-8 or JSON records. By default, retained
+history has no lifetime byte quota. Acknowledgement removes the exact segment namespace; unrelated
 siblings remain. Segmentation bounds files and read buffers, not total disk retention.
 
 Production: `openProjectionStorage` and `removeProjectionStorage` in
@@ -771,7 +771,7 @@ with [its process fixture](../../packages/kernel/tests/fixtures/hosted-settlemen
 
 `HostingService.resolveRecovery` accepts only an authenticated operator, an old execution's exact
 generation and revision, and `physical_work_stopped: true`. The operator must first verify that all
-processes and containers belonging to the old work have stopped. A missing host record or dead host
+processes belonging to the old work have stopped. A missing host record or dead host
 PID alone does not establish this. The host records an operator attestation; it does not independently
 prove process closure or remote side effects. Current-generation executions, live occupancy, missing
 confirmation and stale revisions are refused. Guest capabilities do not expose this operation.
@@ -836,7 +836,7 @@ parameters cannot select them. A successful hello binds the configured workspace
 observer role; a supplied workspace selector must match that workspace's id or canonical path.
 Machine-local application controls are separately exposed. The bootstrap may set
 `exposeLocalControls: false`; the connection then retains hosting and goal services but advertises no
-`local_host` capability and receives no local inspection, browser handoff, runtime retry or restart
+`local_host` capability and receives no local inspection, browser handoff or restart
 service. This is the required composition boundary for a later remote transport.
 Every operation checks the current connection role against the existing catalog:
 operators retain local kernel services, including subscription control; observers can issue only
@@ -1109,8 +1109,8 @@ unanswered request as not opened. Opening a browser is separate from provider au
 
 Inspection returns copied process state. The application may publish
 bounded, sequenced `runtime_notice` data through `FileRunHost.runtimeNotice`, which is not a guest
-RPC operation. The workspace adapter reports that notice to the TUI. Runtime retry and configuration
-restart are explicit operator operations; neither inspection nor reconnect triggers them.
+RPC operation. The workspace adapter reports that notice to the TUI. Configuration restart is an
+explicit operator operation; neither inspection nor reconnect triggers it.
 After asynchronous authentication, the host rechecks closing/restart state before accepting a peer.
 
 Production: [operator.ts](../../packages/kernel/src/hosting/operator.ts), `resolveConnection` and

@@ -113,9 +113,9 @@ definitions remain unavailable; no subset or host bridge substitutes for the wor
 | `closeRunningEdges(edges, status, endedAt)` | function | named export in `packages/kernel/src/workflows/workflows-service.ts` | Closes every `"running"` edge in place |
 | `freshLeaderProgress()` / `LeaderProgress` | function/interface | named exports in `packages/kernel/src/workflows/workflows-service.ts` | Per-leader tally accumulator |
 | `isLeaderEntryIteration(event, acc)` | function | named export in `packages/kernel/src/workflows/workflows-service.ts` | Order-independent entry-vs-delegated-child attribution |
-| `statusOf(raw)` | function | internal symbol in `packages/kernel/src/workflows/workflows-service.ts` | Collapses a persisted/edge status string onto a protocol `RunStatus`: `completed`/`cancelled`/`running` pass through, everything else (including a legacy or corrupted value) collapses to `failed` |
+| `statusOf(raw)` | function | internal symbol in `packages/kernel/src/workflows/workflows-service.ts` | Collapses a persisted/edge status string onto a protocol `RunStatus`: `completed`/`cancelled`/`running` pass through, every other value collapses to `failed` |
 | `createWorkflowStore(opts)` | function | named export in `packages/kernel/src/workflows/workflow-store.ts` | Builds a `FileWorkflowStore` |
-| `WorkflowStore` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | `save`, `get`, `list`, `listPage?` (**optional** — custom legacy stores may omit it), `delete` |
+| `WorkflowStore` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | `save`, `get`, `list`, optional `listPage`, `delete`; the service supports custom stores without paging |
 | `FileWorkflowStore` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | Extends `WorkflowStore` with `listPage` **required** — the standard file-backed implementation always exposes it |
 | `WorkflowRecordPage` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | `{items, total, limit, offset}` — `listPage`'s return shape |
 | `WorkflowPageRequest` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | `{limit?, offset?}` — `listPage`'s input |
@@ -247,7 +247,7 @@ interface WorkflowRecord {
   created_at: number;
   updated_at: number;
   edges: WorkflowEdge[];           // ≤ WORKFLOW_MAX_EDGES (256)
-  sequence?: WorkflowSequenceRecord; // latest Admiral checkpoint; absent for legacy/ad-hoc-only
+  sequence?: WorkflowSequenceRecord; // latest Admiral checkpoint; absent for ad-hoc-only workflows
   output_tokens: number;              // ledger.spent(), output-only
 }
 ```
@@ -260,7 +260,7 @@ interface WorkflowEdge {
   kind: "manager" | "leader";
   profile?: string;
   title: string;
-  task?: string;              // ≤ WORKFLOW_MAX_TASK_BYTES (16 KiB); absent on manager/legacy
+  task?: string;              // ≤ WORKFLOW_MAX_TASK_BYTES (16 KiB); absent on the manager
   round_id?: string; pass?: number; item_index?: number; replica?: number; replica_count?: number;
   error?: { code: string; message: string };  // code ≤256 bytes, message ≤ WORKFLOW_MAX_ERROR_BYTES (4 KiB)
   reason?: string;               // ≤ WORKFLOW_MAX_REASON_BYTES (4 KiB)
@@ -319,7 +319,7 @@ marker `WORKFLOW_TRUNCATION_MARKER = "[truncated by Clarvis: workflow persistenc
 **manager** edge's `reason` (idempotently — it checks whether the marker is already present).
 Production: `markWorkflowEdgesTruncated` and the edge-cap branch of the service's `observe`.
 
-### 3.4 Legacy full-list bounds (`store.list()`)
+### 3.4 Full-list bounds (`store.list()`)
 
 `list()` throws `resource_exhausted` past `LEGACY_LIST_MAX` = 200 records or
 `LEGACY_LIST_MAX_BYTES` = 32 MiB of aggregate file size, directing the caller to `listPage()`
@@ -331,7 +331,7 @@ sidecars without parsing workflow bodies`).
 
 `listPage(page, scan)` walks every `<id>.json` entry while `recordEntries` skips
 `.summary.json` files, then `readSummary` reads each sidecar and opportunistically regenerates a
-missing/legacy sidecar from the full record. It retains only the `limit+offset` best summaries in a
+missing sidecar from the full record. It retains only the `limit+offset` best summaries in a
 worst-first binary heap (`retainSummary`) ordered by `compareSummaries` — `updated_at` descending,
 `id` descending as tiebreak. It yields to the event loop every `WORKFLOW_SCAN_BATCH` (64) entries or
 `WORKFLOW_SCAN_BATCH_BYTES` (512 KiB) inspected, checking `scan.signal` through
@@ -341,18 +341,15 @@ implementation returned by `createWorkflowStore` live in
 `normalizeWorkflowPage`: `limit` 1..200, `offset` 0..2,000, both integers, else
 `invalid_request`.
 
-`readSummary`'s opportunistic regeneration is not only for a pre-existing legacy record: `save()`
-(see §3.3) unlinks the old summary sidecar **before** writing the new record body and the new summary,
-so a process death between those two writes leaves a record file on disk with no summary sidecar at
-all — the identical shape a hand-authored legacy record has. The `readSummary` and `save`
-implementations returned by `createWorkflowStore` recover both cases; there is no separate recovery
-mechanism for a save interrupted mid-flight.
+`save()` unlinks the old summary sidecar **before** writing the new record body and the new summary.
+A process death between those writes can leave a record without a sidecar; `readSummary` regenerates
+it from the full record. There is no separate recovery mechanism for a save interrupted mid-flight.
 
 ### 3.6 Identifiers
 
 A workflow's id **is** its manager run's execution id (`record.id === record.root_run_id ===
 managerRunId` in `runManagerWorkflow`) — there is no separate workflow identifier.
-`generateExecutionId` (from `@clarvis/loop`, out of scope) produces it when the caller supplies none.
+`generateExecutionId` (from `@clarvis/trace`) produces it when the caller supplies none.
 
 ### 3.7 The title-generation tool contract (`packages/kernel/src/workflows/workflow-title.ts`)
 
@@ -464,13 +461,9 @@ directions:
   (`packages/kernel/tests/unit/workflow-policy.test.ts`).
 
 The caller's own `params.agent` is used only when the skill names no agent, the skill is unknown, or
-no `skills` source was configured at all (`packages/kernel/tests/unit/workflow-policy.test.ts`). The doc comment
-explains why routing cannot look only at `params.agent`: "routing happens before the assembler runs
-— so asking only about `params.agent` sent a skill that names a manager down the ordinary path. The
-assembler then made that manager the entry profile anyway, and because the workflows capability is
-only injected on the manager path the agent ran its own prompt with no `run_leader` tool: told to
-fan out, and unable to. Silent, and only visible as a manager that never delegates."
-(`packages/kernel/src/application/workflow-policy.ts`).
+no `skills` source was configured at all (`packages/kernel/tests/unit/workflow-policy.test.ts`).
+Routing resolves the skill's entry agent before assembly so a manager selected by a skill receives
+the workflows capability (`packages/kernel/src/application/workflow-policy.ts`).
 
 `resolveLeaderDefault(managerAgent)` reads the manager profile's `default_spawn` frontmatter field,
 accepting either a bare string or the first element of an array, else `undefined`
@@ -519,8 +512,7 @@ without recursively granting the child the workflow capability
    [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts)
    checks the manager and two leaders of one profile, composed keys in SDK-serialized requests,
    persisted identities and two continuations per leader in direct and prepared assembly.
-   `params.task` remains a legacy request field in `StartRunParams`, but the removed Tasks capability
-   has no provider or model-facing tools. Workflow scheduling does not assign an external task.
+   Workflow scheduling does not assign an external task.
 5. `execute(context)` (the body `createManagedRun` invokes):
    - Calls `auxiliaryWorkflowRunDeps(deps)` to remove the memory capability, then clones those deps
      with a logger bound to `{component: "workflows", workflow_id: managerRunId}` when a logger
@@ -583,10 +575,7 @@ ceiling to what its leader concurrency needs`).
 
 A leader is whichever profile the manager named, and a *sub-agent role* profile (`explorer`,
 `coder`, …) runs its leader in `subagent-only` mode — so its own turns arrive tagged
-`agent: "subagent"`, never `agent: "lead"`. Counting only `agent === "lead"` therefore left every
-such leader reporting zero iterations forever, which the UI renders as a permanent "loading…" beside
-a leader that is in fact working, while its token totals climb (doc comment,
-`LeaderProgress` in `packages/kernel/src/workflows/workflows-service.ts`). A leader can *also*
+`agent: "subagent"`, never `agent: "lead"`. A leader can *also*
 delegate in normal `"lead"` mode, and its
 delegated child's own `subagent_iteration` can arrive **before** the leader's first
 `lead_iteration` — so "first `subagent_id` seen" is not a safe way to spot the entry agent either
@@ -682,8 +671,8 @@ caller, but the on-disk record stays `"running"` for the next reader to retry.
 trace yet. For a `"running"` summary, terminal evidence is looked up first and only a `store.get` (a
 full-body read) happens if evidence exists; the evidence is passed straight through to
 `reconcilePersisted` when the summary's `id` equals the record's own `root_run_id`, else recomputed
-(the `list` implementation returned by `createWorkflowsService`). When the store has no `listPage`,
-the legacy path reconciles every returned full record.
+(the `list` implementation returned by `createWorkflowsService`). When a custom store has no
+`listPage`, the service calls `list()` and reconciles each returned full record.
 
 `reconcileRunningWorkflowRecord(record, evidence)` is pure: absent
 evidence or an already-terminal record return the **same object reference** (identity-preserving,
@@ -698,23 +687,16 @@ that no live manager can make.
 
 Every projection to the wire — `recordToSummary`, `edgeToNode` and `storedSummaryToSummary` —
 collapses its own status string through `statusOf(raw)` (§2): `"completed"`, `"cancelled"` and
-`"running"` pass through unchanged, and **anything else collapses to `"failed"`** — so a legacy or
-hand-corrupted status string on disk reads as a failed run rather than as an error.
+`"running"` pass through unchanged, and **anything else collapses to `"failed"`**.
 
-### 4.10 `closeRunningEdges` — the backstop, not the primary mechanism
+### 4.10 `closeRunningEdges` and terminal repair
 
-The doc comment on this function is itself load-bearing evidence about ordering: it
-used to be pure defense-in-depth on the argument that a dispatch's `finally` block could not let a
-run finish while a `run_leader` call was still unsettled — an argument the comment says "no longer
-holds" once `run_leader` became background-only (a leader's task moves to the supervision registry
-immediately, so nothing awaits it in-line). What closes the gap today is the pair described in
-§4.5 step 6 (the finish gate refusing a terminal result while children are live, plus awaited
-registry teardown) — after which `workflow_run_completed`/`failed` is still recorded *synchronously*
-via `TraceHandle.record`'s inline `onRecord` dispatch, so `observe()` closes every started leader's
-edge through the ordinary path "before `finalize()` runs, but by a longer and more breakable chain
-than before." It explicitly does **not** help after a hard process crash — a truly orphaned
-`"running"` record can only be repaired by §4.9's reconciliation pass on the next `get`/`list`, "which
-does not exist" as a proactive restart-time sweep.
+The finish gate refuses manager finalization while children are live, and registry teardown is
+awaited. A leader's `workflow_run_completed` or `workflow_run_failed` trace is dispatched
+synchronously through `TraceHandle.record`, allowing `observe()` to close its edge before
+`finalize()` calls `closeRunningEdges` for any edge still marked `running`. After a process crash,
+the next `get` or `list` reconciles a running workflow only if the root trace has terminal evidence
+(§4.9). There is no proactive workflow-store sweep at startup.
 
 ### 4.11 Client-side projection — `reduceWorkflowProjection`
 
@@ -1057,9 +1039,7 @@ crashes or hangs, and settles into a sane, non-'running' final state`; `terminal
 Admiral checkpoint when the manager is cancelled`).
 
 **INV-290.** A manager stays reachable while its leaders run: a steer delivered mid-fan-out reaches the
-manager's *next* turn, carrying the steer text, while both leaders are still parked. The test names the
-defect: "Before background spawn the manager sat inside its dispatch until the slowest leader returned,
-and the steer waited out the whole fan-out."
+manager's *next* turn, carrying the steer text, while both leaders are still parked.
 Production: the leader spawn is a background `spawn_run`
 (`assembleLeader` in `packages/kernel/src/workflows/workflows-service.ts` assembles it; the workflow
 runtime hands back a handle);
@@ -1070,8 +1050,7 @@ while its leaders are still running`).
 **INV-291.** A leader whose profile declares no `can_spawn` runs in subagent-only mode, and its
 progress is still reported: `workflow_run_progress` arrives with `iterations >= 1` and
 `output_tokens > 0` even though that leader's turns are tagged `subagent` rather than `lead`. This is
-the reporting half of INV-W7's attribution rule; the test states what counting only `"lead"` cost —
-"a permanent 'loading…' beside a leader that was working".
+the reporting half of INV-W7's attribution rule.
 Production: `onLeaderEvent` and `isLeaderEntryIteration` in
 `packages/kernel/src/workflows/workflows-service.ts`.
 Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`reports a subagent-role
@@ -1097,9 +1076,9 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
 | Catalogue-wide resource ceiling exceeded (roots / entries / workflow dirs / aggregate bytes) | Whole scan aborts atomically to zero workflows + one error | `packages/workflows/src/artifact.ts` |
 | A `listPage`/`list` scan's `AbortSignal` fires mid-scan | Throws `kernelError("cancelled", …)` at the next checkpoint (before the loop, and after every batch yield) | `assertScanActive` and the `listPage` implementation returned by `createWorkflowStore` |
 | A workflow record/summary exceeds its byte ceiling on save | `kernelError("resource_exhausted", …)` thrown before any write; existing on-disk state (if any) is untouched | `serializeSummary` and `serializeRecord` in `packages/kernel/src/workflows/workflow-store.ts` |
-| A legacy on-disk record whose regenerated summary would itself exceed 8 KiB (`serializeSummary` throws inside `readSummary`) | Silently excluded from `listPage()` entirely — absent from `items` **and** uncounted in `total`; no error surfaced to the caller | `readSummary` in `packages/kernel/src/workflows/workflow-store.ts`; `packages/kernel/tests/integration/workflows-service.test.ts` (`rejects a new record and skips a legacy one when its summary cannot fit 8 KiB`) |
+| An on-disk record without a sidecar whose regenerated summary would exceed 8 KiB (`serializeSummary` throws inside `readSummary`) | Silently excluded from `listPage()` entirely — absent from `items` **and** uncounted in `total`; no error surfaced to the caller | `readSummary` in `packages/kernel/src/workflows/workflow-store.ts`; `packages/kernel/tests/integration/workflows-service.test.ts` (`rejects a new record and skips a legacy one when its summary cannot fit 8 KiB`) |
 | An on-disk record file that is oversized (> 8 MiB, `WORKFLOW_RECORD_MAX_BYTES`) or parses as JSON but fails the `isWorkflowRecord` shape guard, including an invalid optional Admiral checkpoint | `readOne` returns `null`; `store.get(id)`/every full-record read is indistinguishable from "no such workflow" — no warning logged, no diagnostic anywhere on this path | `readOne`, `isWorkflowRecord`, and `isWorkflowSequenceRecord` in `packages/kernel/src/workflows/workflow-store.ts`; `packages/kernel/tests/integration/workflows-service.test.ts` (`rejects a persisted workflow whose Admiral checkpoint has an invalid shape`) |
-| A legacy full-body `list()` scan exceeds 200 records or 32 MiB | `kernelError("resource_exhausted", …)`, directing the caller to `listPage()` | the `list` implementation returned by `createWorkflowStore` |
+| A full-body `list()` scan exceeds 200 records or 32 MiB | `kernelError("resource_exhausted", …)`, directing the caller to `listPage()` | the `list` implementation returned by `createWorkflowStore` |
 | A field would exceed its persisted-text byte ceiling (title/task/error/reason) | Silently truncated with an explicit, human-visible marker appended — never a hard failure | `truncateWorkflowText`, `boundedWorkflowEdge`, and `boundedWorkflowSequence` |
 | A coalesced background save throws | Reported to `onBackgroundError`; the timer callback itself never throws; the record stays dirty for the next `request()`/`flush()` to retry | `createWorkflowSaveQueue` |
 | `reconcilePersisted`'s trace-store read throws | Caught, logged as `warn`, treated as "no evidence" (record stays `"running"` as read) | `readTerminalEvidence` in `packages/kernel/src/workflows/workflows-service.ts` |
@@ -1170,46 +1149,13 @@ scheduling loop that reads `WorkflowCtx.semaphore`/`.ledger`/`.assemble` lives i
 
 ## 8. Open questions
 
-- **INV-W6** (leader grant-stripping / plans-off) has clear production evidence in this document's files
-  but no direct unit/integration test in scope asserts on the *assembled leader body's*
-  `profiles[].grants` or `plans` field within `workflows-service.test.ts`. The scheduling document's own
-  test suite (`packages/workflows/tests/**`) is the more likely home for such an assertion and was
-  out of this document's primary scope; flagging as possibly unpinned rather than asserting it is.
-- **Crash recovery for an orphaned `"running"` workflow record** is *not* a proactive restart-time
-  sweep, and that sentence used to be the whole of what was known. **Resolved:** the
-  repair exists, it is lazy, and the chain is now written out at
-  `packages/kernel/src/workflows/workflows-service.ts`'s `closeRunningEdges`. The kernel recovers
-  interrupted runs at boot (`recoverInterruptedRuns` → `TraceStore.recoverOrphans`), folding each
-  crashed run's journal into a persisted record with a terminal `"interrupted"` status and an
-  `ended_at`; `getById` can see a persisted record, so the next `get`/`list` touching the workflow
-  finds terminal evidence and `reconcileRunningWorkflowRecord` repairs it to `failed` and saves it. A
-  record nobody reads stays `"running"` on disk and costs nothing — `get` and `list` are its only
-  consumers. **The residual is narrower than the old sentence implied and is the part genuinely
-  unbuilt**: when no persisted record ever appears (the journal could not be opened, recovery
-  quarantined it as corrupt or refused it as oversized, or the boot budget was exhausted first),
-  `getById` keeps answering `null` and the record stays `"running"` for good. An eager restart sweep
-  would read the same absent evidence, so what is missing is a repair that does not depend on the
-  trace, and no such source of truth exists today.
-- **The exact shape/behavior of `Selector`, `AcceptRule`, `RepeatSpec`, `parseSelector`, and
-  `parseAcceptRule`** (imported by `packages/workflows/src/artifact.ts` from `./rounds.ts`) is out of this document's
-  scope (delegated to [capabilities/workflows-scheduling.md](workflows-scheduling.md)); this document describes only how
-  `artifact.ts` calls them and what it does with their results (null-check → throw), not their
-  internal grammar.
-- **`WorkflowCtx.semaphore`, `.ledger`, `createWorkflowSemaphore`, `createWorkflowLedger`,
-  `createWorkflowsCapability`, `isWorkflowPersistedTraceEvent`, `managerLiveChildrenFloor`,
-  `createElicitMux`** are all constructed or called by `workflows-service.ts` but their own internal
-  behavior (concurrency admission, budget accounting, elicit multiplexing across concurrent leaders,
-  the capability's own tool dispatch) is owned by [capabilities/workflows-scheduling.md](workflows-scheduling.md) and is
-  deliberately not re-described here beyond the call sites already cited.
-- **The kernel's `engineEventToProto`/`capabilityEventToProto` mapping tables** (which decide exactly
-  which engine/capability events become which wire `RunEvent`s, including `workflow_run_*` shapes)
-  are owned by [hosts/kernel-runs.md](../hosts/kernel-runs.md); this document cites only the call sites where
-  `workflows-service.ts` hands events to them.
-- **`code`'s `WorkflowsHub.tsx` layout and interaction model** (distinct from
-  `workflow-projection.ts`'s reducer, now described in §2/§4.11) is explicitly delegated to
-  [hosts/code-domain-hubs.md](../hosts/code-domain-hubs.md) per this document's scope; the file's existence and the projection output it
-  consumes are confirmed, but its rendering and interaction behavior are not described here.
-- No test in scope asserts what happens when `cfg.globalConfigDir` is omitted from
-  `WorkflowsServiceConfig` beyond the doc comment "Omitted in tests, where only the workspace root
-  matters" (`WorkflowsServiceConfig.readSettings`) — i.e., whether a production host could legally omit it is
-  not verified by a test in this document's scope (`packages/kernel/src/kernel.ts` always supplies it in practice).
+- **INV-W6's assembled-body boundary lacks a direct assertion.** The service strips `workflow`
+  grants and forces `plans: "off"` in source. Component tests assert a leader request's `plans`
+  setting, and an integration test observes that the fallback leader has no `run_leader` tool, but
+  no test directly inspects the assembled body's `profiles[].grants` and `plans` fields together.
+- **A `"running"` workflow with no recoverable trace remains unresolved.** The normal lazy
+  `reconcileRunningWorkflowRecord` path repairs a record when `getById` finds a terminal persisted
+  run. If the journal could not be opened, recovery quarantined it, or its boot budget was exhausted,
+  `getById` has no terminal evidence and cannot settle that workflow. No separate source of closure
+  evidence is available (`packages/kernel/src/workflows/workflows-service.ts`,
+  `packages/kernel/src/native-kernel.ts`).

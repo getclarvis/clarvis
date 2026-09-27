@@ -3,16 +3,26 @@
 ## Purpose and authority
 
 An agent can edit configuration documents with the ordinary file tools available to its profile.
-Relative paths resolve from the workspace; absolute paths remain absolute. File calls do not enter a
-configuration approval path. Host process permissions determine whether a path can be accessed.
+Relative paths resolve from the workspace; absolute paths remain absolute. Kernel-bound file calls
+use the same action authorization and selected execution policy as other built-in tools. The file
+Kernel defaults to Sandbox; configuration paths have no unconditional write exception. Workspace
+metadata is read-only by default, and writes beyond admitted roots require an eligible permission
+decision. Host OS permissions remain an outer bound. There is no separate configuration-content
+review before the write.
 Configuration loaders still validate documents when the host consumes them, and workspace trust
 still controls activation of workspace-owned
 executable configuration.
 
-Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `resolveToolPath` in
+Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `resolveFileToolPath` in
 [paths.ts](../../packages/tools/src/lib/paths.ts), and `createFileKernel` in
 [file-kernel.ts](../../packages/kernel/src/file-kernel.ts).
-Test: [host-access.test.ts](../../packages/tools/tests/integration/common/host-access.test.ts) and
+The per-action boundary is owned by [native execution](../execution/sandbox.md) and
+[automatic approval](../execution/judge.md). Production: `prepareToolAction` in
+[action.ts](../../packages/tools/src/execution/action.ts) and `createApprovalService` in
+[approval-service.ts](../../packages/kernel/src/execution/approval-service.ts).
+Test: [action-authorization.test.ts](../../packages/tools/tests/integration/common/action-authorization.test.ts),
+[approval-policy.test.ts](../../packages/kernel/tests/integration/approval-policy.test.ts),
+[host-access.test.ts](../../packages/tools/tests/integration/common/host-access.test.ts) and
 [configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
 
 ## Product documentation skill

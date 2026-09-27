@@ -96,7 +96,7 @@ plan gates and a final schema;
 the complete preceding history remains a prefix and the catalog/key stay equal. Controlled responses
 prove serialization, not remote cache hits or automatic host continuation.
 
-The legacy Goal formulation service uses one byte-identical base prompt for auto and guided modes.
+The Goal formulation service uses one byte-identical base prompt for auto and guided modes.
 Both precedence rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace
 availability remain in the final volatile message.
 
@@ -202,10 +202,9 @@ the new execution ID or goal ID for the agent identity. Production:
 | Anthropic | Existing system and rolling message `cache_control` breakpoints and TTL policy |
 | Google | Existing adapter behavior; no new cache protocol |
 
-ChatGPT's existing `x-client-request-id` behavior is preserved. It is not repurposed as the harness's
-physical-attempt number. Kernel subscription authority remains on the host; identity fields cross
-the guest contract, credentials do not. No new reasoning mode, transport protocol or breakpoint is
-introduced by this correction.
+ChatGPT uses `x-client-request-id` independently of the harness's physical-attempt number. Kernel
+subscription authority remains on the host; identity fields cross the guest contract, credentials
+do not.
 
 Provider-issued assistant item IDs, phase, reasoning summaries and opaque reasoning metadata survive
 response conversion, persistence and request serialization. Reasoning parts sharing an ID assemble

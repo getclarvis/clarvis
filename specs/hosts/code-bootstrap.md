@@ -11,10 +11,9 @@ everything between that bin and a painted terminal frame: the flag table, the tw
 explicit updater that run without loading the application, the TypeScript source entry, the headless modes, the interactive boot sequence that constructs a file kernel and a run
 host, and the Solid/OpenTUI shell that the boot renders.
 
-The organising constraint stated in the source is launch cost. `packages/code/src/cli.ts` records
-that everything statically imported by `cli.ts` "is paid on every launch, including `--version`", and
-that `--help`/`--version` "used to be handled inside `main()`, after the whole 847-file graph had
-loaded, and cost ~2.5 s to print one string". The production entry runs source directly; a separate development build checks lazy module boundaries.
+The organising constraint stated in the source is launch cost. Everything statically imported by
+`cli.ts` is paid on every launch, including `--version`. The production entry runs source directly;
+a separate development build checks lazy module boundaries.
 The architecture test keeps the fast-flag static import graph small
 (`packages/code/tests/architecture/cli-fast-path.test.ts`).
 
@@ -49,7 +48,7 @@ coalesce state reads and follow host-started stages through `RunHost.synchronize
 disposes subscriptions and late presentation callbacks. Goal continuation has no client timer or
 run-start bypass. The activity line combines durable goal status with the independently tracked run
 status, and a checkpoint is displayed separately from final completion.
-Legacy semantic formulation remains a first-class compatibility presentation state: for that
+Semantic formulation remains a first-class presentation state: for that
 control-plane service the host emits transient `preparing` run phases (`GoalRun.phase`) and
 `GoalChange` display invalidations carrying only `formulation_activity`; they never become durable
 Goal state or authority. Guided creation is an ordinary selected-agent
@@ -303,7 +302,7 @@ do not implement runtime worktree switching:
 
 | Variable                        | Read at                                                                                                                          | Effect                                                                                                                                                                 |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLARVIS_CODE_SOURCE=1`         | developer launcher                                                                                                                 | legacy development hint; the production launcher always uses source                                                                                                      |
+| `CLARVIS_CODE_SOURCE=1`         | developer launcher; `packages/code/src/update/{installation,check}.ts`                                                             | marks a checkout launch as source and prevents installed-artifact update handling                                                                                       |
 | `CLARVIS_INSTALL_ROOT`          | `packages/code/src/update/installation.ts` (`managedInstallation`)                                                               | authenticates a versioned portable install for explicit self-update                                                                                                    |
 | `CLARVIS_CODE_DEBUG`            | `packages/code/src/cli-args.ts`                                                                                                  | enables diagnostics unless in `{"", "0", "off", "false", "no"}` (`packages/code/src/cli-args.ts`); its value also doubles as a level (`packages/code/src/cli-args.ts`) |
 | `CLARVIS_CODE_DEBUG_LEVEL`      | `packages/code/src/cli-args.ts`                                                                                                  | level only; takes precedence over the level read out of `CLARVIS_CODE_DEBUG`                                                                                           |
@@ -729,9 +728,8 @@ from the `catch` for a coverage reason stated inline: "Extracted from the `catch
 its own unit; [cross-cutting/test-architecture.md](../cross-cutting/test-architecture.md) §3.7 records that a `catch` body's line counter is otherwise
 satisfied by the enclosing `try`".
 
-One agent listing serves the whole boot records that "The settings adapter, the agent-file
-snapshot and the Agent Profile catalogue each used to fetch their own, so a cold start read the fleet from
-disk three times over."
+One agent listing serves the settings adapter, agent-file snapshot and Agent Profile catalogue
+during boot.
 
 The models catalogue is temporally lazy, not merely unawaited. `loadFoundation` never calls
 `client.models.get()`. The single-flight `ensureModelsCatalog` starts the request only when Model,
@@ -1230,8 +1228,7 @@ evaluated before `--version` can print — is exactly `{src/cli.ts, src/cli-args
 Production: `packages/code/src/cli.ts` (static launcher imports); `packages/code/src/cli-args.ts`
 (root product-manifest import).
 Pinned: `packages/code/tests/architecture/cli-fast-path.test.ts`
-(`reaches nothing beyond the argument modules before printing --version`). The test's own remark
-records that the launcher previously loaded the whole application before answering this flag.
+(`reaches nothing beyond the argument modules before printing --version`).
 
 **INV-CB-2 (owns INV-249).** `src/cli.ts` reaches `@opentui/solid/preload` and `./index.tsx` only
 through a dynamic `import()`, and reaches each at least once.
@@ -1772,64 +1769,8 @@ without reaching past it into the kernel.
 
 ## 8. Open questions
 
-1. ~~**`--continue`'s preflight is dead as written.**~~ **Resolved:** it was the `null`/`undefined`
-   slip, and the comparison is now `!== null` (`packages/code/src/runtime.tsx`,
-   `assertSessionExists`), so a workspace with no session prints
-   "no session to continue in this workspace" and exits 1 instead of
-   booting the full TUI to land on `setRunStatus("session not found")`. `resolveResumeMeta`
-   still returns `SessionMeta | null` (`packages/code/src/cli-mode.ts`); the `resume` branch
-   is checked against the same selected workspace session store. `runtime.tsx` remains on
-   `NO_COUNTER_ALLOWLIST`, so the preflight itself is still untested — what is pinned is
-   the shape that made the old comparison wrong: a miss is `null`, never `undefined`
-   (`packages/code/tests/unit/cli-mode.test.ts`).
-2. ~~**`src/index.tsx` combined the complete interactive boot and had no direct seam.**~~
-   **Resolved in part:** `index.tsx` is now the focused renderer/parser entry;
-   the complete interactive/headless composition moved to `runtime.tsx` and loads only after the
-   focused startup composer paints. Integration tests pin the draft/submission handoff, architecture
-   tests pin submit-before-mount ordering and the artifact smoke covers the built PTY. Both modules
-   remain on `NO_COUNTER_ALLOWLIST` because importing either starts application lifecycle work, so
-   the large runtime's branch-level in-process coverage gap remains explicit rather than being
-   mislabeled closed (`tooling/checks/coverage.ts`, `NO_COUNTER_ALLOWLIST.code`).
-3. **Why the four boundary rules count type-only imports as violations while `cli-fast-path` exempts
-   them** is not stated anywhere. Mechanically the two walkers differ:
-   `packages/code/tests/architecture/architecture-boundary.test.ts` ignores `isTypeOnly`, `packages/code/tests/architecture/cli-fast-path.test.ts` honours
-   it. No comment or assertion message explains the difference.
-4. **The exact `AppCommandDeps` contents and app command registrations** are out of scope here and
-   belong to [hosts/code-input-and-overlays.md](code-input-and-overlays.md).
-   This spec covers only its two exported types, its scope-shadowing construction
-   (`packages/code/src/app/commands.tsx`) and the composition wrapper.
-5. **Run streaming, `run-host.ts`, `kernel-run-client.ts`, `WorkspaceClientManager` and the transcript
-   store** are named here only as the objects `runtime.tsx` assembles. Their contracts belong to
-   [hosts/code-run-host.md](code-run-host.md).
-6. **The development bundle's own contract** — what `packages/code/tooling/artifact/build.ts`
-   externalises and checks — belongs to [cross-cutting/build-and-ci.md](../cross-cutting/build-and-ci.md).
-   The production launcher remains source-only (`packages/code/src/cli.ts`).
-7. **The `847-file` and `~2.5 s` figures** appear four times in this subsystem's own prose
-   (`packages/code/src/cli.ts`, `packages/code/src/cli-entry.ts`, `packages/code/src/cli-args.ts`, `packages/code/tests/architecture/cli-fast-path.test.ts`) but are not
-   re-derivable from the code; no benchmark in this document's scope measures them. `packages/code/tooling/benchmarks/first-paint.ts`
-   exists (`packages/code/package.json`) but is outside this document's scope.
-8. ~~**`--print`'s entry-agent resolution reads a `SettingsFile` cast.**~~ **Resolved:** the cast is
-   gone. `agentReadiness` now takes a `ReadinessSettings` — `default_model` plus the provider names,
-   which is all it ever read (`packages/code/src/adapters/agent-files.ts`) — so `settingsView.merged` is passed as itself
-   (`packages/code/src/runtime.tsx`, `runPrintMode`). The question the cast raised is therefore moot rather than
-   answered: nothing now asserts the whole `SettingsFile` shape, so nothing depends on whether the
-   protocol's `merged` satisfies it.
-9. **`INV-247` (the ASCII-source rule) and `INV-253`–`INV-266`** are `@clarvis/code` invariants owned
-   by sibling documents; only `INV-243`–`INV-246` and `INV-248`–`INV-252` are restated above.
-10. **No test exercises `registerCodeCommands`'s disposal ordering or idempotence** (INV-CB-38), nor
-    the `--list --help` short-circuit (INV-CB-16), nor the `CLARVIS_AGENT_TOOLS_MAX_GRANT` default
-    (INV-CB-40). Those are three concrete gaps in an otherwise well-pinned
-    surface.
-11. ~~**`HeaderRowsProps.agentName` is a dead prop.**~~ **Resolved by removal:** the prop is gone.
-    `HeaderRowsProps` is now `{ plan: Accessor<HeaderPlan> }` (`packages/code/src/views/HeaderRows.tsx`) and the
-    call site passes only `plan` (`packages/code/src/views/App.tsx`), which matches what the render
-    body (`packages/code/src/views/HeaderRows.tsx`) ever read. The active-agent name still reaches the row, but
-    through `HeaderInput.agentName` → `projectHeader`'s `identity` field
-    (`packages/code/src/views/header-projection.ts`), never as a prop.
-12. **`--ascii` combined with a headless mode has no test.** `parseMode` computes `ascii` for every
-    invocation (`packages/code/src/cli-args.ts`) but only attaches it to the `run`/`resume`/`continue` variants of
-    `Mode`; for `--print`/`--list`/`--delete`/`--refresh-models` the value is silently dropped rather
-    than rejected the way `--agent`/`--format` are outside `--print`. No test in
-    `packages/code/tests/integration/cli-args.test.ts` asserts what `parseMode(["--refresh-models",
-"--ascii"])` returns, so whether this asymmetry with `--agent`/`--format` is intentional is not
-    determinable from the code.
+- The `--continue` missing-session preflight uses the `null` result from `resolveResumeMeta`, but no direct test exercises that branch in `runtime.tsx`. The CLI-mode test pins the result shape, and artifact boot would be needed to verify terminal restoration on this path.
+- `index.tsx` and `runtime.tsx` start application lifecycle work on import and remain outside branch-level in-process coverage. The startup handoff and artifact smoke cover selected behavior; comprehensive branch coverage of runtime composition remains unavailable.
+- The architecture boundary and CLI fast-path tests treat type-only imports differently. The walkers make the distinction visible, but no policy comment or test assertion explains the intended difference.
+- No focused test pins `registerCodeCommands` disposal ordering/idempotence, the `--list --help` short-circuit, or the `CLARVIS_AGENT_TOOLS_MAX_GRANT` default.
+- `parseMode` silently drops `--ascii` for headless modes while rejecting some other mode-specific flags. No CLI test pins whether this asymmetry is intended.

@@ -1,8 +1,8 @@
 /**
  * Skills (@clarvis/skills) packaged as a capability: run-level
- * enablement (env flag + provider), per-agent gating on the 'use_skills'
- * grant, the catalog rendered into the agent's system prompt, and the
- * load_skill tool with its handler.
+ * enablement (env flag + provider, or an eligible host-attested guide),
+ * per-agent gating, the catalog rendered into the agent's system prompt,
+ * and the load_skill and read_skill_resource tools with their handler.
  *
  * The catalog is resolved lazily, once per run: systemSection and forAgent
  * must serve the same listing, and a single scan also covers every spawned
@@ -88,14 +88,11 @@ export interface SkillsCapabilityOptions {
 /**
  * Build the skills capability over an optional {@link SkillsProvider}.
  *
- * @param provider - Supplies the skill catalog and load-skill resolution; when
- *   absent the capability is inactive.
+ * @param provider - Supplies the ordinary skill catalog and load-skill resolution.
  * @param options - Host wiring; see {@link SkillsCapabilityOptions}.
- * @returns A {@link Capability} whose `forRun` returns null unless
- *   `CLARVIS_SKILLS_ENABLED` is set and a provider is present; when active it
- *   renders any plugin bootstrap bodies and the catalog into the system prompt and
- *   exposes the body and resource readers for any agent carrying the
- *   `use_skills` grant.
+ * @returns A {@link Capability} whose `forRun` activates for an enabled ordinary
+ *   provider or an eligible host-attested guide; it renders the relevant catalog
+ *   and exposes body and resource readers to the selected agents.
  */
 export function createSkillsCapability(
   provider?: SkillsProvider,
@@ -125,9 +122,9 @@ export function createSkillsCapability(
 /**
  * Per-run skills activation. The catalog is scanned once and memoized, and the
  * plugin bootstraps are resolved once, so `systemSection` and `forAgent` serve the
- * same listing across the entry agent and every spawned subagent; an agent without
- * the `use_skills` grant or a run with an empty catalog gets neither the section
- * nor the tool.
+ * same ordinary listing across granted agents. An eligible entry agent without
+ * `use_skills` instead receives only the host-attested guide; an agent with no
+ * selected catalog gets neither the section nor the tools.
  */
 function createSkillsRunCapability(
   provider: SkillsProvider | undefined,

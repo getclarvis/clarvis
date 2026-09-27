@@ -74,7 +74,7 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts`).
 
 Agent-driven edits in the ordinary conversation use the
 [direct self-configuration contract](self-configuration.md): ordinary file tools write configuration
-validates documents when it reads them. Production: `dispatch` in
+documents, and configuration services validate documents when they read them. Production: `dispatch` in
 [core.ts](../../packages/tools/src/core.ts) and `createFileConfigStore` in
 [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts). Test:
 [configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
@@ -133,11 +133,12 @@ Not exported from `./config` but exported from their module and imported by test
 | `deleteSharedPrompt(scope)` | `packages/kernel/src/config/config-service.ts` | — |
 | `subscribe(kinds, listener)` | `packages/kernel/src/config/config-service.ts` | — |
 
-`createConfigService` takes two optional host collaborators (`packages/kernel/src/config/config-service.ts`):
-`SettingsView.known_grants` is left **absent rather than empty**, `packages/kernel/src/config/config-service.ts`). The kernel
-resolving through the service — is pinned at
-`packages/kernel/tests/contract/physical/config-service.test.ts`; the absent-collaborator path is the one
-cited above in Section 6.
+`createConfigService` accepts three optional host collaborators:
+`isolationAvailability`, `executionRulePaths`, and `knownGrants`
+(`packages/kernel/src/config/config-service.ts`). When `knownGrants` is absent,
+`SettingsView.known_grants` is omitted rather than set to an empty list; a missing registry
+vocabulary is distinct from an empty registry. The physical service contract in
+`packages/kernel/tests/contract/physical/config-service.test.ts` exercises the host service.
 
 ### 2.3 `ConfigStore` port (`packages/kernel/src/config/config-store.ts`)
 
@@ -177,7 +178,8 @@ silently weakening the service's concurrency guarantee" (`packages/kernel/src/co
 ### 2.5 Settings schema composition
 
 `kernelCapabilityRegistry` registers `memorySettingsSpec`, `plansSettingsSpec`, `goalsSettingsSpec`,
-`workflowsSettingsSpec` and `tasksSettingsSpec` at module load. There is no
+`workflowsSettingsSpec`, `isolationSettingsSpec`, `executionRequirementsSpec`,
+`approvalModeSettingsSpec`, `approvalPolicySettingsSpec` and `judgeSettingsSpec` at module load. There is no
 worktree settings block: worktrees are a launch-time Code choice rather than a kernel capability.
 `kernelSettingsSchema =
 settingsSchemaFor(kernelCapabilityRegistry)`, which extends the engine's `settingsSchema` with
@@ -432,7 +434,7 @@ Consequences the tests pin (`packages/kernel/tests/contract/physical/config-serv
 
 - writing a name held by the other scope ⇒ `conflict`, and the target is still `not_found`;
 - overwriting in the *same* scope is fine;
-- a legacy conflict created by writing directly to the store (bypassing the service) makes **both**
+- a cross-scope conflict created by writing directly to the store (bypassing the service) makes **both**
   copies un-writable through the service, while each stays readable with its own content.
 
 ### 4.6 `renameAgent` (`packages/kernel/src/config/config-service.ts`)
@@ -573,8 +575,8 @@ workspace writes nothing.
 fingerprint being approved already appears among the workspace's recorded entries, `workspaces[key]`
 is left as the existing array rather than getting a new `{fingerprint, approved_at}` record appended
 (`existing.some(e => e.fingerprint === fingerprint) ? existing : [...existing...]`).
-**Unpinned** — no test in this document's scope re-approves an already-approved fingerprint and asserts the
-stored array is unchanged (see also Section 8 item 6).
+No focused test in this document's scope re-approves an already-approved fingerprint and asserts
+the stored array is unchanged.
 
 ### 4.11 In-memory store differences
 
@@ -1018,70 +1020,20 @@ type-only import plus an injected `opts.plugins` object.
 
 ## 8. Open questions
 
-1. ~~**Two doc comments disagree about merge direction.**~~ **Resolved:** the protocol-side comment
-   was the stale one and now reads the same direction as the kernel's
-   (`packages/protocol/src/config.ts`, `packages/kernel/src/config/config-store.ts`),
-   which is what the implementation does — `mergeSettings([...pluginScopes, ...operatorScopes], …)`
-   (`packages/kernel/src/config/file-config-store.ts`) over layers in ascending precedence
-   (`packages/loop/src/settings/settings-merge.ts`). The client author's copy is the one that had
-   been wrong, which is the reason it was the one corrected.
-
-2. **`SettingsData.mcp_servers` (snake_case, `packages/protocol/src/config.ts`) is not the key anything
-   writes.** The engine's schema key is `mcpServers`
-   (`packages/loop/src/settings/settings-schema.ts`) and that is what
-   `WORKSPACE_RISK_FIELDS` strips (`packages/kernel/src/config/workspace-trust.ts`). The snake_case field compiles only
-   because of the interface's index signature (`packages/protocol/src/config.ts`). Whether it is dead or a
-   planned rename is not stated.
-
-3. **A plugin-shipped agent can never be opened through `ConfigService.getAgent`.** The store supports
-   it (`packages/kernel/src/config/file-config-store.ts`, and `packages/kernel/tests/integration/file-config-store.test.ts` pins the store-level
-   fallback), but the service's `requireAgentName` rejects any `:` (`packages/kernel/src/config/config-service.ts`, and
-   `packages/kernel/tests/contract/physical/config-service.test.ts` pins `plugin:coder` as rejected). Whether plugin agents are meant to
-   be readable through some other route is not visible here.
-
-4. **No test covers an untrusted workspace's `agents/` directory.** The gate exists
-   (`packages/kernel/src/config/file-config-store.ts`) and the docstring states what it prevents, but
-   `workspace-trust.test.ts` exercises only settings fields. Likewise nothing exercises the agent-file
-   half of `workspaceTrustFingerprint` (`packages/kernel/src/config/workspace-trust.ts`).
-
-5. **`workspace-trust.ts`'s exported helpers have no direct unit tests.**
-   `workspaceTrustFingerprint`, `workspaceTrustVerdict`, `canonicalWorkspaceKey`,
-   `readWorkspaceTrustFile`, `writeWorkspaceTrust` and `workspaceTrustSchema` are reached only through
-   `createFileConfigStore` in `workspace-trust.test.ts`. The `changed` verdict's `approved` field, the
-   `now` injection point (`packages/kernel/src/config/workspace-trust.ts`), the symlink canonicalization and the
-   refuse-to-overwrite branch are all unexercised — and so is `writeWorkspaceTrust`'s re-approval
-   dedup: re-approving a fingerprint already present in `workspaces[key]` leaves that array
-   unchanged rather than appending a duplicate entry (see also Section 4.10).
-
-6. **`resolveAgentsByName` and `parseAgentFrontmatter` have no kernel test.**
-   `resolveAgentsByName` is tested only transitively via `packages/code/tests/integration/doctor.test.ts`;
-   `parseAgentFrontmatter`'s only caller is `packages/kernel/src/plugins/plugin-service.ts`. `SCOPE_RANK`'s `"builtin"`
-   arm is documented as unreachable in practice ("In practice `builtin` never has to lose this
-   comparison", `packages/kernel/src/config/agent-resolution.ts`) and nothing tests it.
-
-7. **`stripWorkspaceRiskFields`'s `withheld` order.** The filter preserves `WORKSPACE_RISK_FIELDS`
-   order (`packages/kernel/src/config/workspace-trust.ts`) and the "covers every declared risk field" test compares against
-   that same constant (`packages/kernel/tests/integration/workspace-trust.test.ts`), so the test cannot detect a reordering of the
-   constant itself. Whether the order is a contract for clients is not stated.
-
-8. **`getAgent("builtin", name)` returns `scope: "builtin"` from the *argument*, not the record.**
-   `recordToDoc(record, scope)` (`packages/kernel/src/config/config-service.ts`). For `"builtin"` the two always
-   coincide today, but the projection would report the requested scope even if a store returned a
-   record from a different layer. No test probes that.
-
-9. **`AgentRecord.plugin` is projected onto `AgentSummary` (`packages/kernel/src/config/config-service.ts`) but is never set
-    by either shipped store** — only by `plugins/plugin-contributions.ts`, which is a sibling document's
-    surface. Whether `AgentSummary.plugin` can appear without plugins configured is therefore not
-    determinable here.
-
-10. **No rationale is recoverable for the specific numeric bounds** — 2 MiB / 256 KiB / 64 / 256 /
-    8 MiB (`packages/kernel/src/config/file-config-store.ts`), the 64 repair rounds (`packages/kernel/src/config/config-service.ts`), or the
-    10 s / 2 s / 5 ms lock constants. The code names what they bound, never why those
-    values.
-
-11. **`SETTINGS_LOCK_STALE_MS`'s interaction with `acquireLocalLeaseSync`** is only partly visible:
-    the lease's reclaim policy lives in `packages/paths/src/local-lease.ts` and its
-    liveness proof is that package's concern. The kernel-side docstring
-    (`packages/kernel/src/config/file-config-store.ts`) asserts "the shared primitive additionally proves that its
-    same-host process is dead", which `packages/kernel/tests/integration/file-config-store.test.ts` / demonstrate but do not
-    explain.
+- `SettingsData.mcp_servers` in `packages/protocol/src/config.ts` does not match the
+  `mcpServers` key the settings schema, trust filter and store use. A protocol owner needs to
+  decide whether the typed field should be corrected or whether a separate projection is intended;
+  no current writer or mapping for the snake-case field was found.
+- `ConfigService.getAgent` rejects names containing `:`, including `plugin:coder`, while the file
+  store can resolve a plugin-qualified agent. The service's contract needs an owner decision on a
+  readable plugin-agent route. Source: `requireAgentName` in
+  `packages/kernel/src/config/config-service.ts`; tests:
+  `packages/kernel/tests/contract/physical/config-service.test.ts` and
+  `packages/kernel/tests/integration/file-config-store.test.ts`.
+- Focused kernel tests are still needed for the workspace-trust helper's symlink/approval edge
+  cases and the `resolveAgentsByName` and `parseAgentFrontmatter` projection paths. The untrusted
+  `agents/` directory is already pinned by the file-kernel test cited in invariant 20. Production:
+  `packages/kernel/src/config/{file-config-store,workspace-trust,agent-resolution}.ts` and
+  `packages/kernel/src/plugins/plugin-service.ts`; adjacent tests:
+  `packages/kernel/tests/integration/workspace-trust.test.ts` and
+  `packages/kernel/tests/integration/file-config-store.test.ts`.

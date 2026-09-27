@@ -1,4 +1,4 @@
 interface:
   display_name: "Clarvis Doc Health"
-  short_description: "Audit Clarvis docs and derived test coverage"
-  default_prompt: "Use $clarvis-doc-health to review the requested documentation against current source and synchronize affected claims and TUI inventory."
+  short_description: "Sync recent changes or audit docs against current source"
+  default_prompt: "Use $clarvis-doc-health in change sync or full audit mode to update READMEs, specs, shipped clarvis-docs and TUI scenarios, reporting source evidence and remaining gaps."

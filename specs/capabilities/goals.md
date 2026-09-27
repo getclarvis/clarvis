@@ -32,9 +32,8 @@ serialized by sequential dispatch: only a durable create flips the policy for la
 After creation, handlers activate and the ordinary completion gate applies. The host assigns
 identity, limits, origin, evidence scope and the first-stage execution binding.
 `create_goal` is idempotent for its admitted execution and cannot be selected by an arbitrary model
-argument. Literal `/goal -- <text>` remains a direct host control. Isolated backends receive the
-same `goal_intent`; if the tool-effect port is absent the policy fail-closes unknown tools rather
-than treating them as reads.
+argument. Literal `/goal -- <text>` remains a direct host control. The policy fail-closes unknown
+tools rather than treating them as reads.
 Production: `admitGoalCreationIntent` in [execution.ts](../../packages/goal/src/execution.ts),
 `createFormulationDispatchPolicy` in [formulation-policy.ts](../../packages/goal/src/formulation-policy.ts),
 `prepareHostedGoalCreationTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
@@ -43,10 +42,9 @@ creation-stage dispatch in [capability.test.ts](../../packages/goal/tests/unit/c
 and `refuses workspace writes until create_goal is durably committed` in
 [goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 
-## Compatibility semantic formulation agent
+## Semantic formulation service
 
-The control-plane formulation service remains available to older clients but is no longer used by
-the Code guided slash command. Its bounded formulation run is based on the conversation's selected main
+The control-plane formulation service exposes a bounded formulation run based on the conversation's selected main
 agent profile. Auto mode treats the projected conversation trajectory as primary. Guided mode treats
 its validated seed as the newest authoritative
 request; trajectory and workspace reads may resolve references and retain already stated limits, but
@@ -303,7 +301,7 @@ origin and are canonically rewritten by the next host publication; no parallel v
 exists.
 
 A source is normative only when it defines the requested result, was read completely and
-successfully in the legacy semantic formulation run, and was reread through the confined workspace service before
+successfully in the semantic formulation run, and was reread through the confined workspace service before
 commit. The model supplies only a path; the host computes its digest. A missing, partial, invented or
 changed read fails closed. Later drift does not redefine the Goal: the view reports attention and
 completion remains blocked until a semantic edit, or cancel/clear followed by formulation. Files the
@@ -420,8 +418,7 @@ cancellation.
 Both entry capabilities — the guided creation turn (`createGoalCreationRunCapability`) and the
 bound work run (`createGoalCapability`) — end the Goal through one mapping,
 `stewardInterruptionOutcome` (`packages/goal/src/agent/steward-types.ts`), which pairs the domain
-code with fixed operator-facing text for the cause. The guided creation turn is the one the original
-defect surfaced in, and it reported no cause at all until the two shared the mapping. Production:
+code with fixed operator-facing text for the cause. Production:
 `stewardInterruptionOutcome` in `packages/goal/src/agent/steward-types.ts`. Test:
 `routes Steward completion decisions and respects pending operator steering` and
 `covers creation review feedback, invalid candidates and bounded failures` in
@@ -656,10 +653,9 @@ rather than the previous stage, so repeating an earlier stage's checks — in an
 different wording — cannot reset it. `max_auto_continuations` remains an independent global ceiling
 on automatic stages.
 
-The settings field was renamed from `max_no_progress_checkpoints` when the counter became stage rather
-than checkpoint based. A document that still carries the old spelling is admitted by the settings
-schema and normalized in memory by `resolveGoalsSettings`, so the nearest scope is never discarded
-whole over the rename and the operator's value is honored; nothing is rewritten on a read.
+The settings schema also accepts `max_no_progress_checkpoints`; `resolveGoalsSettings` normalizes
+that spelling in memory to the stage limit, preserving the selected scope and the operator's value.
+Reading settings does not rewrite the file.
 Production: `goalLimitsSchema` in [schemas.ts](../../packages/goal/src/schemas.ts) and
 `resolveGoalsSettings` in [settings.ts](../../packages/goal/src/settings.ts).
 Test: `accepts the renamed stage limit and normalizes it in memory` in
@@ -889,9 +885,8 @@ marks delivered, frame-budget and unavailable references. Details are projected 
 IDs, never copied into Goal evidence references or protocol catalog fields. Each option has an opaque ID, stamped
 scope, digest and short host-authored description; the description is omitted from persisted evidence.
 That description names the operation rather than the call: the command a shell ran, the path a read or
-write touched, the pattern a search used — sanitized, single-line and bounded — because the previous
-`<tool>; call <call id>` form told the model nothing it could act on and forced manual correlation with
-the work. It is presentation only: the opaque ID, its stamped scope and its digest remain the
+write touched, or the pattern a search used — sanitized, single-line and bounded. It is presentation
+only: the opaque ID, its stamped scope and its digest remain the
 authority, and an exit-zero command gains no strength from being described.
 A tool result, arguments, diff or delegation result over the 1 MiB encoded payload bound supplies
 an incomplete digest receipt, not successful proof, while independent
@@ -1214,7 +1209,7 @@ It returns one fresh execution identity and a host-authored orientation keyed by
 never the failed run's prose or a new authorization. The conversation and entry-agent identity remain
 unchanged, and the successor's request keeps the predecessor's resolved identity without replaying the
 creation intent. The registry's host-only continuation provenance distinguishes this from a human
-stage. The registry no longer rules on the predecessor's physical shape, so a stage that ended with a
+stage. The registry rules on that durable decision, so a stage that ended with a
 recoverable failure continues exactly as a checkpoint handoff does; a run without a continuation
 policy stays inert. A provider-requested backoff travels as a typed minimum instant with the proposal,
 is waited for abortably outside the short preparation deadline, and the policy is asked again before
@@ -1267,7 +1262,6 @@ Observer connections receive reads; writes resolve the actual registry controlle
 authority inside the short mutation and after asynchronous preparation. Initial/resumed execution
 uses the registry's internal start with that proof. Foreign peers and stale proof copies cannot
 control the conversation. Pause retains physical occupancy, and ordinary input cannot resume it.
-continuation remain in the canonical owner session.
 The common client returns explicit unavailability when the optional capability is absent.
 Production: [service.ts](../../packages/kernel/src/goals/service.ts),
 [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).

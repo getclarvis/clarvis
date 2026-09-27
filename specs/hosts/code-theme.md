@@ -454,6 +454,52 @@ status line with `MEMORY_PRESSURE_STATUS_RESTORING` or `MEMORY_PRESSURE_STATUS_F
 (`packages/code/src/views/App.tsx`, `packages/code/src/adapters/memory-pressure.ts`,
 `packages/code/src/views/Footer.tsx`). Those strings are not a theme-token mapping.
 
+### Detail presentation
+
+Goal, Plan and Workflow detail screens share `DetailColumn` (100-cell maximum reading width),
+`DetailTitle` (`accent2`, bold, wrapping), `DetailHeading` (`accent`, one-row section spacing),
+and `detailStatusColor`. Running/completed use `add`, failure/cancellation use `del`, required
+attention uses `warn`, and paused/waiting use `muted`. Labels accompany colors. No screen owns
+a separate copy of this presentation policy.
+Production: `packages/code/src/ui/patterns/detail-view.tsx`, consumed by `GoalView`, `PlanDetail`
+and `WorkflowsHub` in `packages/code/src/features/goal/view.tsx`,
+`packages/code/src/views/overlays/PlanOverlay.tsx`, and
+`packages/code/src/views/config/WorkflowsHub.tsx`.
+Test: `packages/code/tests/integration/plan-overlay-render.test.tsx` (wide and narrow detail),
+`packages/code/tests/integration/goal-commands.test.tsx`, and
+`packages/code/tests/integration/workflows-hub-render.test.tsx`.
+
+
+Execution detail footers use `detailCloseActions` in
+[detail-view.tsx](../../packages/code/src/ui/patterns/detail-view.tsx): Plan, Goal and direct Workflow
+roots group Escape with their own toggle key under the lowercase `close` label. Nested workflow
+pages retain a distinct Escape `back` action and Ctrl+X W `close`. Close actions share the escape
+group, priority and essential width-budget treatment. Plan uses the same footer filtering as the
+Goal and Workflow frames, omitting the global cancel/quit hint without disabling Ctrl+C.
+Production: `detailCloseActions`, `registerLevel` in
+[level-keys.ts](../../packages/code/src/ui/patterns/level-keys.ts), and `PlanOverlay` in
+[PlanOverlay.tsx](../../packages/code/src/views/overlays/PlanOverlay.tsx).
+Test: [level-footer-projection.test.ts](../../packages/code/tests/integration/level-footer-projection.test.ts)
+checks grouped aliases, escape metadata, narrow budgets and separate nested navigation;
+[plan-overlay-render.test.tsx](../../packages/code/tests/integration/plan-overlay-render.test.tsx)
+checks close and Ctrl+C behavior.
+
+
+Footer labels are lowercase at the shared `actionSegment` formatting boundary, including composer
+commands; full Help and screen titles retain their original casing.
+Production: [active-actions.ts](../../packages/code/src/ui/patterns/active-actions.ts), `actionSegment`.
+Test: [active-actions.test.ts](../../packages/code/tests/unit/active-actions.test.ts), lowercase footer
+labels without changing Help titles.
+
+Agents uses the same `DetailColumn`, `DetailTitle` and `DetailHeading` primitives for overview,
+prose and provenance pages. Its single-line `SelectableRow` entries do not expand on focus;
+configuration details open on demand. Routine runnable status is omitted; warnings and errors
+retain semantic colors. The shared `SettingRow` used by other settings panels is unchanged.
+Production: [AgentsPanel.tsx](../../packages/code/src/views/config/AgentsPanel.tsx)
+(`editorBody`, `sharedEditorBody`, `detailBody`).
+Test: [agents-panel-render.test.tsx](../../packages/code/tests/integration/agents-panel-render.test.tsx)
+(long prose navigation and narrow overview).
+
 ## 5. Invariants
 
 1. **INV-247 (owned).** Twelve specifically named source files
@@ -634,87 +680,5 @@ status line with `MEMORY_PRESSURE_STATUS_RESTORING` or `MEMORY_PRESSURE_STATUS_F
 
 ## 8. Open questions
 
-- **Why these exact mixing amounts** (0.16 for selection/focus and for the diff add/remove content
-  tint, 0.18 for the user band, 0.22/0.35 for scrollbar track/thumb, 0.28 for the diff gutters, 0.5
-  for the scrim) were chosen is not stated anywhere in the source or tests — they are simply the
-  constants in `surfaces.ts`/`syntax.ts` (§3 "`diffColorProps`'s 13-key shape"). The tests pin that
-  focus/selection are the *same* constant and that the user band is a *different, larger* one, but
-  never explain the specific numbers.
-- **Why `nudgeToAA`'s default `target` is 4.5 (WCAG AA) while the subagent ramp is only checked
-  against 3 (AA-large)** in `packages/code/tests/unit/theme-contrast.test.ts` is visible as two different call sites
-  using two different targets, but no comment or test name states the rationale for accepting a
-  lower bar specifically for the subagent ramp.
-- **Whether any caller can actually reach `quantize` with a `ColorDepth` value outside the closed
-  union** (e.g. via an `any`-typed boundary from JSON settings) is not settled by the source —
-  the function has no `default`/exhaustiveness-guard branch, relying entirely on the type system.
-- **The full settings/schema validation path for `ThemeConfig`** (whether a malformed `code.json`
-  `theme` block is rejected, coerced, or passed through as-is) lives in `adapters/code-config.ts` and
-  whatever schema layer sits above it — that file is read here only far enough to establish the
-  `ThemeConfig`/`ui.ascii` data shape (§3); its validation behavior is a sibling document's concern
-  (likely [hosts/code-settings-panels.md](code-settings-panels.md), though no file in this document's scope explicitly assigns
-  `code-config.ts` to that document).
-- **`MemoryPressureSnapshot`'s phase state machine** lives in `adapters/memory-pressure.ts` and is
-  specified in [hosts/code-run-host.md](code-run-host.md). This document only notes that blocked
-  admission reuses `Footer` status rather than a themed banner.
-- **Layout/keybinding mechanics `ThemeView.tsx` depends on** (`registerLevel`, `LevelHost`,
-  `bindLevelKeys`, `createFieldEditor`, the `Sub`-level push/pop navigation, `useTerminalDimensions`)
-  are `ui/patterns/**` and `views/config/view-host.tsx` concerns, explicitly delegated to
-  [hosts/code-keyboard.md](code-keyboard.md) per this document's scope statement — described here only as call sites,
-  not as mechanisms.
-- **Tree-sitter grammar loading** behind `filetypeFor`'s filetype ids (which grammars are bundled,
-  how `getTreeSitterClient`/`preloadParser` resolve a filetype id to an actual parser) is explicitly
-  delegated to [cross-cutting/build-and-ci.md](../cross-cutting/build-and-ci.md) and is not described beyond the extension→id mapping
-  table itself (`packages/code/src/theme/syntax.ts`).
-- No test in this document's scope directly exercises `theme/color.ts`'s `parseColor`/`hslToRgb`/`rgbToHsl`
-  round-trip **failure modes** beyond the one "garbage input" case in
-  `packages/code/tests/unit/theme-model.test.ts` (`parseColor` on `"not a color"`/`""`) — malformed but
-  partially-matching inputs (e.g. `rgb(999,999,999)`, `hsl(0,150%,50%)`) are clamped by `clampByte`
-  where the regex matches at all, but no test asserts this for the HSL percentage path specifically.
-- Memory-pressure presentation is a footer status owned by `App` and
-  `adapters/memory-pressure.ts`, not a themed banner in this file set.
-
-## Detail presentation
-
-Goal, Plan and Workflow detail screens share `DetailColumn` (100-cell maximum reading width),
-`DetailTitle` (`accent2`, bold, wrapping), `DetailHeading` (`accent`, one-row section spacing),
-and `detailStatusColor`. Running/completed use `add`, failure/cancellation use `del`, required
-attention uses `warn`, and paused/waiting use `muted`. Labels accompany colors. No screen owns
-a separate copy of this presentation policy.
-Production: `packages/code/src/ui/patterns/detail-view.tsx`, consumed by `GoalView`, `PlanDetail`
-and `WorkflowsHub` in `packages/code/src/features/goal/view.tsx`,
-`packages/code/src/views/overlays/PlanOverlay.tsx`, and
-`packages/code/src/views/config/WorkflowsHub.tsx`.
-Test: `packages/code/tests/integration/plan-overlay-render.test.tsx` (wide and narrow detail),
-`packages/code/tests/integration/goal-commands.test.tsx`, and
-`packages/code/tests/integration/workflows-hub-render.test.tsx`.
-
-
-Execution detail footers use `detailCloseActions` in
-[detail-view.tsx](../../packages/code/src/ui/patterns/detail-view.tsx): Plan, Goal and direct Workflow
-roots group Escape with their own toggle key under the lowercase `close` label. Nested workflow
-pages retain a distinct Escape `back` action and Ctrl+X W `close`. Close actions share the escape
-group, priority and essential width-budget treatment. Plan uses the same footer filtering as the
-Goal and Workflow frames, omitting the global cancel/quit hint without disabling Ctrl+C.
-Production: `detailCloseActions`, `registerLevel` in
-[level-keys.ts](../../packages/code/src/ui/patterns/level-keys.ts), and `PlanOverlay` in
-[PlanOverlay.tsx](../../packages/code/src/views/overlays/PlanOverlay.tsx).
-Test: [level-footer-projection.test.ts](../../packages/code/tests/integration/level-footer-projection.test.ts)
-checks grouped aliases, escape metadata, narrow budgets and separate nested navigation;
-[plan-overlay-render.test.tsx](../../packages/code/tests/integration/plan-overlay-render.test.tsx)
-checks close and Ctrl+C behavior.
-
-
-Footer labels are lowercase at the shared `actionSegment` formatting boundary, including composer
-commands; full Help and screen titles retain their original casing.
-Production: [active-actions.ts](../../packages/code/src/ui/patterns/active-actions.ts), `actionSegment`.
-Test: [active-actions.test.ts](../../packages/code/tests/unit/active-actions.test.ts), lowercase footer
-labels without changing Help titles.
-
-Agents uses the same `DetailColumn`, `DetailTitle` and `DetailHeading` primitives for overview,
-prose and provenance pages. Its single-line `SelectableRow` entries do not expand on focus;
-configuration details open on demand. Routine runnable status is omitted; warnings and errors
-retain semantic colors. The shared `SettingRow` used by other settings panels is unchanged.
-Production: [AgentsPanel.tsx](../../packages/code/src/views/config/AgentsPanel.tsx)
-(`editorBody`, `sharedEditorBody`, `detailBody`).
-Test: [agents-panel-render.test.tsx](../../packages/code/tests/integration/agents-panel-render.test.tsx)
-(long prose navigation and narrow overview).
+- `nudgeToAA` defaults to the 4.5 WCAG AA target while the subagent ramp is checked against 3 in `theme-contrast.test.ts`. Source and tests show the distinct thresholds but do not explain the lower subagent target.
+- The focused color tests reject wholly invalid input; they do not pin partial malformed RGB/HSL inputs that `parseColor` may clamp. A test or owner decision is needed to state a stable failure contract for those values.

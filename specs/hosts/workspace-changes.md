@@ -95,7 +95,8 @@ base is the empty tree computed with `hash-object -t tree` without `-w`. Untrack
 `git diff --no-index` against a controlled empty temp file; exit code 1 means differences.
 Headers are rewritten to the real path and `/dev/null`. Ignored files are excluded. A workspace
 subdirectory is confined to that prefix. Submodules appear as gitlink changes without recursive
-walks. External symlink targets are not read for untracked diffs.
+walks. External symlink targets are not read for untracked diffs. Rename detection uses
+`--find-renames=50%` and `diff.renameLimit=400`; these thresholds have no operator setting.
 
 Production: `createGitChangesProvider` in
 [git-changes-provider.ts](../../packages/kernel/src/workspace/git-changes-provider.ts).
@@ -157,7 +158,4 @@ The overlay remains discoverable and offers refresh. It never falls back to tran
 
 ## 8. Open questions
 
-- Explicit provider selection UI is unspecified until a second adapter exists.
-- Rename-detection thresholds other than Git's `--find-renames=50%` / `diff.renameLimit=400` are
-  not operator-configurable.
 - macOS Git probes need their own CI evidence; Linux is the pinned suite here.

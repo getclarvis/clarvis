@@ -91,7 +91,7 @@ ancestry. Do not squash or rebase those PRs. A `release/<major.minor.patch>` bra
 Prepare and commit its final product version before the first push. Open its PR into `main` to start candidates. Every new commit while that PR is open gets
 the next signed source-candidate tag (`v0.2.0-rc.1`, `v0.2.0-rc.2`, and so on); retries reuse the
 same commit tag. Candidates publish a source-repository prerelease; they do not publish stable installers. Use `hotfix/<version>` from the latest published tag for an urgent
-patch, target `main`, and include only the patch and its release preparation. Hotfixes must also reach
+patch, then stage the reviewed patch and its release preparation on `release/<patch-version>` for a PR into `main`. Hotfixes must also reach
 `develop` and any active release branch. Follow [RELEASING.md](RELEASING.md) for version preparation,
 qualification, and explicitly authorized publication. Merging a release-branch PR into `main`
 starts final publication automatically after CI passes on that exact merge commit. Stage hotfixes

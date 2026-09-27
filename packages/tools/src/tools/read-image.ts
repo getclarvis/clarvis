@@ -25,7 +25,7 @@ export const readImage: ToolDef = {
     "Read an image file and return it so a vision-capable model can view it. Supports PNG, JPEG, " +
     "GIF, and WebP. Rejects files that are not one of those formats, and files larger than the " +
     "image size limit. Use read_file for text; use this only for images. If you do not know the " +
-    "path, use glob or list_dir first.",
+    "path, use list_dir first or search through shell when available.",
   inputSchema: {
     type: "object",
     properties: {

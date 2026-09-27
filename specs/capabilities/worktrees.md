@@ -83,11 +83,11 @@ Test: `packages/code/tests/integration/worktree-bootstrap.test.ts`;
 ## 4. Immutable process scope
 
 Once selected, the canonical checkout becomes `CLARVIS_WORKSPACE_ROOT` and is used to construct the
-single file kernel. Sessions, settings, tools, plans, tasks, and traces are scoped to that workspace.
+single file kernel. Sessions, settings, tools, plans, and traces are scoped to that workspace.
 The Code host does not list or switch to other workspaces, and session resume/list/delete never
 searches sibling worktrees.
 
-Git-derived identity replaces the deleted registry: project identity hashes the common Git
+Git-derived identity binds the project to the common Git
 directory and workspace identity hashes the per-worktree Git directory. Outside Git, both identities
 fall back to the canonical workspace path.
 
@@ -101,7 +101,7 @@ Test: `packages/code/tests/integration/workspace-client-manager.test.ts`;
 `packages/kernel/tests/integration/file-kernel.test.ts`.
 
 
-## 6. Invariants
+## 5. Invariants
 
 1. **One process owns one canonical workspace for its entire lifetime.**
    Production: `packages/code/src/runtime.tsx`; `packages/code/src/adapters/workspace-client-manager.ts`.
@@ -119,14 +119,14 @@ Test: `packages/code/tests/integration/workspace-client-manager.test.ts`;
    Test: `packages/code/tests/integration/app-shell-render.test.tsx`;
    `packages/code/tests/integration/worktree-bootstrap.test.ts`.
 
-6. **A newly created branch starts from the commit at `HEAD` of the checkout Clarvis was started
+4. **A newly created branch starts from the commit at `HEAD` of the checkout Clarvis was started
    in; bootstrap neither fetches nor consults a remote default ref, and uncommitted changes are
    never copied. An existing `clarvis/<name>` branch is reused without reading `HEAD`.**
    Production: `sourceHeadCommit` and `bootstrapWorktree` in
    `packages/code/src/bootstrap/worktree.ts`.
    Test: `packages/code/tests/integration/worktree-bootstrap.test.ts`.
 
-7. **Every newly created checkout is nested under the primary worktree's ignored
+5. **Every newly created checkout is nested under the primary worktree's ignored
    `.clarvis/worktrees/` root.**
    Production: `ensureWorktreeIgnore` and `bootstrapWorktree` in
    `packages/code/src/bootstrap/worktree.ts`; `worktreeCheckoutRoot` and `ensureWorkspaceDir` in
@@ -134,7 +134,7 @@ Test: `packages/code/tests/integration/workspace-client-manager.test.ts`;
    Test: `packages/code/tests/integration/worktree-bootstrap.test.ts`;
    `packages/paths/tests/integration/ensure.test.ts`.
 
-## 7. Failure behavior
+## 6. Failure behavior
 
 | Failure | Result |
 | --- | --- |
@@ -146,7 +146,7 @@ Test: `packages/code/tests/integration/workspace-client-manager.test.ts`;
 | `HEAD` names no commit and no `clarvis/<name>` branch exists to reuse | startup fails before preparing the destination; no branch, checkout, or nested directory is created |
 | Exit cleanup observes pending changes or Git refuses removal | checkout and branch remain; a diagnostic records failure |
 
-## 8. Dependency seams
+## 7. Dependency seams
 
 There is no `@clarvis/worktrees` package. Launch and confirmed-exit cleanup orchestration belong to
 Code, durable identity to Kernel, and paths and ignore protection to `@clarvis/paths`.

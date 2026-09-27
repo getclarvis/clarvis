@@ -177,7 +177,7 @@ existing-provider path. The retained real-PTY evidence selected no login action,
 that both safe picker rows render and resize correctly. No live login, refresh, entitlement,
 inference, billing, or packaged-artifact
 canary is retained in this repository. Such canaries require provider-approved eligible accounts and
-may record only status and a one-way account hash. No no-secret picker transcript is retained in this
+may record only status and a one-way account hash. No secret-free picker transcript is retained in this
 repository.
 
 ## 7. Model calls and billing
@@ -194,7 +194,7 @@ Provider-issued reasoning parts
 remain on assistant history for a tool round trip. Entitled catalog effort levels are retained in
 the configured model entry by `addModelFromCatalog`; `supportedReasoningEfforts` prefers that saved
 metadata, and `buildCallTuning` sends the selected effort through the OpenAI Responses provider
-option for both subscription kinds. For a legacy configured model without saved levels,
+option for both subscription kinds. For a configured model without saved levels,
 `EffortView` obtains only the authenticated entitled catalog; it never substitutes public-catalog
 metadata (`packages/code/src/features/providers/controller.ts`,
 `packages/code/src/adapters/effort-levels.ts`,
@@ -217,8 +217,7 @@ previous durable prefix.
 Every subscription HTTP request that carries a Clarvis user agent uses `clarvis/<root product
 version>`. ChatGPT entitled-catalog discovery separately uses the adapter-owned Codex compatibility
 revision `0.153.2` as `client_version`: the service treats this query as a minimum-client feature
-gate, while sending Clarvis's then-current unrelated `0.0.1-beta` product version returned a
-successful empty catalog. Visible API-supported models are projected with their published reasoning
+gate independently of the Clarvis product version. Visible API-supported models are projected with their published reasoning
 levels; unrelated provider metadata does not suppress them or cross the protocol boundary. Production: `VERSION`,
 `PRODUCT_USER_AGENT`, and `OPENAI_CODEX_CLIENT_VERSION` in
 `packages/kernel/src/subscriptions/openai-codex.ts`, plus `PRODUCT_USER_AGENT` in
@@ -268,14 +267,14 @@ Test: manager, adapter, LLM error, and public-contract tests cited above.
 
 ## 9. Explicit exclusions
 
-Remote server authentication, browser cookies, copied CLI state, installed CLI subprocesses,
-multi-account aliases, and browser PKCE callbacks are outside this phase. Browser login
-may be added later only with provider-registered S256 PKCE and exact loopback callback validation.
+Subscription authentication uses the device flow and host-owned credentials. It does not consume
+remote server authentication, browser cookies, copied CLI state or installed CLI subprocesses,
+and exposes neither multi-account aliases nor browser PKCE callbacks.
 
 ### Per-instance affinity and replay
 
 ChatGPT derives `session-id` from SHA-256 of the same composed session/agent key sent as
-`prompt_cache_key`. Its existing `x-client-request-id` semantics remain unchanged; physical attempt
+`prompt_cache_key`. `x-client-request-id` retains its request identity; physical attempt
 numbering belongs to the qualification harness. Credentials stay in the host resolver.
 Production: [`createOpenAICodexAdapter`](../../packages/kernel/src/subscriptions/openai-codex.ts).
 Test: [`provider-request-shape.test.ts`](../../packages/llm/tests/integration/provider-request-shape.test.ts).

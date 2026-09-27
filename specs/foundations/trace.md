@@ -69,7 +69,7 @@ Test: `replays a stable active journal prefix through the existing visibility bo
 
 | Symbol | Kind | File | What it is |
 | --- | --- | --- | --- |
-| `BUILTIN_TRACE_KINDS` | const tuple, 39 entries | `packages/capability/src/trace-kinds.ts` | the runtime source of truth for engine-declared kinds |
+| `BUILTIN_TRACE_KINDS` | const tuple | `packages/capability/src/trace-kinds.ts` | the runtime source of truth for engine-declared kinds |
 | `BuiltinTraceKind` | type | `packages/capability/src/trace-kinds.ts` | `(typeof BUILTIN_TRACE_KINDS)[number]` |
 | `TraceKind` | type | `packages/capability/src/trace-kinds.ts` | open union: builtin or `(string & {})` |
 | `TraceDetailMap` | interface | `packages/capability/src/trace-kinds.ts` | kind → detail type, one entry per builtin kind |
@@ -79,8 +79,8 @@ Test: `replays a stable active journal prefix through the existing visibility bo
 | `isBuiltinTraceEntry` | fn | `packages/capability/src/trace-kinds.ts` | narrows a `TraceEntry` against the kind set |
 | `isBuiltinTraceKind` | fn | `packages/capability/src/trace-kinds.ts` | narrows a bare string |
 | `RecordingTrace` | interface | `packages/capability/src/trace-kinds.ts` | `{ entries: TraceEntry[] }` |
-| `BuiltinTraceEvent` | type | `packages/capability/src/trace-events.ts` | closed union of 33 flat, absolute-time wire events |
-| `BUILTIN_TRACE_EVENT_TYPES` | const tuple, 33 entries | `packages/capability/src/trace-events.ts` | the runtime list for `isBuiltinTraceEvent` |
+| `BuiltinTraceEvent` | type | `packages/capability/src/trace-events.ts` | closed union of flat, absolute-time wire events |
+| `BUILTIN_TRACE_EVENT_TYPES` | const tuple | `packages/capability/src/trace-events.ts` | the runtime list for `isBuiltinTraceEvent` |
 | `ContributedTraceEvent` | interface | `packages/capability/src/trace-events.ts` | `{ type: string; occurred_at: number; detail: unknown }` |
 | `PersistedContributedTraceEvent` | interface | `packages/capability/src/trace-events.ts` | `{ type: string; [field: string]: unknown }` |
 | `TraceEvent` | type | `packages/capability/src/trace-events.ts` | union of the three above |
@@ -109,13 +109,13 @@ Two detail shapes are published but **not** in `BUILTIN_TRACE_KINDS`: `PlanRevie
 states the reason directly: "`plan_review` is a kind the planning capability records, not one the
 engine does. The shape stays published so the capability and any host that renders it agree on one
 definition rather than two." The kind-level exclusion is directly verifiable against the closed
-37-entry `BUILTIN_TRACE_KINDS` array (`packages/capability/src/trace-kinds.ts`), which contains neither string, but
+`BUILTIN_TRACE_KINDS` array (`packages/capability/src/trace-kinds.ts`), which contains neither string, but
 that exclusion has no test of its own. What
 `packages/capability/tests/unit/open-vocabularies.test.ts` actually pins is the sibling,
 downstream claim — that `BUILTIN_TRACE_EVENT_TYPES` (the *mapped*-event vocabulary; see its own row
 below) also excludes both `"plan_review"` and `"task_nudge"`.
 
-#### The 37 `BUILTIN_TRACE_KINDS`, paired with their `TraceDetailMap` entry
+#### `BUILTIN_TRACE_KINDS`, paired with their `TraceDetailMap` entry
 
 The recording-side vocabulary, one row per entry of `BUILTIN_TRACE_KINDS` (`packages/capability/src/trace-kinds.ts`) and
 its paired detail type from `TraceDetailMap`; `init`/`terminate` carry no structured
@@ -133,6 +133,7 @@ once, in one place.
 | `subagent_iteration_started` | `SubagentIterationStartedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_call` | `ToolCallDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_call_started` | `ToolCallStartedDetail` | `packages/capability/src/trace-kinds.ts` |
+| `tool_call_announced` | `ToolCallAnnouncedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `approval_requested` / `approval_resolved` | `ApprovalRequestedDetail` / `ApprovalResolvedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `execution_policy_result` / `execution_attempt` | `ExecutionPolicyResultDetail` / `ExecutionAttemptDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_output_delta` | `ToolOutputDeltaDetail` | `packages/capability/src/trace-kinds.ts` |
@@ -195,8 +196,8 @@ and `physical completion removes a yielded shell's stop control` in
 
 `ToolCallDetail.result_digest` and the persisted `tool_call.result_digest` are the SHA-256 of the
 complete result before `RESULT_MAX` abbreviates its display copy. `createTrace` computes the digest
-before capping; `mapEntry` carries it and only derives a compatibility digest when a direct legacy
-entry bypassed the recorder. The digest attests bytes but does not expose or reconstruct omitted
+before capping; `mapEntry` carries it and derives a digest for a direct entry that bypassed the
+recorder. The digest attests bytes but does not expose or reconstruct omitted
 content. Production: `createTrace` in
 [in-memory-trace.ts](../../packages/trace/src/in-memory-trace.ts) and the `tool_call` mapping in
 [trace-mapper.ts](../../packages/trace/src/trace-mapper.ts). Test: `createTrace capping` in
@@ -219,7 +220,7 @@ capability for one live builtin shell invocation. `ToolCallDetail.interruption` 
 `{ source: "operator" }` cause on a selectively interrupted terminal with a non-null error
 (`ok: false` in the public run event). Caps and mapping preserve these fields without deriving
 identity from arguments. The terminal closes the live capability; persisted tokens cannot authorize
-another run. Old events omit both fields and retain their previous semantics. Recovery of an open
+another run. Recovery of an open
 call synthesizes an operational failure without `interruption` or a new control.
 Production: [trace-kinds.ts](../../packages/capability/src/trace-kinds.ts), `ToolCallStartedDetail` and
 `ToolCallDetail`; [trace-mapper.ts](../../packages/trace/src/trace-mapper.ts), `mapEntry`;
@@ -255,6 +256,7 @@ supervision kinds (which map to `null`, never becoming a wire event) corresponds
 builtin kind above, so the two vocabularies differ only by those unmapped kinds:
 
 `lead_iteration`, `delegation_created`, `subagent_iteration`, `tool_call`, `tool_call_started`,
+`tool_call_announced`,
 `tool_output_delta`, `tool_control_released`, `tool_input_delta`, `subagent_iteration_started`, `lead_iteration_started`,
 `delegation_completed`, `delegation_failed`, `budget_check`, `compaction_started`, `compaction`, `compaction_skipped`,
 `cancellation`, `user_question`, `user_steering`, `soft_limit_check`,
@@ -413,11 +415,9 @@ activation. Neither the model request nor the agent identity controls this field
 for public or internal operations. Kernel services and ordinary engine dependencies use the public
 view; housekeeping and diagnostics retain the physical store.
 
-The pre-release format change rejects unclassified legacy record bodies, ignores unclassified
-summary sidecars in favor of a classified full record, and quarantines journals from earlier
-versions. No missing-field fallback turns a new or old payload into a public execution. Existing
-pre-feature state may be removed through the ordinary retention/deletion paths; this change adds
-no migration or compatibility reader.
+The store rejects unclassified record bodies, ignores unclassified summary sidecars in favor of a
+classified full record, and quarantines journals without a supported visibility field. No
+missing-field fallback turns a payload into a public execution.
 
 Production: `ExecutionVisibility` in [trace-events.ts](../../packages/capability/src/trace-events.ts),
 `assertExecutionVisibility` in [visibility.ts](../../packages/trace/src/visibility.ts), and
@@ -481,7 +481,7 @@ records pid+host so a peer can ask whether the writer is alive.
 `host_metadata`, when supplied, passes through the same `sanitizeDeep` boundary and is recovered
 without interpretation (`packages/trace/src/journal.ts`,
 `packages/trace/src/journal-recovery.ts`). The file kernel uses it for extension
-Extension Profile identity; that shape is owned by [`hosts/extension-profiles.md`](../hosts/extension-profiles.md).
+Profile identity; that shape is owned by [`hosts/extension-profiles.md`](../hosts/extension-profiles.md).
 
 Every subsequent line is one `JSON.stringify(event)` of a **mapped** `TraceEvent` — the same
 object `mapEntry` produced, already rebased, capped and sanitized. A `null` mapping is skipped. Header + one line per appended event pinned at
@@ -583,13 +583,11 @@ Mechanics inside the builtin branches:
   Pinned at `packages/trace/tests/unit/trace-mapper.test.ts`.
 - `asObject` coerces a non-object `arguments`. `undefined` → `{}`; anything else is
   stringified and preserved under `malformed_arguments`, tail-capped at `ARGS_MAX`. The
-  comment states the failure this replaced: "the persisted trace asserted the model sent
-  no arguments when it had sent a payload that was cut in transit." Pinned at
+  fallback preserves evidence of malformed input. Pinned at
   `packages/trace/tests/unit/trace-mapper.test.ts`.
 - Every builtin branch calls `capDetail` again (…). The comment
   calls it "a defence-in-depth pass for an entry that reached persistence without going through
-  `createTrace`"; pinned by `packages/trace/tests/unit/trace-mapper.test.ts` ("bounds a legacy task that bypassed the
-  recording handle").
+  `createTrace`"; pinned by `packages/trace/tests/unit/trace-mapper.test.ts` (direct-entry bound).
 - Optional fields are attached only when defined (throughout), so an absent value
   never becomes explicit `undefined`. Pinned across
   `packages/trace/tests/unit/trace-mapper-kinds.test.ts`.
@@ -955,7 +953,7 @@ event gets `{ span_id: "run", phase: "point", kind: "event" }`. Then:
 | `delegation_created` / `_started` / `_completed` / `_failed` | `delegation:<id>` | start / point / end / end | `subagent` |
 | `tool_call_started` | `call_id` | start | `tool` |
 | `approval_requested` / `approval_resolved` / `execution_policy_result` / `execution_attempt` | `call_id` | point | `tool` |
-| `tool_output_delta` / `tool_control_released` / `tool_input_delta` | `call_id` | point | `tool` |
+| `tool_output_delta` / `tool_control_released` / `tool_input_delta` / `tool_call_announced` | `call_id` | point | `tool` |
 | `tool_call` | `call_id ?? "<agent>:<iteration_ref>:tool"` | end | `tool` |
 | `model_reasoning` / `model_stream_delta` / `model_call_error` / `model_call_retry` | iteration span | point | `iteration` |
 | `user_question` / `user_steering` | iteration span from `iteration_ref` | point | `iteration` |
@@ -1322,7 +1320,7 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
 - `@clarvis/trace` never imports `@clarvis/loop`. `packages/mcp-client/src/index.ts` describes this
   as "the same one `@clarvis/trace` draws", and `packages/supervision/src/index.ts` names it too —
   but **no test in `packages/trace`** was found to enforce it, unlike `@clarvis/capability`'s
-  self-import test (`packages/capability/tests/architecture/self-import.test.ts`). See §8.
+  self-import test (`packages/capability/tests/architecture/self-import.test.ts`).
 - The vocabulary/implementation split is forced by the *type* direction: `TracePort` lives in
   `capability` (`packages/capability/src/ports.ts`) and `TraceHandle` merely `extends` it
   (`packages/trace/src/trace-handle.ts`), so a capability records without knowing this package
@@ -1348,50 +1346,6 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
 - **Atomic writes, leases and `ownerSegment`** — the `@clarvis/paths` document. This spec cites their
   entry points but does not restate their semantics.
 
-## 8. Open questions
-
-- **`agent_finish_nudge` is unpinned.** `packages/trace/src/trace-mapper.ts` maps it to `null`,
-  but the parametrised test at `packages/trace/tests/unit/trace-mapper-kinds.test.ts` lists only
-  `init`, `terminate`, `agent_registered`, `agent_stopped`, `agent_steered`. Removing
-  `agent_finish_nudge` from that `case` list would not fail the suite — the compile-time
-  exhaustiveness guard would then reject it only if it also lost every other branch, and it
-  would in fact fall into `default` and fail `tsc`. So the *compiler* catches deletion; nothing
-  catches it being moved into a projecting branch that mints a wire event.
-- ~~**"`capDetail` is the only cap table" has no test.** The rule is stated at
-  `packages/trace/src/cap-detail.ts`, but nothing fails if `trace-mapper.ts` grows a second,
-  differing bound — and the doc at `packages/trace/src/cap-detail.ts` explains precisely that double-capping at two
-  different maxima "leaves a mangled marker".~~ **Resolved** in
-  `packages/trace/tests/architecture/package-boundary.test.ts`: exactly that — declaring a second
-  `RESULT_MAX` in `trace-mapper.ts` now fails. The discriminating detail is that only **character**
-  caps count. A record-size limit or a list page cap is a different kind of number — exceeding one is
-  refused or paged, never silently shortened — so a first attempt matching any `MAX` flagged the
-  store's byte and list bounds and had to be narrowed.
-- ~~**No architecture test enforces `@clarvis/trace` not importing `@clarvis/loop`.**~~ **Resolved:**
-  `packages/trace/tests/architecture/package-boundary.test.ts` now scans `src` **and**
-  `tests`, alongside the manifest check. Both trees, because a `devDependency` import from `src`
-  type-checks and bundles while the manifest still looks clean, and a test reaching for a fixture from
-  a package above is a cycle no build, install or consumer ever sees. Two things had to be right, both
-  found by the test failing: the scanning file must exclude itself, since its fixture necessarily
-  contains the forbidden import forms; and that fixture must build each specifier by concatenation,
-  because `@clarvis/loop` runs a mirror scan over its own dependencies and a literal
-  `from "@clarvis/…"` inside a string is indistinguishable from the real thing to a line matcher.
-  Adding the suite also exposed that `packages/trace/package.json` enumerated its test directories and
-  would never have run a new `tests/architecture` level — caught by **knip**, not by the suite.
-- **`JournalHeader.v` accepts any number, but every reader rejects any mismatch.** The field type is a
-  plain `number` (`packages/trace/src/journal.ts`), yet `parseHeader` in
-  `packages/trace/src/journal-recovery.ts` and the reader in `packages/trace/src/journal-reader.ts`
-  both refuse any `v !== JOURNAL_VERSION`, so a hypothetical `v: 0` has no reader and the code does
-  not say what an older version's line shape would be.
-- **`writeGenerationState` is not itself under the delete lease on the `ensureActiveGeneration` path's
-  first read.** `packages/trace/src/json-trace-store.ts` reads state before acquiring the
-  lease, and the correctness argument is stated in prose rather than checked. Whether the
-  intervening window is closed by the subsequent re-read is a claim traceable through the
-  source but unconfirmed as the intent.
-- **Rationale is absent almost everywhere it matters.** The doc comments quoted above give *stated*
-  reasons for the `.summary` suffix, the `.seq` guard, the journal's lack of `fsync`, the retention-vs-
-  grace split, and the `malformed_arguments` preservation. For the rest — the specific numeric values
-  of `RESULT_MAX`, `ARGS_MAX`, `DETAIL_MAX_ENTRIES`, `MAX_TRACE_RECOVERY_JOURNALS`, `TMP_ORPHAN_GRACE_MS`
-  — the code states the mechanism and not the derivation, and none is invented here.
 ## Visibility views and physical identity
 
 `TraceStore` backends attest native filtering with `visibilityQueries: true`. Query methods accept
@@ -1418,3 +1372,13 @@ Test: mixed pages, namespace conflicts, context replacement, deletion and retent
 [trace-store-conformance.ts](../../packages/trace/tests/contract/physical/trace-store-conformance.ts), quarantine
 and internal recovery in [visibility.test.ts](../../packages/trace/tests/integration/visibility.test.ts),
 and in-flight cross-view conflict in [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).
+
+## 8. Open questions
+
+- `agent_finish_nudge` is mapped to no persisted event by
+  `packages/trace/src/trace-mapper.ts`. The compiler pins the event kind, but
+  `packages/trace/tests/unit/trace-mapper-kinds.test.ts` does not assert that this kind
+  remains live only; moving it into a persisted projection would not fail that test.
+- `ensureActiveGeneration` reads generation state before acquiring the delete lease in
+  `packages/trace/src/json-trace-store.ts`. The subsequent re-read may close the race,
+  but the intended correctness argument and a targeted concurrent test are absent.

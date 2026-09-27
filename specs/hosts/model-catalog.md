@@ -71,7 +71,7 @@ configuration surface), and again as `parseModelRef` from `@clarvis/capability`
 | `ModelCatalog` | `{ providers[], source: "cache"\|"bundle" }` |
 | `ModelCatalogService` | Public Models.dev `get`/`refresh` plus authenticated `getEntitled`/`refreshEntitled` per subscription scheme |
 
-`ModelCatalogService` is one of the fifteen services a `KernelClient` aggregates
+`ModelCatalogService` is a service a `KernelClient` aggregates
 (`packages/protocol/src/client.ts`; `packages/kernel/src/kernel.ts`), constructed at kernel
 boot as `createModelCatalogService(globalDir, logger)` (`packages/kernel/src/kernel.ts`) and
 exposed over the transport under operation key `models`
@@ -121,8 +121,8 @@ exposed over the transport under operation key `models`
 `packages/kernel/src/data/models-dev.json` is **already** in projected `CatalogData` shape (not raw
 models.dev JSON): `{ "source": "https://models.dev/api.json", "providers": { <id>: {...} } }`.
 The snapshot itself is authoritative for its changing provider/model inventory; this specification
-does not duplicate counts, ordering, model ids, prices, or release dates. Interactive first boot no
-longer parses or projects the snapshot; the catalog crosses an explicit on-demand boundary in
+does not duplicate counts, ordering, model ids, prices, or release dates. Interactive first boot
+defers catalog loading to an on-demand boundary in
 `packages/code/src/runtime.tsx` (`ensureModelsCatalog`).
 
 ### 3.2 On-disk schema (Zod, `packages/kernel/src/models/model-catalog.ts`)
@@ -184,7 +184,9 @@ Given the **raw** live models.dev payload (a record keyed by provider id, each w
 - Reads `reasoning_efforts` only from a `reasoning_options` entry whose `type === "effort"`, taking
   its `values` array filtered to strings — a `budget_tokens`-typed option is ignored.
 - Resolves `base_url` from the payload's own `api` field, else from the maintained
-  `KNOWN_BASE_URL[providerId]` mapping.
+  `KNOWN_BASE_URL[providerId]` mapping. That mapping supplies fixed URLs absent from models.dev for
+  selected OpenAI-compatible providers; an unlisted provider remains usable when the operator
+  supplies its `base_url` (`packages/kernel/src/models/model-catalog.ts`).
 - A non-object provider value (`"badprovider": "not-an-object"`) still produces a provider record
   with `kind: "openai-compatible"`, empty `models: {}`, `name` falling back to the provider's own id
   — pinned by test `packages/kernel/tests/integration/model-catalog.test.ts`.
@@ -370,13 +372,8 @@ The provider-kind gate is deliberately independent of model names: native OpenAI
 Grok and catalog-derived OpenAI-compatible models stay provider-managed implicit even when
 `cache_write > 0`. An explicitly authored OpenAI-compatible provider remains an operator escape
 hatch because this derivation is called **once, at model-configuration time** in the TUI's providers controller
-(`packages/code/src/features/providers/controller.ts`, inside `addModelFromCatalog`), not per
-run — and the kernel deliberately exports no per-request equivalent at all: a dedicated test,
-`packages/kernel/tests/unit/prompt-cache-mode.test.ts` (describe `nothing on the run path
-consults the catalog`), asserts `kernel.withPromptCacheModes` and `kernel.resolvePromptCacheModes`
-are both `undefined` on the module's export surface while `derivePromptCacheMode` itself remains a
-function — i.e. the absence of a run-path stamping helper is a pinned architectural choice, not an
-unwritten feature. The resulting `prompt_cache` value is written into `settings.json`'s model entry
+(`packages/code/src/features/providers/controller.ts`, inside `addModelFromCatalog`). The resulting
+`prompt_cache` value is written into `settings.json`'s model entry
 (`context_window_tokens`, `max_output_tokens`, `capabilities`, `prompt_cache`) by
 `packages/code/src/features/providers/controller.ts` and only overwritten if not already set when a
 "fill from catalog" action runs
@@ -629,10 +626,10 @@ against the real bundled catalog); also independently exercised by
 `"unknown"`.
 Production: `packages/kernel/src/models/model-catalog.ts`.
 Test: `packages/kernel/tests/unit/prompt-cache-mode.test.ts` (describe block
-`derivePromptCacheMode: what a configured model should store`), including ("caps explicit
-on openai-compatible ONLY", asserting `implicit` for openai-compatible and `explicit` for every other
-kind on the same priced cost), the bundled `openai/gpt-5.6-sol` price deriving `"explicit"` for
-`openai-codex`, the bundled `xai/grok-build-0.1` read price deriving `"implicit"` for `xai-grok`, (`derivePromptCacheMode(undefined, "anthropic")` and
+`derivePromptCacheMode: what a configured model should store`), including the priced-cost gate
+that yields `"explicit"` only for Anthropic and `"implicit"` for every other provider kind,
+the bundled `openai/gpt-5.6-sol` price deriving `"implicit"` for `openai-codex`, the bundled
+`xai/grok-build-0.1` read price deriving `"implicit"` for `xai-grok`, (`derivePromptCacheMode(undefined, "anthropic")` and
 `derivePromptCacheMode({}, "openai-compatible")` both `toBeUndefined()`).
 
 **INV-MC-3.** For the run's entry agent, `merged.default_model` (and `default_reasoning_effort`)
@@ -819,35 +816,11 @@ catalog case).
   validation and per-agent provider resolution inside the loop, outside this document's scope.
 ## 8. Open questions
 
-- **Where `settings-assembler.ts`'s "no model resolves → invalid_request" throw is pinned by test**
-  has no identified assertion in `packages/kernel/tests/integration/settings-assembler.test.ts`
-  (the file is long; the effort-unset sibling case is present, but the model-missing
-  throw itself is not confirmed against a specific assertion in scope). INV-MC-4's second half is
-  therefore recorded as **plausible but not directly re-verified against an explicit
-  `expect(...).toThrow`**.
-- ~~**The rationale for the `KNOWN_BASE_URL` table's specific 7 entries**~~ **Resolved: the question
-  was the wrong one.** The table is a gap-filler, not a registry, and membership is not an
-  endorsement — every entry is an OpenAI-compatible provider whose base URL models.dev does not carry,
-  supplying the one value a user cannot reasonably be asked for, since it is fixed per provider and
-  getting it wrong produces an authentication failure rather than a legible error. A provider absent
-  from the table works exactly as before, with the operator setting `base_url` themselves, which is
-  what keeps the list from needing to be complete
-  (`packages/kernel/src/models/model-catalog.ts`).
-- **Whether `ProvidersPanel.tsx` and `AgentsPanel.tsx`
-  themselves (as opposed to their use of `CatalogPicker`/`pick-model.ts`) belong to this document**
-  is ambiguous from the document boundary text; this spec describes their catalog-picker usage as a
-  coupling point only and defers their own behavior (headers/body editing, key sources, agent
-  overlay editing) to whichever document owns those panels.
-- **The precise reasoning behind moving `prompt_cache` derivation from per-run to
-  per-configuration** (the "used to be stamped per run request inside the kernel" remark at
-  `packages/kernel/src/models/model-catalog.ts`) is stated in the source doc-comment itself, not
-  inferred, so it is included in §4.8 as a direct citation rather than as speculation.
-  `packages/kernel/tests/unit/prompt-cache-mode.test.ts` (§4.8) does mechanically pin the *absence* of the two named
-  helpers the old architecture used (`withPromptCacheModes`, `resolvePromptCacheModes`), but it would
-  not catch a differently-named per-request stamping helper reintroduced under a new name — so the
-  design decision is documented and narrowly enforced by name, not structurally prevented.
-- **INV-MC-14's sort-order-independence half** (a same-`kind` provider's `fill()` hit wins over a
-  cross-kind provider's even when the cross-kind provider sorts earlier by id) is true by
-  construction of `[...sameKind...list]` (`packages/kernel/src/models/model-catalog.ts`), but no located test constructs
-  the actual counter-example — two providers carrying the same model id, with the same-kind one
-  sorting after the cross-kind one — so this is verified from the source, not by test evidence.
+- A focused `settings-assembler.test.ts` assertion is needed for an entry agent with neither
+  `model` nor `default_model`. `profileFromRecord` in
+  `packages/kernel/src/runs/settings-assembler.ts` throws `invalid_request`; existing tests
+  cover a catalog miss and an unset sub-agent model with a default, not this branch.
+- A focused `model-catalog.test.ts` fixture is needed to pin same-kind `fill()` precedence when
+  a cross-kind provider with the same model id sorts first. `fill` in
+  `packages/kernel/src/models/model-catalog.ts` searches the same-kind list first; existing tests
+  cover only fallback when that list misses.

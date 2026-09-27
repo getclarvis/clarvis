@@ -1,7 +1,7 @@
 # The plan Markdown document, revisions, CAS and the repository
 
 > Implemented at `packages/plan/src/**` and `packages/plan/tests/**`. Every claim below is anchored
-> to a file and line. Open questions are collected in the final section.
+> to a file and named symbol or test. Open questions are collected in the final section.
 
 ## 1. Purpose
 
@@ -503,8 +503,7 @@ allocates a bounded buffer, and re-`stat`s the descriptor afterwards — a chang
 `fsyncDir()`; any failure unlinks the temp file and rethrows. Pinned "no `.tmp` left
 behind" at `packages/plan/tests/integration/file-repository.test.ts`.
 
-**Directory fsync — `fsyncDir`.** Swallows an open/sync failure **only** when
-it propagates. This behavior is pinned
+**Directory fsync — `fsyncDir`.** An open/sync failure propagates. This behavior is pinned
 with the platform explicitly redefined rather than assumed
 (`packages/plan/tests/integration/file-repository.test.ts`). This `fsyncDir` is a **second,
 independent** function of the same name, local to this module — not the one `@clarvis/paths` exports,
@@ -731,94 +730,13 @@ conformance table against Markdown and in-memory stores.
 
 ## 8. Open questions
 
-- **Rationale.** Almost none of the *why* is recoverable from the source. Where a reason is stated in
-  the code it is prose in a TSDoc comment, not behaviour, and only the machine-checkable parts are
-  quoted. Specifically the source does not establish: why `spec_digest` covers exactly
-  `{objective, context, tasks[id,title,detail,exit], validation}` and not, say, `title`; why
-  `MAX_PLAN_TASKS` is 256; why `LOCK_ATTEMPTS` is 1000 rather than any other number beyond the
-  comment's assertion that 200 was exhausted by 24 concurrent writers on a CI runner
-  (`packages/plan/src/file-repository.ts`).
-- ~~**Apparently unreachable branch.**~~ **Resolved and removed.** In `file-repository.list`, the
-  byte-budget return used to emit `next_cursor` only when its captured cursor was defined. Reaching
-  that return requires `records.length > 0`, and the cursor is `undefined` only at index 0 of the
-  first window, where `records.length` is still 0 — so the `undefined` arm was unreachable. It now
-  asserts the invariant instead of branching on it, with the reasoning on the local's own
-  TSDoc.
-- ~~**Misfiled as an ambiguity — this is a bounded, non-corrupting defect in `hasMore`.**~~
-  **Resolved: the look-ahead is now the filtered one.** The two unfiltered probes are gone —
-  `hasMoreInWindow` and the one-entry `filenameWindow(before, 1)` scan both treated a bare *filename*
-  as evidence of "more", though a filename carries neither `status` nor `retention` (they live in the
-  frontmatter, unread at that point), so a `next_cursor` could be attached to a page whose one
-  remaining file fails the filter on the very next call. The limit check moved **above** the push
-  (`packages/plan/src/file-repository.ts`): the scan continues past a full page and returns a
-  cursor at the first record that both matches the filters and does not fit, so the cursor is only
-  ever issued from a position proven to carry a matching record. When no such record remains, the
-  loop reaches its ordinary exhaustion branches and returns with no cursor at all.
-  `filenameWindow`'s `windowSize` parameter went with the probe — nothing passed it a non-default
-  value any more, and an unreachable parameter is the same "signature promising more than the
-  implementation does" the two entries above were about. The cost is real and was accepted: with no
-  filters the scan now parses one extra plan where it used to list one extra filename, and an
-  adversarial run of filtered-out files at the tail is walked rather than guessed at. That walk is
-  the only correct answer to the question — it is what "is there a next page" means once a filter
-  exists. Pinned in both directions, full page and partial, at
-  `packages/plan/tests/integration/file-repository.test.ts`; the conformance case
-  (`packages/plan/src/testing.ts`) still asserts only that the *current* page is not short.
-- ~~**Genuinely ambiguous, sharpened: a cursor from one adapter fed into another does not error — it
-  silently produces a wrong page.**~~ **Resolved.** The diagnosis held exactly as written:
-  `assertPlanLocator` checked only length, so an in-memory record id passed it and was then compared
-  lexically against filenames — a deterministic but meaningless partition point — while the reverse
-  direction resolved an unrecognised cursor through `findIndex(...) + 1`, which is `0`, silently
-  restarting the page. The entry's own reason for leaving it open was that no caller swaps adapters
-  under a live cursor, and that is still true of the two it named. It is **not** true of the pair it
-  did not consider: `createInMemoryPlanRepository` is exported only from `@clarvis/plan/testing`, so
-  file-versus-memory really is unreachable, but file-versus-**provider** is reachable in production
-  across a `PlanFactory` settings change. That is what settled it.
-
-  Every cursor now carries the tag of the dialect that minted it (§3.6), so a foreign one raises
-  `PlanCursorError` naming the two dialects — and never echoing the payload, which can be a filename.
-  The rejection is driven from the conformance harness rather than a per-adapter test, so a backend
-  added later is covered without touching the case. Two of the fix's details are worth keeping: the
-  error extends `RangeError`, because `assertPlanLocator` already threw `RangeError` on this exact
-  argument and any existing handler keeps working while the distinct `name` still discriminates; and
-  it is registered in `EXPECTED_PLAN_TOOL_ERRORS` and mapped to `invalid_request` at the kernel
-  boundary, because a stale cursor is an ordinary model or caller mistake and had otherwise logged at
-  ERROR with a stack, and reached a protocol client as an internal Clarvis defect.
-
-  What was deliberately **not** done: making a correctly tagged cursor whose plan has since been
-  deleted an error. That is a race rather than a dialect defect, the two adapters answer it
-  differently on purpose, and §3.6 records the divergence.
-
-- **Resolved: `limit` clamping is the adapter's job, and `PlanRecordQuery.limit`'s JSDoc ("clamped to
-  1–100 **by the caller**", `packages/plan/src/repository.ts`) is simply wrong about who does it.**
-  Tracing every call site between a `.list()` caller and `PlanRepositoryTx.list` in this repository —
-  `PlanStore.list` (`packages/plan/src/store.ts`, forwards `input` unchanged),
-  `PlanService.list` (`packages/plan/src/service.ts`, forwards `input` unchanged), and the kernel's
-  `plans.list` operation (`OPERATIONS.plans.list` in `packages/kernel/src/transport/operations.ts`, forwards `p.input`
-  unchanged) — none of them clamps, bounds, or even reads `limit` before handing the query on. The
-  clamp exists in exactly one place per adapter, inside the adapter itself, and both known adapters
-  implement it identically: `Math.min(MAX_LIMIT, Math.max(1, query.limit ?? DEFAULT_LIMIT))` with
-  `MAX_LIMIT = 100`/`DEFAULT_LIMIT = 20` in the file adapter (`packages/plan/src/file-repository.ts`) and the literal equivalent `Math.min(100, Math.max(1, query.limit ?? 20))` in the in-memory
-  adapter (`packages/plan/src/testing.ts`). With no caller anywhere in the call graph performing
-  this clamp, "by the caller" cannot describe the codebase's actual behavior — the normative reading
-  for a third adapter is that **the adapter clamps**, matching what both existing implementations
-  independently do with the same bounds and the same default. This closes the first half of the retired gap
-  report's cursor item; the JSDoc itself lives in `@clarvis/plan`'s
-  source and is out of this corpus's authority to edit, so the correction stands here rather than
-  there.
 - **Unpinned surface.** `specDigest` and `projectPlan` have no direct unit test (only transitive
   coverage, e.g. `packages/plan/tests/unit/plan-canonical-state.test.ts`). `planFilename`'s 48-character slug
-  truncation and its `"plan"` empty-slug fallback (`packages/plan/src/format.ts`) are unpinned. The `PlanRef`
-  interface (`packages/plan/src/schemas.ts`) has no consumer inside this package — it is filed by the capability, so
-  its contract belongs to **plan-capability-and-review**. P-24, P-26 and P-27 above are likewise
+  truncation and its `"plan"` empty-slug fallback (`packages/plan/src/format.ts`) are unpinned.
+  P-24, P-26 and P-27 above are likewise
   unpinned.
 - **`created_at` typing across the YAML boundary.** `planDocumentSchema` requires
   `z.string().datetime()` (`packages/plan/src/schemas.ts`) while `renderPlan` emits the timestamp unquoted
   (`packages/plan/src/format.ts`); the round-trip demonstrably works (`packages/plan/tests/unit/plan-format.test.ts`), but it is
   unverified against the `yaml` package's own source that its default schema never coerces a
-  timestamp scalar to a `Date`. A YAML dialect change here would break parsing silently at the schema.
-- **Delegated by scope.** How a run creates, reads, revises and finalizes a plan
-  (`src/capability/**`, `src/tools.ts` beyond `revisePlanInputSchema`), the review gate, the seal rule
-  for *task transitions* (`sealedTransitionMessage`, used only at
-  `packages/plan/src/capability/session.ts`), and retention as run policy → **plan-capability-and-review**.
-  `src/provider.ts`, `src/provider-config.ts`, `src/settings.ts` and
-  `tests/architecture/settings-provider-boundary.test.ts` (INV-145) own the built-in provider selection.
+  timestamp scalar to a `Date`. A YAML dialect change that coerces a timestamp to a `Date` would fail schema validation loudly; unknown frontmatter scalars can change type without validation, as recorded in [known issues](../known-issues.md).

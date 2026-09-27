@@ -21,7 +21,7 @@ runs bind the same owner-scoped policy before entering the loop and release it
 after execution.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
-`@clarvis/capability`, `@clarvis/goal`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
+`@clarvis/capability`, `@clarvis/execpolicy`, `@clarvis/goal`, `@clarvis/judge`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/sandbox`, `@clarvis/tools`, `@clarvis/trace` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through eight deliberately bounded public entrypoints. Each
@@ -134,7 +134,7 @@ This does not replace hosted recovery or relax completion and consumption gates.
 See the [Goal contract](../../specs/capabilities/goals.md).
 
 Construction, configuration, runs, and transport are specified in the four kernel specs under the
-[`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade). The
+[`hosts` map](../../specs/README.md#hosts--the-kernel-protocol-and-terminal-ui). The
 run event mapper forwards live-only `tool_control_released` with no coalescing or dropping so a
 connected TUI can remove a settled shell's stop control. The kernel also owns host-side composition described by
 [`plugins.md`](../../specs/hosts/plugins.md),
@@ -159,9 +159,10 @@ The settings assembler captures effective global and workspace context for the w
 preserves this snapshot through preparation and workflow admission. Persistent instructions inform
 the run but arbitrary request fields cannot replace them. See
 [model instructions](../../specs/cross-cutting/model-instructions.md).
-Hosted Goal preparation gives the tool-free Steward only the bounded Goal definition and execution
-receipts. It has no repository instructions or file-reading context and does not reread context
-files during evaluation.
+Hosted Goal preparation gives the tool-free Steward a bounded conversational projection: the Goal
+definition, operator request and corrections, the work agent's completion report, and any prior
+Steward question and work-agent answer. It has no repository instructions, raw evidence catalog or
+file-reading context and does not reread context files during evaluation.
 
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
 retires conversation control on disconnect, takeover or conversation close.
@@ -259,7 +260,7 @@ Guided `/goal <seed>` is admitted as the ordinary conversation turn of the selec
 `prepareHostedGoalCreationTurn` commits a formulating `creation_intent` on the session document and
 adds the required `createGoalCreationCapability` only for the host-authenticated typed intent; it
 does not start an isolated formulation run, create a hidden conversation, or invoke the Steward
-before a Goal is saved. Isolated backends receive the same `goal_intent`. Until durable creation,
+before a Goal is saved. Until durable creation,
 dispatch admits proven reads and clarification and refuses writes, shell, unknown tools and
 work-executing delegation. The model retains its advertised catalog, and `create_goal` atomically
 persists the semantic definition and admits the same execution as its first Goal stage. The
@@ -283,12 +284,11 @@ goal controls and polling never enter the evidence catalog. Shell checks require
 transport succeeded, newer contradictory results invalidate older successes, and artifact
 reads recheck their digest. Qualitative relevance remains model judgment.
 Before completion, the host revalidates normative source digests and the current candidate plus
-host/human evidence. `createGoalStewardCoordinator` owns one finite read-only evaluation at a time
-through `createStewardExecutionRuntime`. It binds the late Plan review port, fences semantic output
+host/human evidence. `createGoalStewardCoordinator` owns one finite tool-free evaluation at a time
+through `createStewardExecutionRuntime`. It fences semantic output
 and returns internal corrections or a final verdict to the Goal capability. A private result gate
-validates the Steward's cited reads and semantic targets before accepting its output, allowing one
-corrective nudge within the same evaluation budget; a second invalid result fails closed. Batched
-reads remain verifiable from the full-result digest when trace display text is abbreviated.
+validates the Steward's decision shape and semantic targets before accepting its output, allowing one
+corrective nudge within the same evaluation budget; a second invalid result fails closed.
 Observations reserve evaluation slots for completion, and prior observation failures do not
 reclassify later inconclusive verdicts. Its private frame is the conversational projection in
 `buildStewardConversationFrame`: Goal contract, original operator request, later corrections, the
@@ -371,7 +371,7 @@ validation scope are specified in [hosted runs](../../specs/hosts/hosted-runs.md
 `serveRemoteFileKernelOverStdio` is the process-owned counterpart for a caller-authenticated remote
 channel such as SSH. It acquires the same canonical workspace lease and durable host state, binds
 the sole stdio peer as the operator, keeps hosted runs and goals available, and deliberately omits
-machine-local inspection, browser, retry and restart controls. The caller must authenticate the
+machine-local inspection, browser and restart controls. The caller must authenticate the
 remote machine/user before launch; this bootstrap neither publishes a listener nor creates a
 Clarvis connection credential. EOF or a broken pipe closes the physical host and releases its
 lease. The remote stdio integration test exercises the real framed transport and FileKernel with
@@ -601,11 +601,10 @@ use the host's native `fetch`, while an injected fetcher keeps catalog refresh t
 The operator-scoped `StorageService` walks Clarvis-owned roots with entry/depth bounds, reports
 logical category totals without exposing persisted content, paths or credential sizes, and applies
 only explicitly requested cleanup of stale temporary artifacts and rebuildable cache. A truncated
-inventory remains previewable but cannot authorize an apply. Cache cleanup also removes the
-intentionally immutable runtime-artifact tree: `removeOwnedTree` restores removal rights only on
+inventory remains previewable but cannot authorize an apply. Cache cleanup tolerates read-only
+directories: `removeOwnedTree` restores removal rights only on
 real directories owned by the current POSIX user, never traverses links, and refuses unsafe
-ownership without elevation or disclosing the local path. Published artifacts keep their read-only
-modes outside that bounded cleanup. Production: `createStorageService` in
+ownership without elevation or disclosing the local path. Production: `createStorageService` in
 [`src/storage/storage-service.ts`](src/storage/storage-service.ts) and `removeOwnedTree` in
 [`src/storage/owned-tree.ts`](src/storage/owned-tree.ts). Test:
 [`tests/integration/storage-service.test.ts`](tests/integration/storage-service.test.ts). Workspace
@@ -730,8 +729,8 @@ closing a subscriber does not prove physical completion or release the registry'
 The stdio, local IPC and loopback transports implement the connection lifecycle.
 
 The independent file host additionally advertises operator-only `localHost` controls through that
-same catalog: bounded runtime/profile state, claimed browser handoffs, explicit runtime retry and
-quiescent restart. These operations belong to the authenticated application channel. Code supplies the companion application's composition.
+same catalog: bounded runtime/profile state, claimed browser handoffs and quiescent restart. These
+operations belong to the authenticated application channel. Code supplies the companion application's composition.
 Preparation failures enter the durable run index as sanitized plain error DTOs, so an invalid
 request does not poison later admissions with an unserializable exception object.
 
@@ -797,7 +796,7 @@ Workspace trust is derived by the Kernel, and a stale edit returns a conflict. T
 library is specified in [the execution policy spec](../../specs/execution/execpolicy.md).
 
 The kernel provides services for configuration, plugins, secrets, models, provider
-authentication, files, memory, plans, workflows, skills, sessions, tasks, storage,
+authentication, files, memory, plans, workflows, skills, sessions, storage,
 Extension Profiles and runs. These are control-plane APIs rather than model-callable
 MCP tools. The tools capability executes shell and file calls under the global
 `isolation` preference, defaulting to Sandbox with disabled network. Sandbox applies only to built-in
@@ -855,8 +854,8 @@ Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and
 ## The settings schema
 
 The kernel publishes exactly one, `kernelSettingsSchema`: the engine's blocks
-plus the ones its capability registry contributes: memory, plans, goals, workflows, tasks and
-runtime placement, and isolation.
+plus the ones its capability registry contributes: `memory`, `plans`, `goals`, `workflows`,
+`isolation`, `execution_requirements`, `approval_mode`, `approval_policy` and `judge`.
 Registration happens at module load in `config/capability-registry.ts`, **before**
 any `settings.json` is read — a block registered afterwards reads as an
 unrecognized key.
@@ -906,7 +905,11 @@ state. The lease is not a distributed-lock claim for NFS or multi-host storage.
 Entry agents use ordinary file tools to edit workspace and global configuration when
 allowed by the selected execution environment and OS permissions. The host configuration
 service validates known document semantics when it subsequently loads those files. Tool
-calls do not use a separate configuration review port. Production:
+calls use the run's action-authorization port; configuration paths have no special write exemption.
+Sandbox protects workspace metadata by default and requires eligible additional authority for
+writes outside admitted roots. There is no separate configuration-content review. Production:
+`packages/tools/src/core.ts` (`dispatch`),
+`packages/tools/src/execution/action.ts` (`prepareToolAction`),
 `packages/tools/src/lib/paths.ts` (`resolveFileToolPath`) and
 `packages/kernel/src/config/file-config-store.ts` (`createFileConfigStore`).
 See [self-configuration](../../specs/hosts/self-configuration.md).
@@ -1087,7 +1090,7 @@ and traversal segments are rejected before filesystem access.
 
 `createFileKernel` builds one logger (`opts.logger`, else `createLogger(CLARVIS_LOG_LEVEL, { service:
 "@clarvis/kernel" })`) and hands `componentLogger(<component>)` to every collaborator it constructs —
-`config`, `plugins`, `plan`, `memory`, `tasks`, `trace`, `kernel`.
+`config`, `plugins`, `plan`, `memory`, `trace`, `kernel`.
 `CLARVIS_LOG=config=debug` therefore turns one subsystem on without
 raising the global level. `createInProcessKernel` takes a `logger` of its own and passes it to the
 plugin service, the model catalog and each owner's runs/sessions with `{ owner }` bound.
@@ -1161,7 +1164,7 @@ The suite is classified by its primary boundary while the architecture migration
 - `tests/integration/` owns real filesystem, process, git, loop, plan and stdio boundaries,
   plus file-kernel wiring. Memory capability/loop behavior belongs to
   `@clarvis/memory`; this package keeps one composition-root sentinel only.
-- `tests/architecture/` owns static enforcement of the six-entry public surface and the
+- `tests/architecture/` owns static enforcement of the public-entrypoint boundary and the
   cross-package workspace-layout invariant.
 - `tests/helpers/` contains executable fixtures only. They run under the repository's pinned Bun
   runtime; the kernel test suite does not require a second language runtime. Helpers are not test
@@ -1266,8 +1269,9 @@ validation and separate deterministic, live-provider and installed-artifact qual
 
 Goal formulation and Steward executions capture provider usage, including retries, through the
 same usage tracker. Once-only auxiliary settlement applies model prices to session cost totals
-when usage and cache measurements are known. Partial observation reads do not attest complete
-artifacts; completion still requires complete current reads for every cited artifact.
+when usage and cache measurements are known. The Steward's declared-evidence judgment is not an
+independent artifact read; the host still validates candidate evidence and current artifact digests
+before completion.
 Goal stage settlement prices the host-observed calls. It persists that priced subtotal with the stage measurement and credits
 the Session cost total once, beside ordinary run and auxiliary costs. A later measurement revision
 credits only the difference.

@@ -1,7 +1,7 @@
 # Third-party notices
 
-Clarvis source code is distributed under the [MIT License](LICENSE). A portable Clarvis archive and
-the isolated-runtime standalone artifact also bundle third-party software and data needed to run
+Clarvis source code is distributed under the [MIT License](LICENSE). Portable Clarvis archives
+also bundle third-party software and data needed to run
 without a separately installed language runtime or package manager.
 
 This document is an inventory and routing aid, not a replacement for the license texts or legal
@@ -9,8 +9,8 @@ review.
 
 ## Bun 1.4.0
 
-Portable archives include the Bun executable used by the native packaging job; the isolated worker
-is a Bun-compiled standalone executable. The release toolchain is pinned to Bun `1.4.0`
+Portable archives include the Bun executable used by the native packaging job. The release
+toolchain is pinned to Bun `1.4.0`
 (`1.4.0+34cbb9a40`). Bun itself is MIT-licensed and its executable statically links or embeds other
 components, including LGPL-licensed JavaScriptCore/WebKit and TinyCC.
 
@@ -23,15 +23,6 @@ source and describes how to build a Bun binary with a modified JavaScriptCore/We
 Release maintainers must review this notice and the exact native Bun artifact for every release.
 Including the notice closes the identified packaging omission; it does not by itself constitute a
 legal conclusion about every redistribution obligation.
-
-## mise 2026.8.2
-
-The runnable isolated-runtime image includes the official `mise` 2026.8.2 Linux binary as its
-on-demand toolchain bootstrap. Image construction downloads the architecture-specific release
-archive, verifies its source-owned SHA-256, and copies no language runtime installed by mise into
-the image. mise is MIT-licensed, copyright Jeff Dickey; the verified release archive's license is
-preserved in the image at `/usr/share/licenses/mise/LICENSE`. The corresponding immutable upstream
-release is [`v2026.8.2`](https://github.com/jdx/mise/releases/tag/v2026.8.2).
 
 ## models.dev snapshot
 

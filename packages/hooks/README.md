@@ -122,7 +122,7 @@ policy still applies before the loop accepts the stage. The external event spell
 and anything whose name looks like a secret, plus `CLARVIS_HOOK_*` describing the fire point. A
 plugin hook additionally receives `PLUGIN_ROOT`/`PLUGIN_DATA` and the
 `CODEX_PLUGIN_ROOT`/`CODEX_PLUGIN_DATA` compatibility aliases, without adding credential material.
-privileges, which is the point of it being installed/operator-authored config.
+The command otherwise retains the operator's host privileges.
 
 ## Usage
 
@@ -193,8 +193,8 @@ arguments it was matched against.
 - **`session_start` is a dedicated context group**, not an observer. Its `{"kind":"context","text":"…"}`
   output is collected by the capability's `seedBlock()` into a pinned, non-evictable entry-context
   block that **survives compaction** rather than being re-injected after it. Its `seedMarker` is
-  declared on the `Capability`, so a stale block is stripped from a continuation even on a later run
-  with hooks configured away. The schema rejects `on_failure` there, and `buildSeedBlock` swallows
+  declared on the `Capability`, so a carried block is recognized even when hooks are inactive; the
+  continuation retains it and a later active run adds no duplicate. The schema rejects `on_failure` there, and `buildSeedBlock` swallows
   every failure — a throw from `seedBlock` fails the run.
 - **`user_prompt_expansion` is an exact host-command observer.** It fires once from the seed phase
   before a user-invoked skill run, with the qualified command name when the skill came from a plugin.

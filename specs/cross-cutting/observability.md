@@ -72,8 +72,8 @@ reach `process.stdout`, `process.stderr` or `console.*` directly for a diagnosti
 mid-string rather than merely being noisy (`packages/code/src/adapters/terminal-guard.ts`).
 The native filesystem worker writes framed protocol data to its owned stdout pipe, not a diagnostic;
 `STREAM_PLUMBING` in `packages/paths/tests/architecture/one-diagnostic-channel.test.ts`
-classifies that endpoint explicitly. Production: `runFilesystemWorker` in
-`packages/tools/src/core.ts`. Test: `no package writes to a terminal channel directly`
+classifies that endpoint explicitly. Production: `send` in
+`packages/tools/src/execution/worker.ts`. Test: `no package writes to a terminal channel directly`
 in `packages/paths/tests/architecture/one-diagnostic-channel.test.ts`.
 
 ### 1.1 The trace-versus-log rule
@@ -478,9 +478,7 @@ not: `createComponentLoggers` and `createAuditLogger` both short-circuit to `NOO
 **INV-OBS-2** (derived). `CLARVIS_LOG_AUDIT` and `CLARVIS_LOG` cannot be set through `settings.json`
 or a run request — both are declared only in the environment schema
 (`packages/capability/src/env.ts`), not in any settings/request schema this document's scope
-reaches. ~~Unpinned by a positive test in this document's scope (no test asserts a `settings.json` write
-to either key is *rejected*); the schema's absence of the field is the only evidence.~~ **Pinned on
-both halves:** `packages/kernel/tests/integration/capability-settings-schema.test.ts`
+reaches. `packages/kernel/tests/integration/capability-settings-schema.test.ts`
 rejects the keys as top-level settings blocks and asserts no registered capability has contributed
 one, and `packages/loop/tests/unit/request-parsing.test.ts` rejects them on a run request. The second
 also states the *bound*: the engine refuses them because it declares none of them, so a capability
@@ -562,9 +560,6 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
 - **`componentLogger`/`bindLevelled` live in `@clarvis/capability` because two layers need them and
   neither can import the other**: "`@clarvis/kernel` derives a component logger for each collaborator
   it constructs, and `@clarvis/loop` does the same for the three subsystems it wires directly"
-  (`packages/capability/src/log.ts`). Before this was shared, `@clarvis/loop` reached for
-  `bind`, which carries the binding but not the level — so `component` was stamped on `paths` and
-  `trace` records while `CLARVIS_LOG=paths=debug` silently did nothing to them
   (`packages/capability/src/log.ts`). The implementation needs a **double** type assertion,
   `logger as unknown as LevelledLogger` (`packages/capability/src/log.ts`), against a private
   `LevelledLogger` interface declaring pino's two-argument `child(bindings, {level})`
@@ -589,9 +584,7 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
   assignable to `ToolsLogger` at every call site a host wires. That assignability **is** pinned, by
   `packages/loop/tests/architecture/logger-drift.test.ts` — `@clarvis/loop` is the lowest package
   that depends on both, and its tools capability really does hand a contract `Logger` to
-  `createAgentTools`. The same file covers `@clarvis/hooks`' `HookLogger`. (The comment at
-  `packages/tools/src/lib/log.ts` previously named that test inside `@clarvis/tools`, where it
-  could not exist without the dependency edge the port is there to avoid.)
+  `createAgentTools`. The same file covers `@clarvis/hooks`' `HookLogger`.
 - **`@clarvis/workflows` and `@clarvis/plan` both depend on `@clarvis/capability` directly** (both
   already do, for other reasons), but they draw different amounts from it. `@clarvis/workflows`'s
   `log.ts` imports `Logger`/`NOOP_LOGGER`/`bind`/`sanitizeErrorMessage`
@@ -600,12 +593,10 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
   (`packages/plan/src/log.ts`) — it never names `Logger`, `NOOP_LOGGER` or `bind`, and declares no
   logging port at all; its one export, `boundedPlanReason`, only produces the string a caller's own
   logger later records.
-- **The terminal UI (`@clarvis/code`) is the downstream consumer that makes the whole discipline
-  matter operationally.** `packages/code/src/adapters/terminal-guard.ts` documents that the
-  *one* path that ever did reach the terminal directly was "a component logger pinned above a
-  silenced root," and states it was "fixed at its source in `@clarvis/kernel`'s
-  `createComponentLoggers`" — i.e., the `"silent"` short-circuit this document describes in §4.2/§4.3 is a
-  fix for a defect this downstream package observed. The remainder of `terminal-guard.ts` (patching
+- **The terminal UI (`@clarvis/code`) consumes this diagnostic discipline.**
+  `packages/code/src/adapters/terminal-guard.ts` protects the rendered canvas. The `"silent"`
+  short-circuit in `createComponentLoggers` applies before component-level overrides. The remainder
+  of `terminal-guard.ts` (patching
   `console.*` and `process.stdout/stderr.write` as a second line of defense against dependencies this
   package does not control) belongs to the sibling [hosts/code-onboarding.md](../hosts/code-onboarding.md) document and is
   not re-described here.
@@ -626,33 +617,10 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
 
 ## 8. Open questions
 
-- ~~**No architecture test in this document's scope enforces the "one diagnostic channel" rule outside
-  `@clarvis/tools`.**~~ **Resolved.**
-  `packages/paths/tests/architecture/one-diagnostic-channel.test.ts` scans every package's `src`, from
-  the dependency-free leaf that already owns the monorepo-wide vocabulary scan. Its exemptions are
-  **categorised** rather than listed flat — a CLI entrypoint, a package's single sanctioned sink,
-  stream plumbing that names a stream without writing diagnostics, and `@clarvis/code`, which owns the
-  terminal outright — so adding a file means claiming one of those, and a companion test fails when a
-  named exemption stops needing to be one. The survey behind it also corrected the reading above:
-  `@clarvis/workflows` and `@clarvis/plan` hold **none**; `@clarvis/skills`' single write *is* its own
-  sanctioned sink, the same shape as `@clarvis/tools`'. The rule was held everywhere — only one
-  package proved it.
-- ~~**INV-OBS-2** (settings/request cannot set `CLARVIS_LOG`/`CLARVIS_LOG_AUDIT`) is argued from the
-  *absence* of the field from the environment-only schema location, not from a positive test that
-  attempts and rejects such a write. No such rejection test was found in this document's scope.~~
-  **Resolved** — see INV-OBS-2 above for where, and for the one thing the tests had to be
-  careful not to overstate.
-- **Whether any capability outside this document's scope writes an `event` name that collides with
-  another package's** is not checked by anything this document found; the vocabulary is stated to be
-  deliberately open (`packages/capability/src/log.ts`), so a collision would not be caught
-  mechanically.
-- **`@clarvis/paths`'s `diag.ts` and `@clarvis/hooks`'s `HookLogger`** are cited in §7 only for the
-  repeated structural-port pattern; their own construction, `setPathsLogger` semantics, and
-  process-wide-slot hazards belong to those packages' own documents and are not described in full here.
-- **Whether `createSampler`/`createRateLimiter` are used correctly (i.e., keyed with enough
-  distinguishing identity) at every call site listed in §7** was not verified beyond the two call
-  sites actually read (`packages/mcp-client/src/connection-manager.ts`,
-  `packages/workflows/src/dispatch.ts`). The doc-comment's own warning — "a key of `operation`
-  alone collapses two different servers failing the same way into one line naming neither"
-  (`packages/capability/src/log.ts`) — is a design intent, not a verified property of every
-  caller.
+- `Logger` event names remain an open vocabulary (`packages/capability/src/log.ts`). No
+  repository-wide check proves that contributed capabilities avoid collisions with another
+  package's event names.
+- `createSampler` and `createRateLimiter` warn callers to key by enough identity
+  (`packages/capability/src/log.ts`). The cross-package call sites have no single test or
+  checker proving every key distinguishes independent operations; inspection of the current
+  callers is still needed for that claim.

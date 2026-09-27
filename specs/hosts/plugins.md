@@ -1,8 +1,7 @@
 # Plugin manifests, contributions, marketplaces and dialect translation
 
 > Implemented across `packages/loop/src/settings`, `packages/kernel/src/plugins`, the kernel's
-> plugin ports/adapters, and `packages/code/src/adapters`. Every claim below is anchored to a file
-> and line. Open questions are collected in the final section.
+> plugin ports/adapters, and `packages/code/src/adapters`. Claims cite source symbols and tests.
 
 ## 1. Purpose
 
@@ -49,8 +48,7 @@ listing uses the process-pinned `active_plugins` snapshot, or the same already-e
 a minimal embedder, so its enabled badge cannot disagree with the contributions that run
 (`enabledKeys` in `packages/kernel/src/plugins/plugin-service.ts`).
 A selected plugin remains an atomic contribution unit: agents, MCP servers,
-skills, and eligible hooks follow the same plugin reference; there is no independent per-hook
-approval projection. Its MCP servers do not require an authored agent profile to opt in: the kernel
+skills, and eligible hooks follow the same plugin reference. Its MCP servers do not require an authored agent profile to opt in: the kernel
 attaches each active plugin namespace with `auto_tools`, and the loop admits the tools successfully
 discovered from it to every effective agent in that run.
 
@@ -391,10 +389,9 @@ Two further budgets live in the kernel: `MAX_PLUGIN_SKILL_ROOTS = 4` effective r
 `packages/skills/src/limits.ts`). The docstring names the blast radius: `@clarvis/skills` refuses a
 scan above its ceiling and the engine turns that refusal into an *empty* skills provider, so
 overspending "does not cost the last plugin its skills, it costs the workspace all of them"
-(`packages/kernel/src/plugins/plugin-contributions.ts`). The reserve is double the four
-roots `clarvisSkillRoots` actually returns (`.agents` at user and workspace scope,
-`packages/skills/src/preset.ts`), so that adding a host root cannot silently narrow the plugin
-budget in the same release.
+(`packages/kernel/src/plugins/plugin-contributions.ts`). `clarvisSkillRoots` returns two `.agents`
+roots, at user and workspace scope (`packages/skills/src/preset.ts`), leaving six reserved slots for
+other host roots.
 
 Packaged skill-resource identity has a separate raw-byte budget:
 `PLUGIN_SKILL_RESOURCE_LIMITS.fileBytes` is 8 MiB per resource and
@@ -425,10 +422,10 @@ Reading it distinguishes three outcomes: absent → `{ ok: true, record: {}, pre
 repository replacement and removal failures` and the bounded-record cases in
 `packages/kernel/tests/integration/plugin-install-record.test.ts`.
 
-### 3.5 No per-hook approval state
+### 3.5 Atomic contribution identity
 
-Plugin hooks have no independent persisted approval document. A selected plugin contributes its
-normalized hook definitions as part of the same atomic extension unit as its agents, skills and MCP
+Selected plugins contribute their normalized hook definitions as part of the same atomic extension
+unit as their agents, skills and MCP
 servers. The manifest and companion bytes, including hooks, participate
 in the Extension Profile content digest; a change therefore produces a different snapshot fingerprint
 rather than mutating eligibility under an unchanged identity (`contributionSnapshot` and
@@ -592,16 +589,13 @@ survive together.
 
 `sanitizeMcpServers` (`packages/kernel/src/plugins/plugin-manifest.ts`) then validates each
 entry against `mcpServerPluginSchema` individually, keeps the ones that pass, notes each one that
-does not, and deletes the key entirely if nothing survives. Its docstring names the
-blast radius it exists to bound: the schema "reports that per *record*, so one such entry used to
-fail the whole manifest and take the plugin's agents, hooks and skills with it". Pinned:
+does not, and deletes the key entirely if nothing survives. This keeps one invalid server from
+invalidating the plugin's agents, hooks and skills. Pinned:
 `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
 `mcpServerPluginSchema` is the **tolerant** twin of `mcpServerSettingsSchema` — same base fields and
 same `refineMcpServer`, but without `.strict()`
-(`packages/loop/src/settings/settings-schema.ts`). Its docstring records the measured
-cost of strictness: "Measured on a public catalog of 196 plugins, that single rule broke 24 of them
-and cost 82 skills that had nothing to do with MCP". That the two schemas genuinely
+(`packages/loop/src/settings/settings-schema.ts`). That the two schemas genuinely
 differ is pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts`. Unknown keys are dropped, not carried
 (`packages/loop/src/settings/settings-schema.ts`).
 
@@ -842,7 +836,7 @@ file framing, manifest limits, sidecar metadata, pinned projections, and fresh d
 
 - **`settingsScopes`** builds `pluginSettingsFragment(manifest)`, replaces `mcpServers` with the
   `<plugin>:<server>`-namespaced map, and carries every normalized hook definition of that selected
-  plugin. No second mutable approval projection filters the snapshot.
+  plugin.
 - **`mcpServers`** attaches `pluginVersion` (from the manifest) and `resolvedRevision`
   (from the install record, or `git rev-parse HEAD` as a fallback for unmanaged plugins —
   `revisionOf`).
@@ -979,9 +973,8 @@ never overwrite the author or namespace. Production: `viewFor` in
 `packages/protocol/src/plugins.ts`. Test: publisher and complete-presentation cases in
 `packages/kernel/tests/integration/{plugin-manifest,plugin-service}.test.ts`.
 `skillNamesOf` runs the **same** `createAgentSkills` scan a run would, over the same
-roots, and keeps the catalog's warnings: the docstring records that the panel used to list every
-child directory with a `SKILL.md`, which "disagreed by one skill on the first real plugin they were
-compared on — listed in the panel, absent from the model's catalog, with nothing anywhere saying so", and that silencing warnings made a plugin shipping twenty skills read as "18 skills". At most `MAX_SKILL_REJECTION_NOTES = 3` rejections are named, then a count.
+roots, and keeps the catalog's warnings. At most `MAX_SKILL_REJECTION_NOTES = 3` rejections are
+named, followed by a count.
 
 `partitionAgents` splits agent files into `agents` and `broken_agents` by whether the
 leniently-parsed frontmatter satisfies `agentFrontmatterSchema`. `executablesOf`
@@ -1259,8 +1252,7 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/src/plugins/plugin-manifest.ts`. Pinned:
     `packages/kernel/tests/integration/plugin-manifest.test.ts` (external hook conversion cases).
 
-38. **The plugin protocol exposes lifecycle for the atomic plugin, not approval for internal
-    contributions.** `PluginService` in `packages/protocol/src/plugins.ts` and the plugin operation
+38. **The plugin protocol exposes lifecycle for the atomic plugin.** `PluginService` in `packages/protocol/src/plugins.ts` and the plugin operation
     registrations in `packages/kernel/src/transport/operations.ts`. Pinned:
     `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
@@ -1405,7 +1397,7 @@ All of the following are derived directly from this document's own source and te
     kernel can therefore show a different `revision` in the panel than the one a run's MCP-provenance
     identity actually carries. No test in this document's scope exercises both readers against the
     same manually-advanced checkout; **why the two are asymmetric on purpose (display-freshness versus
-    pinned provenance identity) is resolved in §8.**
+    pinned provenance identity) is established by the separate readers above.**
 
 53. **Install refuses a name already installed.** `packages/kernel/src/adapters/filesystem/plugin-repository.ts`. Pinned by
     `install: refuses when a plugin of that name is already installed` in
@@ -1779,101 +1771,10 @@ duplicated behavior tests rather than by a direct drift lock.
 
 ## 8. Open questions
 
-- ~~**Why the plugin-skill-root budget is `MAX_SKILL_ROOTS - 8` specifically.**~~ **Resolved by
-  reading the other side.** The host contributes exactly **two** roots:
-  `clarvisSkillRoots` returns `.agents` at user and workspace scope
-  (`packages/skills/src/preset.ts`). The reserve exceeds what the host spends,
-  and the docstring now says so along with why the margin is deliberate — adding a host root must not
-  silently narrow what plugins may contribute, and the cost of being one short is not the marginal
-  plugin's skills but every skill in the workspace, since the refusal degrades to an empty provider
-  (`packages/kernel/src/plugins/plugin-contributions.ts`). Still true: no test pins the
-  shared budget; only the per-plugin cap of 4 is pinned
-  by the per-plugin root-cap cases in
-  `packages/kernel/tests/integration/plugin-manifest.test.ts`.
-
-- **Which agent hosts the dialect tables were derived from.** `packages/kernel/src/plugins/hook-dialects.ts` states this is
-  deliberate: "Naming the hosts would date the file and invite a class per vendor". The public
-  catalog measured at 196 plugins is cited repeatedly
-  (`packages/loop/src/settings/settings-schema.ts`,
-  `packages/capability/src/hooks-config.ts`,
-  `packages/kernel/src/plugins/plugin-manifest.ts`) but never named, and the measurements are
-  not reproducible from anything in the repository.
-
-- ~~**`dependencies` in the manifest is declared and never read.**~~ **Resolved —
-  removed from the schema, which is what makes it visible.** It validated as `array(pluginNameField)`
-  and described the names as "other plugins that must be enabled for this one to work", and nothing
-  in `plugin-contributions.ts`, `plugin-service.ts` or `file-config-store.ts` consulted it — so a
-  plugin declaring a dependency installed and ran with that dependency absent, silently. That is the
-  exact failure `pluginManifestSchema`'s own `.loose()` remark exists to prevent: recognizing a
-  directive and then ignoring it is worse than not recognizing it, because only the second one is
-  reported. Off the shape it lands in `unknownManifestKeys`, and the operator is told "manifest keys
-  Clarvis does not act on: dependencies" — pinned by
-  `packages/kernel/tests/integration/plugin-manifest.test.ts`. Enforcing dependencies remains
-  unbuilt, and is now a decision with nothing pretending to stand in for it.
-
 - **`code`'s marketplace has no kernel service, while plugin installation does.** Installation goes
   through `KernelClient.plugins.install`, whose contract says the service must be server-side because
   "a remote UI has no local git or fs" (`packages/protocol/src/plugins.ts`); the marketplace
   catalog clone spawns `git` on the machine `code` runs on
-  (`packages/code/src/adapters/marketplace.ts`). **Recorded at `fetchMarketplace`,** with
-  the consequence derived rather than the intent guessed: against an in-process kernel the two are
-  indistinguishable — same machine, same disk — which is why the split has cost nothing; against a
-  remote kernel it splits in the wrong place, since installing would reach the kernel's filesystem
-  while adding a marketplace would clone onto the operator's laptop and validate a document
-  describing plugins the kernel will never see. Whether the answer is a `MarketplaceService` on the
-  protocol or a decision that catalogs are deliberately client-side is **not settled by the source and has not been
-  decided**.
-
-- **`PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries` is not consumed anywhere in this document's scope.**
-  It is declared at `packages/loop/src/settings/plugin-resources.ts` and exercised at
-  `packages/kernel/tests/integration/plugin-service.test.ts`, case `list: contributes no skills from
-  an excessive skill-directory fanout, and loads the plugin`, where the enforcement happens inside `@clarvis/skills` —
-  delegated to [execution/skills.md](../execution/skills.md).
-
-- ~~**The panel's displayed revision and a run's MCP-provenance revision can disagree, with no test
-  proving either side of it wrong... whether the asymmetry is intentional... is not stated.**~~
-  **Resolved: each side's own local rationale is on record, and together they account for the
-  asymmetry.** `inspectPlugin` (`packages/kernel/src/adapters/filesystem/plugin-repository.ts`) prefers live
-  `git` state over the install record; `revisionOf` (`packages/kernel/src/plugins/plugin-contributions.ts`) prefers the
-  install record over `git`, falling to a live `git rev-parse HEAD` only when "unmanaged local
-  plugins have no install record" ('s comment). The protocol field `inspectPlugin` populates
-  is itself documented as "Resolved Git revision of the **installed checkout**"
-  (`packages/protocol/src/plugins.ts`, emphasis added) — i.e. the panel's job is to show what is
-  *actually on disk right now*, so a plugin directory a user `git pull`-ed by hand outside Clarvis's
-  own install flow shows its true current state rather than a possibly-stale record. `revisionOf`'s
-  own comment states the opposite goal: "Resolve the installed snapshot **without treating the
-  manifest version as source identity**" — its caller needs a value that stays **pinned** to
-  what Clarvis itself installed/recorded, because it becomes the run's MCP-provenance identity
-  — a value that must not silently change between two runs just because someone
-  ran `git pull` in the plugin's checkout in between. So: the panel optimizes for "what is checked out
-  now" (display), `revisionOf` optimizes for "what was installed" (stable per-run identity) — two
-  different purposes for two different consumers, each stated in its own local comment, even though
-  neither module cross-references the other's reasoning. No test exercises both readers against the
-  same manually-advanced checkout to observe the resulting display/provenance mismatch directly, but
-  the *design intent* behind the asymmetry is no longer undetermined.
-
-- ~~**Contribution readers rescan and rehash every selected plugin on every accessor.**~~
-  **Resolved:** `pin` retains the parsed loadables, ordinary projections use only
-  `assertPinnedSelection`, exact skill roots/bodies are consumed once by `snapshotSkills`, and
-  asynchronous path monitors only flip availability latches. The runtime test in
-  `packages/kernel/tests/integration/file-kernel.test.ts` proves a drifted skill is withdrawn while
-  the next run is still admitted; `plugin-contributions.test.ts` proves executable projections are
-  withdrawn without a full snapshot check.
-
-- **`code`'s marketplace clone bypasses the kernel entirely.** `fetchMarketplace`
-  (`packages/code/src/adapters/marketplace.ts`) calls the client-side `gitCloneAsync`, whose
-  `Bun.spawn` lives at `packages/code/src/adapters/plugin-install.ts`, while plugin
-  *installation* goes through `KernelClient.plugins.install`. The protocol docstring says the plugin
-  service "must be server-side (a remote UI has no local git or fs)"
-  (`packages/protocol/src/plugins.ts`); the marketplace has no such service, so a remote kernel
-  would leave the Marketplace browser reading the *client's* filesystem and network. Whether a
-  `MarketplaceService` is planned is not settled by the source.
-
-- **Delegated to sibling documents, and deliberately not described here:** hook *execution* and the stdin
-  payload dialect ([execution/hooks.md](../execution/hooks.md)); `SKILL.md` parsing, grouping, precedence and the
-  `MAX_SKILL_ROOTS` refusal itself ([execution/skills.md](../execution/skills.md)); the ownership and content of
-  `EXTERNAL_HOOK_EVENT_NAMES` / `EXTERNAL_TOOL_NAMES` / `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` as an
-  interop contract ([cross-cutting/agent-interop.md](../cross-cutting/agent-interop.md)); settings
-  merge order, CAS revisions and workspace trust as a whole ([hosts/kernel-config.md](kernel-config.md)); the config
-  view-host, navigation and level-key primitives the three browsers are built on
-  ([hosts/code-settings-panels.md](code-settings-panels.md)).
+  (`packages/code/src/adapters/marketplace.ts`). In a remote deployment, catalog cloning and plugin
+  installation target different filesystems. Whether the catalog belongs in a kernel service or is
+  deliberately client-side is not settled by source or tests.

@@ -2,8 +2,7 @@
 
 > Implemented at `packages/code/src/core/transcript/**`, `packages/code/src/views/**` and
 > `packages/code/src/adapters/{tool-identity,tool-parsers,plan-projection,workflow-projection,message-content,event-span}.ts`.
-> Every claim below is anchored to a file and a named symbol or test. Open questions are collected in the final
-> section.
+> Every claim below is anchored to a file and a named symbol or test.
 
 ---
 
@@ -307,8 +306,7 @@ pinned at `packages/code/tests/unit/tool-display.test.ts`.
 `mountedTextChars` is a conservative estimate, not a measurement:
 `min(512 KiB, argsText + min(argsText, 74) + result + diff + error + (truncated ? notice.length : 0))`
 (`packages/code/src/core/transcript/tool-display.ts`). The second bounded argument term charges the
-mounted header signature in addition to argument-derived curated output, without pretending the
-removed raw JSON panel is mounted.
+mounted header signature in addition to argument-derived curated output.
 
 ### 3.4 Markdown segmentation shapes
 
@@ -557,8 +555,7 @@ composer-adjacent activity line or the two typed delegation lifecycle markers.
 | `composing()` | `composingLabel(inputChars, inputComplete === true, inputStreamChars)` when `inputChars !== undefined`, else `""` | `packages/code/src/views/blocks.tsx` (`ToolLine`) |
 
 The header breaks by cell rather than being clipped, so tool identity survives a narrow terminal: a
-call's path is what a reader matches against the filesystem, and the previous single truncated row
-dropped its tail with no ellipsis and no way to recover it in that row. The identity's own
+call's path is what a reader matches against the filesystem. The identity's own
 **argument preview** keeps its explicit character bound (`VALUE_MAX` and `SIGNATURE_MAX` in
 `packages/code/src/views/tools/signature.ts`), which is a cost bound on the projected arguments and
 not a width overflow: the preview still truncates a long value with an ellipsis, preferring the
@@ -863,9 +860,8 @@ the themed one (`features/run/status-presenter.ts`, outside this document's scop
 `" (note)"` suffix; `failed` → `"memory index failed — run not learned"` plus an optional
 `" (indexer_run_id)"` suffix; and, past all four phase checks, `notice.skipped` → `"memory: nothing to
 record"`, else `"+N -M"` from `written`/`deleted` counts or `"memory: nothing new"` when both are zero.
-A code comment states why the last three are kept apart: "'the pass declined to run' and
-'the pass ran and judged there was nothing durable here' are different outcomes and used to read
-identically. So did 'the learning died', until the failed branch above started naming its run."
+The `blocked`, `failed` and completed-with-no-new-content outcomes remain distinct so the status
+line identifies whether learning was refused, failed, or completed without durable changes.
 
 `progressStatus(progress)` special-cases a `run_ended` event whose `reason` is set and is
 not `"completed"`: it renders `"ended — <reason with underscores replaced by spaces>"` instead of the
@@ -1111,8 +1107,7 @@ individual agent is.
 
 **`activityPreview` / `rosterSummary`.** `activityPreview` owns Markdown stripping, whitespace
 collapse and bounded ellipsis; `rosterSummary` delegates to it for compatibility. The compact
-Agents roster no longer renders that preview because results belong to the selected isolated
-transcript.
+Agents roster presents identity and status; results belong to the selected isolated transcript.
 
 A selected child uses the same row viewport as Lead, without a synthetic section header or
 status-based reordering. Its continuous lifecycle remains in the Agents surface; immutable Lead
@@ -1760,7 +1755,7 @@ document. Four concrete couplings matter here:
 
 ---
 
-## 8. Open questions
+## 8. Additional contracts
 
 **Engineering budgets.** Window and member limits are explicit in
 `packages/code/src/core/transcript/window.ts`; parser and tool payload bounds remain independently

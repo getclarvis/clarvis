@@ -557,8 +557,7 @@ executing. Production: `acceptAc` in `packages/code/src/views/InputDock.tsx`. Te
 completion cases).
 
 `preferredScope()` is `read("workspace") !== undefined ? "workspace" : "global"`
-(`packages/code/src/app/commands.tsx`); its TSDoc states the mechanism it replaced ("This used to test whether
-`<ws>/.clarvis` **existed**").
+(`packages/code/src/app/commands.tsx`).
 
 ### 4.5 Providers panel composition
 
@@ -1088,6 +1087,12 @@ accepted. The inline comment states the defect that rule fixes.
 `packages/code/src/adapters/provider-secrets.ts` and renames its `"env"` result to `"set"`
 (`packages/code/src/adapters/settings.ts`).
 
+Agent Profile documents with unknown frontmatter keys remain listable with an invalid marker. The
+editor does not promote `base_prompt` from invalid metadata; writes use the same closed schema as
+execution admission. Production: `docToAgentFile` and `normalizeAgentWrite` in
+[agent-files.ts](../../packages/code/src/adapters/agent-files.ts). Test: unknown-key rejection and
+unchecked-prompt isolation in [agent-files.test.ts](../../packages/code/tests/unit/agent-files.test.ts).
+
 ---
 
 ## 5. Invariants
@@ -1571,156 +1576,8 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 ## 8. Open questions
 
-1. **INV-253 is vacuously true today.** `packages/code/package.json` declares no `exports` field at
-   all, so the boundary test's `Object.keys(manifest.exports ?? {})` filters an empty
-   object. The test would not catch a `providers` entrypoint added *together with* the package's first
-   export map only if that entry were spelled differently — it does catch the literal case — but as
-   written it currently asserts nothing about a manifest that has no export map. Whether the intent
-   was "no provider entrypoint" or "no export map at all here" is not determinable.
-
-2. ~~**An open, documented footer defect**, whose cause "is not determinable from the
-   source".~~ **Resolved, and the recorded diagnosis was wrong in an instructive way.** The
-   symptom was real: the shipped Providers panel omitted `add` and `delete` from the footer even
-   though both were present in Context Help and there was ample width. The cause was not
-   `overlay-host.mountView`'s `LAYER.LIST` layer, which the harness comment named as "the nearest
-   untested difference". It was `tierLimit`, the footer's flat cap on segment **count**
-   (`packages/code/src/ui/patterns/active-actions.ts`, reasoning). The
-   panel offers nine footer candidates; a rung admits a fixed number of them and `help` reserves one
-   seat, so on any terminal wide enough to print all nine the level's own verbs were still dropped —
-   essentials are seated first regardless of group, so they were the ones that lost.
-
-   The entry's most useful lesson is that the harness's own "ruled out with evidence: the footer's
-   segment cap" (`packages/code/tests/integration/providers-footer-verbs.test.tsx`) was a
-   **false negative**. Raising the cap changed nothing in that harness because it never had enough
-   candidates to reach the cap, so the experiment could not have failed. Two later attempts got the
-   number wrong the same way: raising only the `>= 140` rung moved the defect into the 100-139 band
-   rather than closing it, and raising the `>= 100` rung to 8 was derived against a fixture reshaped
-   down to eight candidates and still dropped `delete` against the real nine. The panel's nine
-   segments measure 120 columns, so from 122 up the row physically fits them all, and `delete` was
-   being dropped at 132 columns with 29 to spare.
-
-   The rungs at and above 100 are now one rung at 10, so above that width `fits` alone decides.
-   `packages/code/tests/unit/band-monotonic.test.ts` holds it as a property rather than a number:
-   "above 100 columns nothing is dropped for any reason but width" walks every width from
-   100 to 200 and asserts, for each candidate the budget left out, that seating it would have
-   overflowed the row — deliberately scoped to `>= 100`, because below that the low rungs are an
-   editorial cap and the property does not hold. Beside it, "the Providers footer keeps add and
-   delete from the width its row first fits" derives the boundary from the measured row
-   width instead of naming one, and "a panel keeps its own verbs at full width" now spans
-   130-200 rather than the two widths that missed the narrower band.
-
-3. ~~**The Settings hub test name disagrees with the item list.**~~ **Resolved:** the render test is
-   driven directly from `SettingsHub.ITEMS`, asserts that every declared label is present, and is
-   titled "lists every settings destination ITEMS declares". It therefore follows `SETTINGS_ITEMS`,
-   including Isolation and Keyboard, without maintaining a second list.
-   Production: `packages/code/src/views/config/hub-items.ts` (`SETTINGS_ITEMS`). Test:
-   `packages/code/tests/integration/settings-hub-render.test.tsx`.
-
-4. ~~**`ProvidersPanel.jumpToIssue` keeps a second, hand-written row table.**~~ **Resolved:** the
-   duplicate is gone and the unreachable entry with it. `jumpToIssue` maps the issue's `field` onto a
-   `PROVIDER_DETAIL_FIELDS` **label** and derives the row with `indexOf`
-   (`jumpToIssue` in `packages/code/src/views/config/ProvidersPanel.tsx`), so INV-265's pin on the array
-   now covers the jump too. The correspondence has one owner beside the array it indexes
-   (`PROVIDER_ISSUE_DETAIL_FIELD`, `packages/code/src/views/config/providers/detail-level.tsx`)
-   and carries only the three fields `validateProviders` can actually issue
-   (`packages/code/src/adapters/settings.ts`) — `name`, `base_url`, `api_key_env`. `kind`
-   was dead by oversight rather than reserved: it is absent, and its absence is asserted
-   (`packages/code/tests/component/providers-level-contracts.test.ts`). A label rather than
-   an index because `api_key_env`'s row is spelled `env var` in the array, so the two vocabularies
-   genuinely differ and the mapping is the thing worth owning.
-
-5. ~~**`ProvidersController.mutate` has no `src` caller.**~~ **Resolved by removal:** `mutate` is no
-   longer a member of `ProvidersController` and no longer appears in the object
-   `createProvidersController` returns, so nothing outside the module can reach it. The function
-   itself is alive and load-bearing as a module-private helper
-   (`packages/code/src/features/providers/controller.ts`) with twelve internal call sites
-   (and nine more). `defaultModelSource`, `defaultModelResolves` and
-   `effectiveDefaultModelResolves` were resolved the same way earlier and are gone from the
-   controller entirely.
-
-6. ~~**`ProvidersDeps.controller` injection has no production caller.**~~ **Resolved by removal:** the
-   escape hatch is gone. `ProvidersDeps` no longer carries a `controller` field
-   (`ProvidersDeps` and `ProvidersPanel` in `packages/code/src/views/config/ProvidersPanel.tsx`), and the panel always constructs its own controller — which is
-   what `packages/code/src/features/providers/commands.ts` already relied on, never having passed one.
-
-7. **`ViewHost.bindScope`'s `mode: "retarget"` has no in-scope user.** The `host.bindScope` call in
-   `packages/code/src/views/config/ProvidersPanel.tsx` and
-   `packages/code/src/views/config/DefaultsPanel.tsx` both bind `"reload"`. `"retarget"` is the default when `bindScope` is never
-   called (`packages/code/src/views/config/create-view-host.ts`), and its dirty-preserving branch is pinned only by
-   `packages/code/tests/unit/view-host-scope.test.ts`, which never calls `bindScope`. Which screens intend `"retarget"` is a
-   question for [hosts/code-domain-hubs.md](code-domain-hubs.md).
-
-8. ~~**Two picker paths coexist and nothing states which is canonical.**~~ **Resolved:** they are not
-   two competing implementations of one feature but two purpose-built wrappers over the same
-   `CatalogPicker` view, and neither can absorb the other's job.
-
-   `FieldEditor`'s `mode === "pick"` (`packages/code/src/views/config/field-editor.tsx`) is a **single-commit-then-close** abstraction: `onPick` always calls `done(id)`,
-   which unconditionally `setEditing(null)`s before invoking the caller's `commit` — there is no way
-   for a caller of `FieldEditor.startPick` to keep the picker open past one selection. That is exactly
-   what the map editor's `[a] add` needs (`packages/code/src/ui/patterns/map-editor.tsx`):
-   add one key to a map, close, return to the map-editor level.
-
-   The panel's own `picker` signal (`picker` and `openModelPicker` in `ProvidersPanel.tsx`;
-   `providers/list-level.tsx`; `providers/detail-level.tsx`) exists because two of its
-   three call sites need behaviour `FieldEditor`'s wrapper cannot express: (1) `openModelPicker` passes
-   `stayOpen: true` plus a live `counter`/`counterLabel` (`openModelPicker` in `ProvidersPanel.tsx`,
-   `CatalogPickerSpec` and `counterExtra` in `CatalogPicker.tsx`) for a persistent multi-select
-   "add/remove" picker —
-   `FieldEditor`'s spec has no `stayOpen`/`counter` fields at all, and its `onPick` always closes; (2)
-   `list-level.tsx`'s add-provider picker chains **directly into a second, different picker**
-   (`openModelPicker`) from inside its own `onPick`, and its "browse all providers" sentinel row
-   flips a local `showAll` signal without ever closing the picker in between — again
-   something `FieldEditor`'s always-close-after-one-pick contract cannot represent. `bindLevelKeys`
-   (`packages/code/src/ui/patterns/bind-level-keys.ts`) suppresses the underlying level's own
-   key layer whenever *either* `editor.editing() !== null` *or* the panel's own `suspend: () => picker()
-   !== null` (the `bindLevelKeys` call in `ProvidersPanel.tsx`) is true, and `LevelHost` mounts the two as independent optional
-   sibling slots outside the active `ViewFrame`: the editor's retained `CatalogPicker` through
-   `PickerInput` (`packages/code/src/ui/patterns/level-host.tsx`;
-   `packages/code/src/views/config/field-editor.tsx`) and the panel's `picker`-driven portal
-   (`packages/code/src/ui/patterns/level-host.tsx`). In practice only one is ever reachable by keyboard at
-   a time even though both are optional props on the same `LevelHost`. The code never states this
-   division in one place, but each half's own local reasoning (the `stayOpen`/`counter` fields; the
-   chained-picker/`showAll` flow) fully accounts for why the panel could not have routed its pickers
-   through `FieldEditor.startPick` instead.
-
-9. **Why the map editor's cast to `Record<string, string>` is locally confined** is stated as a
-   safety argument in `packages/code/src/features/providers/controller.ts`, but nothing enforces that the `rejectValue` is
-   always supplied — a future caller of `setProviderMap` that skipped it would violate the stated
-   precondition silently. No test covers that path.
-
-10. **`INV-P4`, `INV-P18`, `INV-P19` (the `suspend` wiring), `INV-P27`'s withheld branch, `INV-P35`
-    and `INV-P41` are unpinned.** Each is a rule the code clearly implements with no test that would
-    fail if it were removed. `INV-P35` in particular fixes a stated defect
-    (`packages/code/src/views/config/McpBrowser.tsx`) whose regression nothing would catch.
-
-11. **`headerCount()` in `McpBrowser`** computes the number of section-label rows by
-    counting nodes named `kernel` and adding one when `nodes[1]` is not the backend. It is fed only to
-    `contentRows` for list sizing. Whether it is correct for a node list with more than one
-    control-plane entry — which `reconcile` cannot currently produce ( always emits exactly one)
-    — is untestable as written, and no test asserts the sizing.
-
-12. **`McpEffects.activeProfile` has no reader.** It is declared on the interface
-    (`packages/code/src/adapters/mcp-capabilities-bridge.ts`) and implemented at the one production
-    construction site (`packages/code/src/app/commands.tsx`, `mcpEffects.activeProfile`), but a
-    grep of `mcp-capabilities-bridge.ts` finds no call to `deps.effects.activeProfile` anywhere in
-    `refreshOnce`, `syncPromptCommands` or either registered command handler, and no other module reads
-    it off `mcpEffects` either. Whether it is a planned seam or a leftover from an earlier shape of the
-    bridge is not settled by the source.
-
-13. **Rationale for design choices is generally not in the code.** Where a reason *is* stated it is
-    quoted and cited (the `onPromptRow` guard, the marketplace `editor` binding, the dirty-latch
-    fix, `preferredScope`, the `catalogModelFor`/`fillModelFromCatalog` split, the `AUTH_HEADER`
-    table, the `body` seam warning, `modelRow` vs `detailRow` at `packages/code/src/views/config/providers/context.ts`). For everything else
-    — the code records the outcome and not the reason. Two of the named cases are now stated:
-    **the three private modules** are three *levels* (list, detail, model) that are all mounted at
-    once and navigated between rather than three sections of one screen, which is why a shared
-    context exists at all and why `detailRow` and `modelRow` are separate signals
-    (`packages/code/src/views/config/providers/context.ts`). **Why `default_model` moved out
-    of the provider list into `/model` remains unstated in the code**; what is observable is that it
-    is a *settings-wide* value with no provider to belong to — the provider list only reports which
-    provider currently owns it (`packages/code/src/views/config/providers/list-level.tsx`) — and
-    that first-run setup is the one flow that still stages it alongside a provider
-    (`packages/code/src/features/providers/controller.ts`).
-Agent Profile documents with unknown frontmatter keys remain listable with an invalid marker. The editor does not promote `base_prompt` from invalid metadata; writes use the same closed schema as execution admission.
-Production: `docToAgentFile` and `normalizeAgentWrite` in [agent-files.ts](../../packages/code/src/adapters/agent-files.ts).
-Test: unknown-key rejection and unchecked-prompt isolation in [agent-files.test.ts](../../packages/code/tests/unit/agent-files.test.ts).
+1. The package manifest has no export map. The provider-entrypoint boundary test catches an explicit `providers` export if one is added, but the intended policy for the first export map is not stated.
+2. `ViewHost.bindScope` supports a dirty-preserving `retarget` mode, while the current Providers and Defaults screens bind `reload`. No production route establishes when `retarget` should be selected.
+3. `setProviderMap` relies on callers supplying `rejectValue` to make its locally confined cast safe. No type or test enforces that precondition for a future caller.
+4. INV-P4, INV-P18, INV-P19, INV-P27's withheld branch, INV-P35 and INV-P41 remain without focused regression assertions.
+5. `McpEffects.activeProfile` is constructed but has no reader in `mcp-capabilities-bridge.ts`. Source does not identify a use for this field.

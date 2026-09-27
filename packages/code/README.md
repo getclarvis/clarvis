@@ -164,7 +164,7 @@ boundaries, and derive Code's exact workspace-package allowlist from the central
 ## Contract
 
 The TUI contract is divided across the focused `code-*` specs in the
-[`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade): bootstrap,
+[`hosts` map](../../specs/README.md#hosts--the-kernel-protocol-and-terminal-ui): bootstrap,
 performance, run hosting, transcript projection, input/overlays, domain hubs, settings panels,
 keyboard policy, theme, and onboarding. The performance contract and measurement review live
 in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and routing are specified in
@@ -530,7 +530,7 @@ TUI process RSS, not arbitrary external MCP/shell process trees, so host-level m
 appropriate for untrusted external services. The fuse rearms after three samples below 70% with no
 pending local maintenance. A later natural drop can also rearm a measured failure that did not lose
 integrity. `/clear` remains an explicit session action, not part of recovery. Every model-start path,
-including `Work on task` and scheduled `/loop` turns, rechecks the fuse immediately before dispatch.
+including scheduled `/loop` turns, rechecks the fuse immediately before dispatch.
 Positive custom limits have a 512 MiB floor, preventing a rearm threshold below the measured healthy
 baseline. A separate efficiency advisory observes a 20-sample slope and requires both 512 MiB
 absolute RSS and 256 MiB growth from the process baseline; it records diagnostics but never blocks
@@ -1229,7 +1229,6 @@ time; decision returned to the model.` and that question's form, choices and dec
   or the latest session turn is already settled.
 - Skill slash commands and prompt injection.
 - Execution-memory review and curation.
-- Provider-backed task board, detail and current-workspace **Work on task** flow.
 - Provider, model, plugin and MCP-server configuration.
 - Contextual action Help, slash-command discovery and per-terminal Keyboard Profiles.
 - Local `!bash` commands and workspace attachments. The composer admits at most four images,
@@ -1473,8 +1472,10 @@ It refuses to report on a busy machine and stamps the power state, because CPU
 frequency scaling moved one unchanged measurement from 2.05 s to 0.60 s and three
 conclusions had to be withdrawn over it.
 The repository's [Clarvis TUI validation
-skill](../../.agents/skills/clarvis-tui-validation/SKILL.md) selects focused, full-audit, or performance
-work. Its performance mode scopes startup, extension comparisons, real-run latency, OAuth, drift,
+skill](../../.agents/skills/clarvis-tui-validation/SKILL.md) selects happy paths, happy plus secondary
+flows, specific journeys, a full audit, or performance work. Its execution setup covers configured
+provider selection, minimal disposable credential copies, host permission failures and cleanup.
+Its performance mode scopes startup, extension comparisons, real-run latency, OAuth, drift,
 and retention checks to the investigation and reuses valid artifact evidence across modes.
 
 An MCP that cannot connect while a run opens its tool pool remains represented by the persisted

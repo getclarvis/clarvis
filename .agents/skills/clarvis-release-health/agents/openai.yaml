@@ -1,4 +1,4 @@
 interface:
   display_name: "Clarvis Release Health"
-  short_description: "Run an evidence-based Clarvis release preflight"
-  default_prompt: "Use $clarvis-release-health to assess the requested Clarvis release scope, reusing valid gate and artifact evidence."
+  short_description: "Assess preflight, RCs, artifacts and publication evidence"
+  default_prompt: "Use $clarvis-release-health to select the requested release scope, verify source/artifact identity, documentation and required checks, and report readiness with explicit gaps and cleanup."

@@ -43,8 +43,8 @@ network fallback. Production: `install.sh`. Test:
 
 Cross-repository publication uses repository variable `CLARVIS_RELEASE_APP_CLIENT_ID` and secret
 `CLARVIS_RELEASE_APP_PRIVATE_KEY`. They identify the `Clarvis Release Publisher` GitHub App, whose
-installation is limited to `getclarvis/clarvis-releases` and whose only mutable repository
-permission is `Contents: write`. Production: `.github/workflows/release.yml` (`release-token` step).
+publication token is scoped to `getclarvis/clarvis-releases` with `Contents: write`. The App also
+serves source tagging through a separate token scoped to `getclarvis/clarvis`. Production: `.github/workflows/release.yml` (`release-token` step).
 Test: `tooling/tests/unit/release-readiness.test.ts` (scoped App contract).
 
 ## 3. Data and formats
@@ -65,7 +65,7 @@ An owned old revision is retired on rollback to a pre-skill release, and an unow
 left untouched. Production: `CLARVIS_DOCS_FIRST_VERSION` and `verifyReleaseTree` in
 `packages/code/src/update/release-manifest.ts`, `publishSelectedSystemDocs` in
 `packages/code/src/bootstrap/system-docs-cli.ts`, `reconcileSystemDocs` in
-`packages/kernel/src/skills/system-docs.ts`, root `install.sh` and and
+`packages/kernel/src/skills/system-docs.ts`, root `install.sh` and
 `publishStagedSystemDocs` in `packages/code/src/update/installation.ts`. Test:
 `packages/code/tests/integration/release-manifest.test.ts`,
 `packages/code/tests/integration/candidate-install.test.ts`, and
@@ -498,17 +498,11 @@ version ownership remains in [Package architecture](package-architecture.md).
    support becomes observed rather than configured only after the corresponding native build,
    artifact smoke, and installer smoke complete for the release. Dated run evidence belongs in
    [`specs/known-issues.md`](../known-issues.md) and the launch record, not in this durable contract.
-3. The portable Linux assets target GNU/glibc; Alpine and other musl-only distributions are not
-   configured targets for this beta. Production: `packages/code/tooling/release/package.ts`
-   (`nativePackages`) and `.github/workflows/release.yml` (Ubuntu Linux runners).
-4. The portable archive includes TypeScript sources and the Bun runtime. Size depends on the
-   target-native dependency closure; trimming must preserve package-owned native assets and
-   source-based startup.
-5. The repository now preserves Bun's upstream JavaScriptCore/WebKit LGPL notice, source/relinking
+3. The repository now preserves Bun's upstream JavaScriptCore/WebKit LGPL notice, source/relinking
    route, linked-library inventory, the models.dev MIT license, and the Vercel AI SDK Apache-2.0
    license in every archive. A release owner still needs to review the exact runtime and dependency
    artifacts and their redistribution obligations before publication; the presence of notices is
    not a substitute for legal review.
-6. The runtime workflow and manifest are locally checked but have not yet run in an authorized tag
-   publication. Registry permissions, multi-platform index digests, and remote attestation discovery
-   therefore remain release canaries rather than proven external state.
+4. The portable release workflow and manifest are locally checked, but this source review does not
+   establish an authorized tag publication. GitHub App permissions, native target jobs and complete
+   public distribution assets require attributable remote release evidence.

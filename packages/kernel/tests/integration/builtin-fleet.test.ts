@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "bun:test";
@@ -8,13 +8,14 @@ import { createFileKernel } from "#src/bootstrap.ts";
 import { createConfigService, createFileConfigStore } from "#src/config.ts";
 import { createSettingsRunAssembler } from "#src/runs/settings-assembler.ts";
 import { DEFAULT_ENTRY_AGENT } from "#src/config/builtin-agents/index.ts";
+import { ownedTempDirSync, trackOwnedResource } from "../helpers/owned-root.ts";
 
 /**
  * A host that has never written an agent file: a bare workspace and a global
  * directory holding nothing but providers and a default model.
  */
 function bareHost(): { ws: string; globalDir: string } {
-  const ws = mkdtempSync(join(tmpdir(), "clarvis-fleet-"));
+  const ws = ownedTempDirSync(join(tmpdir(), "clarvis-fleet-"));
   const globalDir = join(ws, "global");
   const settings = globalPaths(globalDir).settingsFile;
   mkdirSync(dirname(settings), { recursive: true });
@@ -89,6 +90,7 @@ describe("a host with no agent files at all", () => {
       traceDir: join(ws, "traces"),
       globalDir,
     });
+    trackOwnedResource(ws, () => kernel.close());
     try {
       expect((await kernel.listAgents()).map((a) => a.name)).toContain(DEFAULT_ENTRY_AGENT);
       const doc = await kernel.config.getAgent("builtin", "marshall");

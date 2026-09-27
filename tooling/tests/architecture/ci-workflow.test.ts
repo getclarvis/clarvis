@@ -10,6 +10,9 @@ const serialize = (workflow: CiWorkflow) => Bun.YAML.stringify(workflow);
 describe("independent CI workflow", () => {
   test("preserves every gate, real dependency and local sequential contract", () => {
     expect(ciWorkflowFailures(source, scripts)).toEqual([]);
+    expect(ciWorkflowFailures(source, { ...scripts, "test:cleanup": "true" })).toContain(
+      "Local temporary audit entry changed",
+    );
   });
 
   test("rejects loss of each Linux gate or aggregate dependency", () => {
@@ -48,7 +51,7 @@ describe("independent CI workflow", () => {
       },
       (workflow) => {
         workflow.jobs.checks.steps = workflow.jobs.checks.steps.filter(
-          (step) => step.run !== "bun run lint:intent",
+          (step) => step.run !== "bun run test:cleanup -- bun run lint:intent",
         );
       },
       (workflow) => {
@@ -115,8 +118,8 @@ describe("independent CI workflow", () => {
       "bun --version && bun --revision",
       "bun install --frozen-lockfile",
       "bun run build:packages",
-      "bun --filter @clarvis/sandbox test:native",
-      "bun --filter @clarvis/tools test:native",
+      "bun run test:cleanup -- bun --filter @clarvis/sandbox test:native",
+      "bun run test:cleanup -- bun --filter @clarvis/tools test:native",
     ]);
     expect(workflow.jobs["keyboard-macos"]["runs-on"]).toBe("macos-15");
     expect(workflow.jobs["keyboard-macos"].needs).toEqual(["sandbox-macos-intel"]);
@@ -127,10 +130,10 @@ describe("independent CI workflow", () => {
       "bun --version && bun --revision",
       "bun install --frozen-lockfile",
       "bun run build:packages",
-      "bun --filter @clarvis/sandbox test:native",
-      "bun --filter @clarvis/tools test:native",
-      "bun --filter @clarvis/tools test",
-      keyboard,
+      "bun run test:cleanup -- bun --filter @clarvis/sandbox test:native",
+      "bun run test:cleanup -- bun --filter @clarvis/tools test:native",
+      "bun run test:cleanup -- bun --filter @clarvis/tools test",
+      `bun run test:cleanup -- ${keyboard}`,
     ]);
     const release = readFileSync(".github/workflows/gitflow-release.yml", "utf8");
     for (const id of ["linux", "keyboard-macos"])

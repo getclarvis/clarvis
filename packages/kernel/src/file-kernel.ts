@@ -285,6 +285,20 @@ function reportCapability(
   );
 }
 
+function failStartup(error: unknown, close: readonly (() => void)[]): never {
+  const failures = [error];
+  for (const dispose of close) {
+    try {
+      dispose();
+    } catch (cleanupError) {
+      failures.push(cleanupError);
+    }
+  }
+  if (failures.length > 1)
+    throw new AggregateError(failures, "file kernel startup and cleanup failed", { cause: error });
+  throw error;
+}
+
 /**
  * Builds an {@link InProcessKernel} backed by file config/secrets under the
  * workspace and Clarvis global dir.
@@ -347,34 +361,46 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   );
   const gitWorkspace = await discoverGitWorkspace(opts.workspaceRoot);
   const kernelDefaultOwner = opts.defaultOwner ?? ownerFromWorkspace(opts.workspaceRoot);
-  const pluginContributions = createPluginContributions({
-    globalDir,
-    workspaceRoot: opts.workspaceRoot,
-    ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
-    ...(opts.onExtensionProfileDrift === undefined
-      ? {}
-      : {
-          onRuntimeDrift: (notice: PluginRuntimeDriftNotice) =>
-            opts.onExtensionProfileDrift?.({ kind: "plugin_runtime", ...notice }),
-        }),
-    logger: componentLogger("plugins"),
-  });
-  const extensionProfileManager = createExtensionProfileManager({
-    globalDir,
-    workspaceRoot: opts.workspaceRoot,
-    ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
-    pluginContributions,
-    ...(opts.extensionProfileSelector === undefined
-      ? {}
-      : { cliSelection: opts.extensionProfileSelector }),
-    ...(opts.onExtensionProfileDrift === undefined
-      ? {}
-      : {
-          onSkillDrift: (notice: ExtensionProfileSkillDriftNotice) =>
-            opts.onExtensionProfileDrift?.({ kind: "skill", ...notice }),
-        }),
-    logger: componentLogger("extension_profile"),
-  });
+  const pluginContributions = (() => {
+    try {
+      return createPluginContributions({
+        globalDir,
+        workspaceRoot: opts.workspaceRoot,
+        ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
+        ...(opts.onExtensionProfileDrift === undefined
+          ? {}
+          : {
+              onRuntimeDrift: (notice: PluginRuntimeDriftNotice) =>
+                opts.onExtensionProfileDrift?.({ kind: "plugin_runtime", ...notice }),
+            }),
+        logger: componentLogger("plugins"),
+      });
+    } catch (error) {
+      return failStartup(error, [() => systemDocs?.close()]);
+    }
+  })();
+  const extensionProfileManager = (() => {
+    try {
+      return createExtensionProfileManager({
+        globalDir,
+        workspaceRoot: opts.workspaceRoot,
+        ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
+        pluginContributions,
+        ...(opts.extensionProfileSelector === undefined
+          ? {}
+          : { cliSelection: opts.extensionProfileSelector }),
+        ...(opts.onExtensionProfileDrift === undefined
+          ? {}
+          : {
+              onSkillDrift: (notice: ExtensionProfileSkillDriftNotice) =>
+                opts.onExtensionProfileDrift?.({ kind: "skill", ...notice }),
+            }),
+        logger: componentLogger("extension_profile"),
+      });
+    } catch (error) {
+      return failStartup(error, [() => pluginContributions.close(), () => systemDocs?.close()]);
+    }
+  })();
   let extensionProfileRunRefs = 0;
   const configStore = createFileConfigStore({
     workspaceRoot: opts.workspaceRoot,
@@ -421,7 +447,15 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       const { executeRun } = await import("@clarvis/loop");
       return await executeWithIsolationBinding(isolationService, args, executeRun);
     });
-  reportConfigScopes(componentLogger("config"), configStore.readSettings(), pluginContributions);
+  try {
+    reportConfigScopes(componentLogger("config"), configStore.readSettings(), pluginContributions);
+  } catch (error) {
+    return failStartup(error, [
+      () => extensionProfileManager.close(),
+      () => pluginContributions.close(),
+      () => systemDocs?.close(),
+    ]);
+  }
   const secretStore = createFileSecretStore(
     opts.globalDir !== undefined ? { dir: opts.globalDir } : {},
   );

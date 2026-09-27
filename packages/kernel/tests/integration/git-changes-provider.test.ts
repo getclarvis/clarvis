@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
 import { createNodeProcessRunner } from "#src/adapters/process/node-process-runner.ts";
@@ -56,6 +64,54 @@ function provider(): ReturnType<typeof createGitChangesProvider> {
 }
 
 describe("GitChangesProvider", () => {
+  it("releases its Git scratch directory after a real child command", async () => {
+    const fixtureRoot = tempDir("clarvis-changes-child-");
+    const repository = join(fixtureRoot, "repository");
+    const temporary = join(fixtureRoot, "temporary");
+    const home = join(fixtureRoot, "home");
+    const external = join(fixtureRoot, "external");
+    for (const path of [repository, temporary, home, external]) mkdirSync(path);
+    initRepo(repository);
+    writeFileSync(join(repository, "untracked.txt"), "hello\n");
+    writeFileSync(join(external, "sentinel"), "keep");
+    const caseFile = join(fixtureRoot, "scratch.test.ts");
+    const providerSource = resolve(import.meta.dir, "../../src/workspace/git-changes-provider.ts");
+    const runnerSource = resolve(
+      import.meta.dir,
+      "../../src/adapters/process/node-process-runner.ts",
+    );
+    writeFileSync(
+      caseFile,
+      `import { test, expect } from "bun:test";\nimport { createGitChangesProvider } from ${JSON.stringify(providerSource)};\nimport { createNodeProcessRunner } from ${JSON.stringify(runnerSource)};\ntest("Git scratch", async () => { const provider = createGitChangesProvider({ processRunner: createNodeProcessRunner() }); const context = { workspaceRoot: ${JSON.stringify(repository)}, workspaceId: "ws", projectId: "prj" }; expect((await provider.probe(context)).status).toBe("available"); const listed = await provider.listChanges(context, {}); const entry = listed.items.find((item) => item.new_path === "untracked.txt"); expect(entry).toBeDefined(); expect((await provider.readChange(context, { query_id: listed.query_id, entry_id: entry!.id })).status).toBe("ready"); });\n`,
+    );
+    const child = Bun.spawn([process.execPath, "test", caseFile, "--timeout", "60000"], {
+      cwd: resolve(import.meta.dir, "../.."),
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: home,
+        TMPDIR: temporary,
+        TMP: temporary,
+        TEMP: temporary,
+        CLARVIS_HOME: external,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect(code, `${stdout}\n${stderr}`).toBe(0);
+      expect(readdirSync(temporary)).toEqual([]);
+      expect(readdirSync(external)).toEqual(["sentinel"]);
+    } finally {
+      child.kill();
+      await child.exited;
+    }
+  });
+
   it("reports not_applicable outside a repository", async () => {
     const root = tempDir("clarvis-changes-none-");
     const availability = await provider().probe(ctx(root));

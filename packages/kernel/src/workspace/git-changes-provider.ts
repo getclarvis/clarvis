@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { executableOnPath, withoutGitRepositoryEnvironment } from "@clarvis/paths";
@@ -307,14 +307,34 @@ export function createGitChangesProvider(
     defaultPageSize: options.limits?.defaultPageSize ?? DEFAULT_PAGE_SIZE,
   };
   const environment = gitEnvironment(options.environment ?? process.env);
-  let emptyFile: string | undefined;
-
-  const ensureEmptyFile = async (): Promise<string> => {
-    if (emptyFile !== undefined) return emptyFile;
+  const withEmptyFile = async <T>(use: (empty: string) => Promise<T>): Promise<T> => {
     const emptyDir = await mkdtemp(join(tmpdir(), "clarvis-git-changes-"));
-    emptyFile = join(emptyDir, "empty");
-    await writeFile(emptyFile, "", { mode: 0o600 });
-    return emptyFile;
+    let value!: T;
+    let failed = false;
+    let operationError: unknown;
+    try {
+      const empty = join(emptyDir, "empty");
+      await writeFile(empty, "", { mode: 0o600 });
+      value = await use(empty);
+    } catch (error) {
+      failed = true;
+      operationError = error;
+    }
+    try {
+      await rm(emptyDir, { recursive: true, force: true });
+    } catch (cleanupError) {
+      if (failed)
+        throw new AggregateError(
+          [operationError, cleanupError],
+          `Git scratch cleanup failed: ${emptyDir}`,
+          {
+            cause: cleanupError,
+          },
+        );
+      throw new Error(`Git scratch cleanup failed: ${emptyDir}`, { cause: cleanupError });
+    }
+    if (failed) throw operationError;
+    return value;
   };
 
   const run = async (
@@ -469,16 +489,17 @@ export function createGitChangesProvider(
         },
       };
     }
-    const empty = await ensureEmptyFile();
-    const emptyTree = (
-      await run(
-        git,
-        worktreeRoot,
-        ["hash-object", "-t", "tree", "--", empty],
-        context.signal,
-        allowZero,
-      )
-    ).stdout.trim();
+    const emptyTree = await withEmptyFile(async (empty) =>
+      (
+        await run(
+          git,
+          worktreeRoot,
+          ["hash-object", "-t", "tree", "--", empty],
+          context.signal,
+          allowZero,
+        )
+      ).stdout.trim(),
+    );
     const headResult = await options.processRunner.run({
       command: git,
       args: [...GIT_PREFIX, "rev-parse", "--verify", "--quiet", "HEAD"],
@@ -839,14 +860,16 @@ export function createGitChangesProvider(
         message: "file is no longer present",
       };
     }
-    const empty = await ensureEmptyFile();
-    const result = await run(
-      snapshot.git,
-      snapshot.worktreeRoot,
-      ["diff", ...DIFF_FLAGS, "--no-index", "--", empty, abs],
-      signal,
-      new Set([0, 1]),
-    );
+    const { result, empty } = await withEmptyFile(async (empty) => ({
+      empty,
+      result: await run(
+        snapshot.git,
+        snapshot.worktreeRoot,
+        ["diff", ...DIFF_FLAGS, "--no-index", "--", empty, abs],
+        signal,
+        new Set([0, 1]),
+      ),
+    }));
     if (/^Binary files /m.test(result.stdout) || result.stdout.includes("Binary files ")) {
       return {
         entry_id: entryId(COMPARISON_UNSTAGED, "added", undefined, relPath),

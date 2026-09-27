@@ -318,20 +318,63 @@ Kernel's `ownedTempDirSync` composes close operations and root removal in one aw
 Tools' `cleanup` awaits every fixture session manager and retains both roots if physical exit
 cannot be confirmed. The smoke context uses the removal handles returned by short-root allocation,
 attempts every owned removal, and retains roots while a child exit is unconfirmed. Cleanup failures
-surface in the test result. The test-home preload removes only the direct runner's own root and
-reports a synchronous removal failure with a failing exit status; a handoff child never removes it.
+surface in the test result. The test-home preload removes only the direct runner's own root after
+file hooks and throws a removal failure into the runner; a handoff child never removes it.
 These guarantees cover normal exit and controlled assertion/setup failure. A runtime crash, `SIGKILL`
 or machine failure cannot run finalizers.
+
+The qualification wrapper `test:cleanup` runs one unchanged argv with an exclusive, initially empty
+temporary area exposed through `TMPDIR`, `TMP` and `TEMP`. It removes an inherited
+`CLARVIS_TEST_HOME_HANDOFF` marker so the child's preload owns its new root and disables the
+Node compile cache for this disposable command. The parent must itself be a directory; the wrapper
+resolves symlinked ancestors before allocating the area so native temporary paths remain valid.
+After the executor confirms child closure and checks its POSIX process group, the wrapper records
+the command's original exit and the remaining relative entry names before containing only its own
+area. A passing command with residue fails qualification;
+an already failing command retains its exit status and reports the residue separately. Inspection
+or containment errors fail qualification. If dependent process exit cannot be confirmed, the area is
+retained with its exact path. Processes that deliberately leave the owned process group still require
+their fixture's own close proof; the wrapper does not prove cleanup after forced process death.
+Production: `tooling/lib/test-temporary-audit.ts` (`runTestTemporaryAudit`,
+`temporaryAuditExit`), `tooling/checks/test-temporary-audit.ts` (`main`). Test:
+`tooling/tests/unit/test-temporary-audit.test.ts` and
+`tooling/tests/integration/test-temporary-audit.test.ts`,
+`test-temporary-audit-contract.test.ts`.
+
+Code's local-host integration cases give each case a short temporary parent for its socket
+directory and close tracked workspace managers before removing that parent. This keeps endpoint
+names within the Unix socket budget while keeping the entire physical fixture under one owner.
+Production: `packages/code/tests/integration/workspace-client-manager.test.ts` (`tempWorkspaceRoot`,
+`trackManager`). Test: the `WorkspaceClientManager` cases in that file and the qualified
+`test:cleanup` command.
 
 Production: `packages/code/tests/helpers/tracked-temp.ts` (`openTempDir`),
 `packages/kernel/tests/helpers/owned-root.ts` (`ownedTempDirSync`, `trackOwnedResource`),
 `packages/tools/tests/helpers/fixtures.ts` (`cleanup`),
 `packages/code/tooling/artifact/isolation.ts` (`createSmokeContext`, `releaseAllocations`), and
-`tooling/test-runtime/clarvis-home-preload.ts` (`removeOwnedTestRoot`). Test:
+`tooling/test-runtime/clarvis-home-preload.ts` (`installTestHome`) and
+`tooling/test-runtime/clarvis-test-home.ts` (`acquireTestHome`). Test:
 `tooling/tests/integration/temp-resource-lifecycle.test.ts`,
 `packages/tools/tests/integration/common/fixture-cleanup.test.ts`,
 `packages/code/tests/integration/artifact-isolation.test.ts`, and
 `tooling/tests/integration/clarvis-home-preload.test.ts`.
+
+Physical fixtures own roots outside the process test home separately. Kernel's `ownedTempDirSync`
+registers removal as each test acquires a root and `trackOwnedResource` closes a kernel or connection
+manager first; Workflows, fleet, trust and isolation cases use that ownership in
+`packages/kernel/tests/integration/`. Code's diagnostic fixture closes every session before removing
+its case directories, including directories created in the middle of a test. Loop's cache and
+truncation cases retain their workspaces until their harness closes. Trace's JSON store binds its
+root to the test that acquired it rather than a mutable file-wide path; tooling's package-graph
+fixture does the same. Production: `packages/kernel/tests/helpers/owned-root.ts`
+(`ownedTempDirSync`, `trackOwnedResource`), `packages/code/tests/integration/diagnostics.test.ts`
+(`tempDir`, `createDiagnosticSession`), and
+`tooling/tests/architecture/package-graph.test.ts` (`fixture`). Test:
+`packages/kernel/tests/integration/workflows-service.test.ts`,
+`packages/kernel/tests/integration/workspace-trust.test.ts`,
+`packages/kernel/tests/integration/builtin-fleet.test.ts`,
+`packages/code/tests/integration/diagnostics.test.ts`, and
+`packages/trace/tests/integration/json-trace-store.test.ts`.
 
 Test: `packages/memory/tests/integration/file-store-observability.test.ts`,
 `packages/paths/tests/contract/physical/local-lease.test.ts`,
@@ -808,20 +851,31 @@ it with Bun` in
 their complete temporary-repository journeys with deliberately conflicting inherited Git directory,
 worktree and index paths.
 
-At preload time — before any test module is evaluated — the file distinguishes direct entry from an
+At preload time — before any test module is evaluated — `acquireTestHome` distinguishes direct entry from an
 explicit child handoff. A direct process always `mkdtempSync`es `clarvis-test-home-` below a
 validated temporary parent, assigns the new root to `process.env[HOME_ENV]` (i.e.
 `CLARVIS_HOME`, `packages/paths/src/roots.ts`), and records the same value in
 `CLARVIS_TEST_HOME_HANDOFF`. Only a child that inherits that exact marker reuses the root. The
-owner registers a `process.on("exit")` that removes only its root; a handoff child never removes
-the owner's fixture (`tooling/test-runtime/clarvis-home-preload.ts`). Existing `CLARVIS_HOME`
+owner registers one runner `afterAll` hook that removes only its root after file hooks; a handoff child never removes
+the owner's fixture (`tooling/test-runtime/clarvis-home-preload.ts`, `installTestHome`;
+`tooling/test-runtime/clarvis-test-home.ts`, `acquireTestHome`). Existing `CLARVIS_HOME`
 without the marker is therefore operator input, not an implicit test handoff, and is replaced.
 
-The docblock states the mechanism and why a fixture cannot do it: per-workspace machinery "resolves
-under the global root rather than inside the working tree", and "the writers resolve the root from
-the ambient environment at call time, so nothing a test passes to a helper can redirect them"
-(`tooling/test-runtime/clarvis-home-preload.ts`). The explicit marker is the narrow exception for a
-test process that intentionally hands the same fixture to a child.
+The preload installs the environment before test modules can resolve their ambient paths. The
+factory has no import-time side effects and exposes idempotent cleanup for its owning process.
+If environment installation or hook registration fails, the adapter restores the prior environment
+and cleans the acquired root. The explicit marker is the narrow exception for a test process that
+intentionally hands the same fixture to a child. Production:
+`tooling/test-runtime/clarvis-home-preload.ts` (`installTestHome`) and
+`tooling/test-runtime/clarvis-test-home.ts` (`acquireTestHome`). Test:
+`tooling/tests/integration/clarvis-home-preload.test.ts` (`two files share one root through both file hooks`,
+`a handoff child leaves the owner's root alive`). That integration suite runs minimal child `bun test`
+commands for both file-hook order and assertion, setup, import, handoff, concurrent ownership,
+cleanup-refusal and coverage outcomes. The parent reads each child's exit status and checks the
+temporary parent after completion; a standalone factory test injects a refused remover without
+replacing the global filesystem API. These are controlled completions, not crash or forced-stop
+guarantees. Test: `tooling/tests/integration/clarvis-home-preload.test.ts` (`runTests`,
+`runner cleanup refusal fails and retains prior assertion failure`, `coverage output remains at the configured destination`).
 
 The root `bunfig.toml` carries the same preload because Bun resolves configuration from the
 working directory: a test invoked by path from the repository root does not inherit its package's
@@ -862,6 +916,13 @@ included automatically; their coverage floors remain owned only by `PACKAGE_THRE
 Each package is invoked by argv as `bun run test:coverage`, with its own cwd and full script,
 including architecture checks and Protocol's type contract. Package bunfig/preloads therefore retain
 ownership. Coverage stays sequential; correctness does not depend on Code's position in the inventory.
+Each attempt has its own temporary audit area through the same executor. The audit result is recorded
+separately from the test exit and cleanup containment. Residue on a controlled successful attempt
+turns it into an ordinary failure without retry; a classified Code crash retains its original status
+and retry policy, while a containment or unconfirmed-exit error stops before any retry. The coverage
+checker also uses the composed executor once after all workspaces succeed; no package suite is run
+twice for auditing. Native macOS and tooling gates use the same one-command wrapper around their
+existing commands, and direct development scripts remain available.
 
 Before each attempt, only the selected package's prior `coverage/lcov.info` is removed, after
 revalidating real package/coverage directories. A failed attempt cannot lend stale LCOV to its retry.
@@ -889,9 +950,10 @@ remote coverage, floors, smoke or platform checks.
 Production: [coverage library](../../tooling/lib/ci-coverage.ts), `runCiCoverage`,
 `executeCoverageCommand`, `normalizeCoverageExit`;
 [coverage CLI](../../tooling/checks/ci-coverage.ts);
+[temporary audit](../../tooling/lib/test-temporary-audit.ts), `runTestTemporaryAudit`;
 [workspace inventory](../../tooling/lib/ci-workspaces.ts), `readCiWorkspaces`.
 Test: [supervisor tests](../../tooling/tests/integration/ci-coverage.test.ts), complete scripts,
-manifest-order permutations, classified retries/exhaustion, stale LCOV and cancellation.
+manifest-order permutations, classified retries/exhaustion, stale LCOV, temporary residue and cancellation.
 
 The required `linux` aggregator independently requires all seven Linux job results, with the
 exact key set and every result successful. Its `always()` condition cannot itself approve Linux.
@@ -1082,7 +1144,7 @@ only the owner-specific default").
 
 15. **INV-310 (ownership half) — a direct test entry never reuses an unmarked `CLARVIS_HOME`, and a
     marked child never cleans up its owner's root.** Rule:
-    `tooling/test-runtime/clarvis-home-preload.ts`, where `CLARVIS_TEST_HOME_HANDOFF` must equal the
+    `tooling/test-runtime/clarvis-test-home.ts`, where `CLARVIS_TEST_HOME_HANDOFF` must equal the
     selected root. Test: `tooling/tests/integration/clarvis-home-preload.test.ts` covers direct replacement,
     explicit handoff and owner-only cleanup.
 
@@ -1208,7 +1270,7 @@ only the owner-specific default").
 | Documentation embeds a source line locator, names an explicit repository file that does not exist, or a tracked spec embeds a calendar date or source-size inventory | `tooling/checks/spec-hygiene.ts`; `extractLineQualifiedReferences`, `resolveRepositoryFileReference`, `extractCalendarDates`, and `extractSourceSizeReferences` in `tooling/lib/spec-hygiene.ts` | every unstable, missing, dated, or source-size reference is reported and `process.exitCode = 1`; illustrative paths use visible placeholders, chronology stays in `CHANGELOG.md`, and behavioral line limits remain legal |
 | Code dies by SIGILL/SIGABRT/SIGSEGV in CI | `tooling/lib/ci-coverage.ts`, `runCiCoverage` | up to 3 additional Code attempts, then remaining packages and global checking |
 | Bun dies by SIGINT/SIGTERM in CI | `tooling/ci/retry-code-coverage.sh` | never retried |
-| Preload temp-dir cleanup fails at exit | `tooling/test-runtime/clarvis-home-preload.ts`, `removeOwnedTestRoot` | error is reported and the process exit code is set to failure |
+| Preload temp-dir cleanup fails in `afterAll` | `tooling/test-runtime/clarvis-home-preload.ts`, `installTestHome`; `tooling/test-runtime/clarvis-test-home.ts`, `acquireTestHome` | the hook throws with the owned path; the command fails and retains a prior test failure |
 | A conformance harness lacks an optional capability | `packages/memory/src/testing.ts` | the case returns early rather than failing |
 | Tree-sitter highlighting unavailable under the code preload | `packages/code/tests/helpers/tree-sitter-preload.ts` | `highlightOnce` resolves with an `error`; renderables fall back to plain text. The test asserts only `error` is a string, because "asserting the exact string made this pass alone and fail in the full run" (`packages/code/tests/integration/tree-sitter-preload.test.ts`) |
 
@@ -1231,7 +1293,7 @@ fail-hard. Notably, `coverage.ts` has no partial mode — there is no flag to ch
 | `tooling/lib/ci-workflow.ts` | Bun YAML, `workflowSecurityFailures`, `checkGateChain`, `checkRootBuild` | runtime, static | independent CI must retain the local sequential gate and workflow security |
 | `tooling/checks/bun-version.ts` | Bun YAML plus `node:fs`, `node:path`, `node:url` | — | validates the exact mise pin against every runtime and declaration surface |
 | `tooling/checks/bun-sources.ts` | Git executable plus `node:fs`/`node:path`/`node:url` | subprocess | Git supplies the tracked-and-unignored path inventory; the script performs no recursive filesystem scan |
-| `tooling/test-runtime/clarvis-home-preload.ts` | `@clarvis/paths` | runtime, static | — it must not spell `CLARVIS_HOME` itself; `HOME_ENV` is owned at `packages/paths/src/roots.ts` |
+| `tooling/test-runtime/clarvis-home-preload.ts` and `clarvis-test-home.ts` | `@clarvis/paths` and `bun:test` | runtime, static | `HOME_ENV` is owned at `packages/paths/src/roots.ts`; the adapter installs runner finalization after acquisition |
 | `tooling/checks/package-graph.ts` | `specs/package-coupling-analysis.md` | runtime, filesystem | only under `--check-doc` |
 
 `typescript` is a root `devDependency` (`package.json`, `devDependencies.typescript`), which is what

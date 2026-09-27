@@ -65,6 +65,7 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `build:watch` | `tsc -b --watch` | `package.json` (`scripts.build:watch`) |
 | `clean` | `tsc -b --clean && bun --workspaces clean` | `package.json` (`scripts.clean`) |
 | `test` | `test:tooling`, followed by every sequential package suite, all `&&`-chained | `package.json` (`scripts.test`) |
+| `test:cleanup` | run one supplied argv under an exclusive temporary area and fail on residue | `package.json` (`scripts.test:cleanup`) |
 | `test:fast` | tooling unit tests and in-memory package suites, isolated by workspace | `package.json` (`scripts.test:fast`) |
 | `test:integration` | tooling and package physical suites, isolated by workspace | `package.json` (`scripts.test:integration`) |
 | `test:tooling` | unit and architecture tests, then all tooling integration canaries once | `package.json` (`scripts.test:tooling`) |
@@ -93,12 +94,14 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `check:bun-sources` | `bun run tooling/checks/bun-sources.ts` | `package.json` (`scripts.check:bun-sources`) |
 
 The Linux `checks` job runs the structural gates and complete tooling suite through
-`lint:intent`; the `coverage` job runs the complete package suites in one LCOV pass per workspace,
-followed by source-presence and floor checks. The separate `sandbox-macos-intel` and
-`keyboard-macos` jobs retain native qualification. `test:fast` and `test:integration` are focused
+`lint:intent` under `test:cleanup`; the `coverage` supervisor audits each existing workspace
+attempt in its single LCOV pass, then runs source-presence and floor checks. The separate
+`sandbox-macos-intel` and `keyboard-macos` jobs audit their existing native qualifications.
+`test:fast` and `test:integration` are focused
 development entries, and CI does not repeat the fast suite after coverage. Production:
 `.github/workflows/ci.yml` (`checks`, `coverage`, `sandbox-macos-intel`, `keyboard-macos`) and
-`tooling/lib/ci-coverage.ts` (`runCiCoverage`). Test:
+`tooling/lib/ci-coverage.ts` (`runCiCoverage`),
+`tooling/lib/test-temporary-audit.ts` (`runTestTemporaryAudit`). Test:
 `tooling/tests/architecture/ci-workflow.test.ts` and
 `tooling/tests/integration/ci-coverage.test.ts`.
 

@@ -147,6 +147,7 @@ Run from the repository root unless the package command requires another scope.
 | Code                     | Relevant tests, package typecheck/lint and affected architecture checks                    |
 | Public type surface      | Source-profile typecheck, rebuild changed package, verify downstream declaration consumers |
 | TUI behavior or boot     | Selected PTY journey and artifact boot checks through the TUI skill                        |
+| Temporary cleanup       | `bun run test:cleanup -- <command>`, including `bun run test` for complete qualification    |
 | Release/distributable    | Gates and platform evidence selected through release-health                                |
 
 Use `bun run test` for the full suite, never raw root `bun test`. Targeted tests use the owning

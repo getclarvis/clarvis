@@ -12,6 +12,7 @@ import {
   type CoverageEvent,
 } from "../../lib/ci-coverage.ts";
 import { readCiWorkspaces } from "../../lib/ci-workspaces.ts";
+import { runTestTemporaryAudit, type TemporaryAuditEvent } from "../../lib/test-temporary-audit.ts";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -62,6 +63,73 @@ function supervisor(statuses: Record<string, number[]> = {}) {
 }
 
 describe("sequential CI coverage supervisor", () => {
+  test("audited attempts keep unique areas, never retry residue, and retain classified crash retry", async () => {
+    for (const outcomes of [
+      [{ code: 0, remaining: ["leak"] }],
+      [
+        { code: 139, remaining: ["crash-remnant"] },
+        { code: 0, remaining: [] },
+      ],
+    ]) {
+      const root = await fixture(["code"]);
+      const { deps, commands, events } = supervisor();
+      const areas: string[] = [];
+      const audit: TemporaryAuditEvent[] = [];
+      deps.execute = (command) =>
+        runTestTemporaryAudit(command, `${command.cwd}: ${areas.length + 1}`, {
+          parent: root,
+          emit: (event) => audit.push(event),
+          io: {
+            acquire: (parent) => {
+              const area = join(parent, `attempt-${areas.length + 1}`);
+              areas.push(area);
+              return Promise.resolve(area);
+            },
+            inspect: (area) => Promise.resolve(outcomes[Number(area.at(-1)) - 1]?.remaining ?? []),
+            remove: () => Promise.resolve(),
+          },
+          execute: (received) => {
+            commands.push(received);
+            const next = outcomes[commands.length - 1];
+            return Promise.resolve({ code: next?.code ?? 0, signal: null });
+          },
+        });
+      const result = await runCiCoverage(root, deps);
+      expect(result.code).toBe(outcomes.length === 1 ? 1 : 0);
+      expect(areas).toHaveLength(outcomes.length === 1 ? 1 : 3);
+      expect(new Set(areas).size).toBe(areas.length);
+      expect(events.filter((event) => event.phase === "retry")).toHaveLength(
+        outcomes.length === 1 ? 0 : 1,
+      );
+      expect(audit.filter((event) => event.phase === "observation")[0]?.remaining).toEqual(
+        outcomes[0]?.remaining,
+      );
+    }
+  });
+
+  test("containment failure during a classified crash stops before retry", async () => {
+    const root = await fixture(["code"]);
+    const { deps, events } = supervisor();
+    let calls = 0;
+    deps.execute = (command) =>
+      runTestTemporaryAudit(command, "code crash", {
+        parent: root,
+        emit: () => {},
+        io: {
+          acquire: () => Promise.resolve(join(root, "owned-attempt")),
+          inspect: () => Promise.resolve(["crash-remnant"]),
+          remove: () => Promise.reject(new Error("containment refused")),
+        },
+        execute: () => {
+          calls++;
+          return Promise.resolve({ code: 139, signal: null });
+        },
+      });
+    await expect(runCiCoverage(root, deps)).rejects.toThrow("containment refused");
+    expect(calls).toBe(1);
+    expect(events.some((event) => event.phase === "retry")).toBe(false);
+  });
+
   test("runs each complete script once with package cwd, argv, canary and protocol before the checker", async () => {
     const root = await fixture();
     const { deps, commands, events } = supervisor();

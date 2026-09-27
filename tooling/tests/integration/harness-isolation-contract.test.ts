@@ -33,10 +33,11 @@ test("artifact, release and installer smoke runners keep the fixture boundary", 
 });
 
 test("related cache, Goal and preload harnesses keep their roots explicit", async () => {
-  const [cache, goal, preload] = await Promise.all([
+  const [cache, goal, preload, lifecycle] = await Promise.all([
     source("tooling/cache/artifact.ts"),
     source("tooling/goal/live.ts"),
     source("tooling/test-runtime/clarvis-home-preload.ts"),
+    source("tooling/test-runtime/clarvis-test-home.ts"),
   ]);
 
   expect(cache).toContain("isolatedEnvironment");
@@ -44,8 +45,10 @@ test("related cache, Goal and preload harnesses keep their roots explicit", asyn
   expect(cache).not.toContain("...process.env");
   expect(goal).toContain("environmentFor");
   expect(goal).toContain("env: environment");
-  expect(preload).toContain("CLARVIS_TEST_HOME_HANDOFF");
-  expect(preload).not.toContain('"/tmp"');
+  expect(preload).toContain("acquireTestHome");
+  expect(preload).toContain("afterAll");
+  expect(lifecycle).toContain("CLARVIS_TEST_HOME_HANDOFF");
+  expect(lifecycle).not.toContain('"/tmp"');
 });
 
 test("Plan repository integration fixtures put locks below their disposable workspace", async () => {

@@ -2,6 +2,12 @@
 
 Clarvis's MCP transport layer.
 
+Failure observations use a scope per connection manager, opened connection, resilient session or
+bounded fetch. `openConnection` passes its scope through reconnect attempts and into its resilient
+session; two connections sharing a logger still report their first cleanup failure independently.
+Production: `openConnection` in `packages/mcp-client/src/connection.ts`. Test:
+`packages/mcp-client/tests/component/observability-connection.test.ts`.
+
 ## Contract
 
 Transports, resilient sessions, pooling, and the namespaced registry are specified in

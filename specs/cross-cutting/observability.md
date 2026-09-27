@@ -1,12 +1,18 @@
 # The one diagnostic channel: Logger port, vocabulary, cost and audit
 
 Optional stream-debug metrics are a separate operator-selected JSONL sink. Their counters calculate
-windows from an injected clock and memory sample; the runtime adapter alone owns the timer, exit
-listener and append, and `dispose` releases them with one final flush. Failed debug writes remain
-tolerated and do not become trace events. Production: `createStreamMetricsCounter` and
-`createStreamMetrics` and `selectStreamMetrics` in `packages/llm/src/stream-metrics.ts` and
-`packages/code/src/adapters/stream-metrics.ts`. Test: `packages/llm/tests/unit/stream-metrics.test.ts`,
+windows from an injected clock and memory sample; the runtime sink owns the timer, exit
+listener and append, and `dispose` releases them with one final flush. The loop host selects and
+owns its LLM sink, while each adapter and stream call receives only a counter port; the streaming
+helpers do not read the process-global selector. Failed debug writes remain tolerated and do not
+become trace events. Production: `createStreamMetricsCounter`, `createStreamMetrics`, and
+`selectStreamMetrics` in `packages/llm/src/stream-metrics.ts` and
+`packages/code/src/adapters/stream-metrics.ts`; `buildExecuteRunDeps` in
+`packages/loop/src/runtime/build-run-deps.ts`; `runStreamCall` in
+`packages/llm/src/ai-sdk/stream-call.ts`. Test: `packages/llm/tests/unit/stream-metrics.test.ts`,
 `packages/llm/tests/integration/stream-metrics.test.ts`,
+`packages/llm/tests/unit/stream-call.test.ts`,
+`packages/loop/tests/integration/stream-debug-wiring.test.ts`,
 `packages/code/tests/unit/stream-metrics.test.ts` and
 `packages/code/tests/integration/stream-metrics.test.ts`.
 
@@ -344,6 +350,19 @@ are logged as `*_chars` counts and never as text. The redaction mechanics are in
 [security.md](security.md) §3.1 and §7.2.
 
 ## 4. Behavior
+
+`createTaskObservationScope` gives each owner a separate bounded failure history for
+`bestEffort` and `detachObserved`. The required `TaskObservation.scope` decides which repeated
+operation failures suppress both observer and logger notifications; a shared logger alone does not
+share that history. Kernel lifecycle, host and transport instances, Memory stores and workers, MCP
+connections and managers, and Plan run sessions construct scopes with their owners. Production:
+`packages/capability/src/tasks.ts` (`createTaskObservationScope`),
+`packages/kernel/src/application/lifecycle.ts` (`createKernelLifecycle`),
+`packages/memory/src/file-store.ts` (`createFileMemoryStore`),
+`packages/mcp-client/src/connection.ts` (`openConnection`), and
+`packages/plan/src/capability/index.ts` (`createPlansCapability`). Test:
+`packages/capability/tests/unit/tasks.test.ts` and
+`packages/mcp-client/tests/component/observability-connection.test.ts`.
 
 ### 4.1 Building a host's logger (file-kernel path)
 

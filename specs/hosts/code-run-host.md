@@ -6,7 +6,8 @@
 ## 1. Purpose
 
 `packages/code/src/run-host.ts` is the stateful bridge between a UI shell and the kernel's run stream.
-It owns the in-flight `RunHandle`, the active `Session`, the status line, terminal attention cues, the
+Its private `createRunCoordinator` owns local admission, generations, run handles and settlement
+leases without importing the visual framework or performing I/O. The facade owns the active `Session`, the status line, terminal attention cues, the
 resident-turn window over the transcript, and the derived workflow projection. Its constructor
 `createRunHost` (`packages/code/src/run-host.ts`) returns a `RunHost`
 (`packages/code/src/run-host.ts`) whose members every shell surface — the composer, the footer,
@@ -44,6 +45,28 @@ whether a late callback still owns the surface it wants to write to
 (`packages/code/src/run-host.ts`).
 
 ## 2. Surface
+
+### Local admission matrix
+
+`RunHost` checks these local conditions before dispatch; the Kernel separately decides hosted
+authorization and remote admission. A local reservation never proves that remote admission succeeded.
+
+| Entry | Local entry condition | Ownership and release | Conversation change |
+| --- | --- | --- | --- |
+| Human turn | May arrive during automatic preparation; after content preparation, an active handled run receives steer, otherwise it waits for stored reconciliation before starting | Submission reservation spans preparation and dispatch, released on return or failure; a run handle remains tracked until `closed` | Invalidates preparation and suppresses late steer/status/draft changes |
+| Steer | Current run has a handle and interactive run lifetime remains active | Uses that handle; creates no new run or physical-work reservation | Late receipt cannot update the new presentation |
+| Goal preparation or synchronization | Preparation requires idle `scheduledBusy`; synchronization rechecks binding and occupancy after every remote read | Uses the selected conversation generation; an attached stage uses normal run/handle settlement | Generation change invalidates pending reads and presentation |
+| Scheduled turn | Matching binding and configuration, valid request, no UI or local occupancy | Synchronous reservation through preparation, reconciliation and all occurrence-owned `closed` promises; scoped cancel does not release it early | Cancels reservation and prevents dispatch; old physical closure still settles its receipt |
+| Local `!` | No pending human/scheduled preparation, loading, reconciliation, compaction or physical run | Owns abort controller and local activity until process, persistence and host lease release finish | Aborts old command; its late completion cannot write the new conversation |
+| Compaction | Idle compaction needs a previous execution; active compaction may queue on the controlled run; scheduled preparation/closure blocks it | Call lease lasts through the compact request; live event projection tracks pipeline state separately | Late call release affects only its own lease |
+| Session clear, switch or attach | Switch invalidates current presentation; attach rechecks its load epoch and current handle after canonical reads | Releases current interactive/settlement ownership and cancels local work; hosted observations are released, while physical closure remains separately tracked | Advances generation and rejects stale callbacks |
+| Background handoff | Active hosted handle, eligible connection, no local shell or compaction | One operation identity survives uncertain results; confirmed receipt retires presentation, classified refusal permits a new attempt | A changed conversation rejects late confirmation without replaying detach |
+
+Production: `createRunCoordinator` in
+[run-coordinator.ts](../../packages/code/src/core/run-coordinator.ts) and `createRunHost` in
+[run-host.ts](../../packages/code/src/run-host.ts). Test:
+[run-coordinator.test.ts](../../packages/code/tests/unit/run-coordinator.test.ts) and
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
 ### Selective shell interruption
 
@@ -157,7 +180,7 @@ Test: takeover without reattachment and observer-to-controller result consumptio
 
 | Member | Signature | File |
 | --- | --- | --- |
-| `runActive` | `Accessor<boolean>` — true only while the current run accepts interactive control; post-run stream delivery does not keep it true | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`) |
+| `runActive` | `Accessor<boolean>` — true only while the current run accepts interactive control; post-run stream delivery does not keep it true | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`), `packages/code/src/core/run-coordinator.ts` (`createRunCoordinator`) |
 | `continuesOnExit` | `Accessor<boolean>` — the active observed run has confirmed host `continue` policy and the connection lifecycle can outlive the TUI; later admissions reset the projection | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`, `attachHostedRun`) |
 | `bashActive` | `Accessor<boolean>` | `packages/code/src/run-host.ts` |
 | `compactionActive` | `Accessor<boolean>` — live compaction pipeline state | `packages/code/src/run-host.ts` (`RunHost`) |
@@ -271,6 +294,7 @@ optional `prepareReconnect`, and `callbacks`.
 | --- | --- | --- |
 | `adapters/run-types.ts` | `ProfileInfo`, `StartRunInput`, `RunHandle`, `SteerResult`, `CompactResult`; re-exports `MemoryIngestNotice`, `RunProgress` from `core/run-types.ts` | — |
 | `adapters/run-reducers.ts` | `subagentOutcomeKind`, `subagentSettledStatus`, `iterationTokens`, `SubagentRegistry`, `createSubagentRegistry`; re-exports `PlanTaskActivity` | — |
+| `adapters/transcript-export.ts` | private `exportTranscriptBatches`, `TranscriptExportSource`, `TranscriptExportSnapshot`; no package entrypoint | `packages/code/src/adapters/transcript-export.ts` |
 | `adapters/activity-store.ts` | `ActivityStore`, `createActivityStore`, `UsageActivity`, `ContextActivity`, `SubagentStatus`, `ACTIVITY_SUBAGENT_SUMMARY_MAX_CHARS` (512), `ACTIVITY_SUBAGENT_SUMMARIES_MAX` (64) | — |
 | `adapters/session.ts` | `Session`, `SessionDeps`, `SessionInit`, `createSession`, `isContinuationUnavailable`, `buildSkillRunDigest`, `buildRecoveredContext`, `ResumedSession`, `ResumeDeps`, `ResumeOptions`, `resumeSession`, `deleteSession`, `SESSION_RESUME_MAX_PAYLOAD_CHARS` | — |
 | `adapters/session-store.ts` | `SessionId`, `NodeStatus`, `SessionTotals`, `TurnRef`, `SessionMeta`, `runStatusToNode`, `uuidv7`, `redactPreview`, `TURN_ERROR_MAX_CHARS` (2000), `redactTurnError`, `addUsageToTotals`, `uncachedInput`, `formatCostUsd`, `SessionStore`, `MAX_RESIDENT_FULL_SESSIONS` (8), `listSessionsForWorkspace`, `metaToSession`, `sessionToMeta`, `sessionSummaryToMeta`, `sessionTurnCount`, `loadSessions`, `createSessionStore` | `packages/code/src/adapters/session-store.ts` |
@@ -670,23 +694,30 @@ repeated 20-turn plateau.
 
 ### 4.10 `exportNodeBatches` (`packages/code/src/run-host.ts`)
 
-Creates a **scratch** `TranscriptStore` in its own `createRoot`, with every retention cap raised to
-`Number.MAX_SAFE_INTEGER`.
+`RunHost.exportNodeBatches` passes a narrow read port to private `exportTranscriptBatches`:
+`getRun`, the tool signature projector, and one synchronous conversation snapshot. That snapshot
+holds the session identity, its existing turn array, the bounded resident node array and the fold
+count. It does not copy the canonical turn index. The exporter creates a **scratch**
+`TranscriptStore` in its own `createRoot`, with every retention cap raised to
+`Number.MAX_SAFE_INTEGER`; `finally` disposes it after completion, an error or an early iterator
+`return()`. Production: `exportNodeBatches` in `packages/code/src/run-host.ts` and
+`exportTranscriptBatches` in `packages/code/src/adapters/transcript-export.ts`. Test:
+`packages/code/tests/component/transcript-export.test.ts`.
 
 | Case | Behavior | File |
 | --- | --- | --- |
-| no folded turns and no released prose, plain store | yields `store.nodes` itself (identity), then done | `packages/code/src/run-host.ts` |
-| isolated child store | reloads resident runs one at a time and joins hidden child detail to Lead nodes; unavailable child records produce `EXPORT INCOMPLETE` | `packages/code/src/run-host.ts` (`exportResidentWithChildren`) |
-| no folded turns but released prose present | yields through `exportResidentNodes` | `packages/code/src/run-host.ts` |
-| folded turns present | lazily index `session.meta().turns[0..foldedTurnCount)`, rebuild and yield one canonical turn at a time, then export the resident window | `packages/code/src/run-host.ts` (`exportNodeBatches`) |
+| no folded turns and no released prose, plain store | yields `store.nodes` itself (identity), then done | `packages/code/src/adapters/transcript-export.ts` |
+| isolated child store | reloads resident runs one at a time and joins hidden child detail to Lead nodes; unavailable child records produce `EXPORT INCOMPLETE` | `packages/code/src/adapters/transcript-export.ts` (`exportResidentWithChildren`) |
+| no folded turns but released prose present | yields through `exportResidentNodes` | `packages/code/src/adapters/transcript-export.ts` |
+| folded turns present | lazily index the captured canonical turn array, rebuild and yield one turn at a time, then export the resident window | `packages/code/src/adapters/transcript-export.ts` (`exportTranscriptBatches`) |
 
 The host deliberately retains only `foldedTurnCount`, not a parallel `foldedTurns[]`. When export
-begins, `canonicalTurns = session?.meta()?.turns` supplies each folded turn's preview, kind and trace
-id by index. `scratch.clear()` runs before every index and the generator yields that reconstructed
+begins, the facade captures `session?.meta()?.turns` once; the exporter reads each folded turn's
+preview, kind and trace id by index. `scratch.clear()` runs before every index and the generator yields that reconstructed
 turn before reading the next one, so export does not materialize a second copy of the session or
 eagerly fetch the folded prefix. A transcript-kind turn uses its canonical display preview rather
-than substituting the skill's internal persisted prompt. Production: `packages/code/src/run-host.ts`
-(`exportNodeBatches`). Tests: `packages/code/tests/component/run-host-export.test.ts` ("folded export
+than substituting the skill's internal persisted prompt. Production: `packages/code/src/adapters/transcript-export.ts`
+(`exportTranscriptBatches`). Tests: `packages/code/tests/component/run-host-export.test.ts` ("folded export
 reads the canonical turn index one item at a time", "transcript-only skill runs use the same bounded
 canonical export index", and "folded turns are yielded one at a time before the bounded live
 window").
@@ -694,7 +725,7 @@ window").
 The interactive store keeps hidden child detail outside Lead nodes. For resident turns,
 `exportResidentWithChildren` replays one persisted run at a time into the existing scratch store;
 an unavailable child record produces an explicit incomplete marker. Production:
-`packages/code/src/run-host.ts` (`exportResidentWithChildren`). Test:
+`packages/code/src/adapters/transcript-export.ts` (`exportResidentWithChildren`). Test:
 `packages/code/tests/component/run-host-export.test.ts` (isolated child export and unavailable record).
 
 `exportResidentNodes` walks nodes, and for each released-prose node
@@ -717,6 +748,15 @@ flushed every `EXPORT_BATCH_NODE_LIMIT` nodes.
 The fingerprint check is real: a `/skill` user node shows the rendered command while the persisted
 prompt is the skill body, so exporting the persisted content would silently substitute a different
 prompt — `packages/code/tests/component/run-host-export.test.ts`.
+
+If the active session changes while a persisted read is pending, the export finishes that read,
+stops reading the old folded prefix and emits only the resident nodes captured at export start.
+`foldState` in `packages/code/src/run-host.ts` returns no state once the captured `Session` loses
+ownership; the exporter never follows the new session's turn array. This preserves the previous
+partial old-session result without mixing conversations. Production: `exportNodeBatches` in
+`packages/code/src/run-host.ts` and `exportTranscriptBatches` in
+`packages/code/src/adapters/transcript-export.ts`. Test:
+`packages/code/tests/component/run-host-export.test.ts` (session switch stops old folded reads).
 
 ### 4.11 `clearSession` (`packages/code/src/run-host.ts`)
 
@@ -1137,23 +1177,33 @@ The following are derived directly from this document's own source and its tests
     boundaries without mutating the transcript").
 
 20. **An export never fails because of one missing trace.** Every fetch failure becomes a node or a
-    notice (`packages/code/src/run-host.ts`). Pinned:
+    notice (`exportTranscriptBatches` in `packages/code/src/adapters/transcript-export.ts`). Pinned:
     `packages/code/tests/component/run-host-export.test.ts`.
 
 21. **An export lazily indexes canonical `SessionMeta.turns` and yields one folded turn at a time, so
-    a second copy of the session is never resident.** Production: `packages/code/src/run-host.ts`
-    (`exportNodeBatches`). Pinned by `packages/code/tests/component/run-host-export.test.ts` ("folded
+    a second copy of the session is never resident.** Production: `packages/code/src/adapters/transcript-export.ts`
+    (`exportTranscriptBatches`). Pinned by `packages/code/tests/component/run-host-export.test.ts` ("folded
     export reads the canonical turn index one item at a time" and "folded turns are yielded one at a
     time before the bounded live window").
 
 22. **A plain transcript store that still fits the resident window exports `store.nodes` itself;
     the interactive isolated-child store refetches each resident run to include hidden child detail.**
-    `packages/code/src/run-host.ts` (`exportNodeBatches`, `exportResidentWithChildren`). Pinned by
+    `packages/code/src/adapters/transcript-export.ts` (`exportTranscriptBatches`, `exportResidentWithChildren`). Pinned by
     object identity and isolated-child cases in `packages/code/tests/component/run-host-export.test.ts`.
 
 23. **A released user block is never exported using a persisted prompt that does not match what was
-    displayed.** The `sourceTextFingerprint` comparison at `packages/code/src/run-host.ts`.
+    displayed.** The `sourceTextFingerprint` comparison at `packages/code/src/adapters/transcript-export.ts`.
     Pinned: `packages/code/tests/component/run-host-export.test.ts`.
+
+**Export scratch ownership.** Every export owns and disposes its scratch store, including on early
+iterator return; concurrent exports do not share that store. Production: `exportTranscriptBatches`
+in `packages/code/src/adapters/transcript-export.ts`. Test:
+`packages/code/tests/component/transcript-export.test.ts`.
+
+**Session switch during export.** A pending old export never redirects to the new conversation.
+Production: `exportNodeBatches` in `packages/code/src/run-host.ts` and
+`exportTranscriptBatches` in `packages/code/src/adapters/transcript-export.ts`. Test:
+`packages/code/tests/component/run-host-export.test.ts`.
 
 24. **Prompt-history seeding includes conversation turns only: resident conversations use rehydrated
     content and folded conversations use their canonical, already-redacted preview; transcript-only
@@ -1406,7 +1456,7 @@ The following are derived directly from this document's own source and its tests
 | resumed history exceeds 16 M chars or 10 k messages | `SessionResumeLimitError` and `resumeSession` in `packages/code/src/adapters/session.ts` | the whole resume rejects; **nothing renders** (`packages/code/tests/component/session.test.ts`, "resumeSession rejects an oversized continuation chain before fetching the next batch") |
 | a resume is superseded by `clearSession`/another load | `loadEpoch` guards at `packages/code/src/run-host.ts` | the stale resume writes nothing; status stays `"idle"` (`packages/code/tests/component/run-host.test.ts`) |
 | resumed session's newest Extension Profile differs from the connected kernel | `packages/code/src/run-host.ts` (`loadSessionMeta`) | resume succeeds without rewriting history; a warning names the previous/current ids and fingerprint prefixes, and status includes `Extension Profile changed` |
-| an export's `getRun` throws or returns `null` | `packages/code/src/run-host.ts` | replaced by an `EXPORT INCOMPLETE`/`folded — …` node; the export completes |
+| an export's `getRun` throws or returns `null` | `packages/code/src/adapters/transcript-export.ts` | replaced by an `EXPORT INCOMPLETE`/`folded — …` node; the export completes |
 | prompt-history file missing or unreadable | `catch` returning `{entries: [], compact: false}` (`packages/code/src/adapters/file-prompt-history.ts`) | history starts empty |
 | a corrupt prompt-history JSON line | skipped (`packages/code/src/adapters/file-prompt-history.ts`) | remaining usable history survives |
 | `stream-metrics` path unwritable | `try {} catch {}` around `appendFileSync` (`packages/code/src/adapters/stream-metrics.ts`) | instrumentation silently disabled for that write |

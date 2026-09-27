@@ -1,5 +1,10 @@
 import type { KernelTransport } from "@clarvis/protocol";
-import { detachObserved, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  detachObserved,
+  NOOP_LOGGER,
+  type Logger,
+} from "@clarvis/capability";
 import { observationSink } from "../core/observed.ts";
 import type { KernelServer } from "./server.ts";
 
@@ -23,6 +28,7 @@ export function createLoopbackTransport(
   server: KernelServer,
   logger: Logger = NOOP_LOGGER,
 ): KernelTransport {
+  const observationScope = createTaskObservationScope();
   const clone = <T>(value: T): T =>
     value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
 
@@ -56,6 +62,7 @@ export function createLoopbackTransport(
     },
     notify(method: string, params?: unknown): void {
       detachObserved(() => conn.handle(method, clone(params)), {
+        scope: observationScope,
         operation: `kernel_loopback_notify:${method}`,
         logger: observationSink(logger, "transport.notify_failed"),
       });

@@ -1257,6 +1257,11 @@ root (`packages/paths/src/workspace-state.ts`) are two different functions, and
   the stale-lock steal, lock release and the heartbeat (`packages/memory/src/file-store/lock.ts`), job pruning (`packages/memory/src/file-store/jobs.ts`), revision metadata and body pruning
   (`packages/memory/src/file-store/revisions.ts`), the orphan-bookkeeping cleanup on a vanished split wiki
   (`packages/memory/src/file-store/layout.ts`), and journal sweep (`packages/memory/src/file-store/journal.ts`).
+  `createFileMemoryStore` creates one `TaskObservationScope` and passes it through those five
+  collaborators; another store has independent suppression even when it uses the same logger.
+  Production: `createFileMemoryStore` in `packages/memory/src/file-store.ts` and
+  `bestEffortFileStore` in `packages/memory/src/file-store/tasks.ts`. Test:
+  `packages/capability/tests/unit/tasks.test.ts`.
 
 ### 7.3 Inbound
 

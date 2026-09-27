@@ -3,7 +3,13 @@ import { promises as fs } from "node:fs";
 import { bestEffortFileStore } from "./tasks.ts";
 import * as path from "node:path";
 
-import { createSampler, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  createSampler,
+  createTaskObservationScope,
+  NOOP_LOGGER,
+  type Logger,
+  type TaskObservationScope,
+} from "@clarvis/capability";
 import { writeFileDurable } from "@clarvis/paths";
 
 import { readUtf8FileBounded, scanDirectoryBounded } from "../bounded-io.ts";
@@ -67,10 +73,12 @@ export function encodeRunId(runId: string): string {
 }
 
 export function createJobRepository(options: {
+  observationScope?: TaskObservationScope;
   machineryRoot: string;
   init: () => Promise<void>;
   logger?: Logger;
 }): JobRepository {
+  const observationScope = options.observationScope ?? createTaskObservationScope();
   const logger = options.logger ?? NOOP_LOGGER;
   /**
    * Admits the first eight corrupt records of one shape, then powers of two.
@@ -402,7 +410,7 @@ export function createJobRepository(options: {
       let removed = 0;
       await scanJobs(async (job) => {
         if (keep.has(job.run_id) || !isJobPrunable(job, pruneOptions)) return;
-        await bestEffortFileStore("memory_job_prune", () =>
+        await bestEffortFileStore(observationScope, "memory_job_prune", () =>
           fs.rm(jobPath(job.run_id), { force: true }),
         );
         removed += 1;

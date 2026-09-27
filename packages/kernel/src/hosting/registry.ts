@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { recoverHostedDelivery, type HostedDeliveryRecovery } from "./delivery-recovery.ts";
 import { boundPromise } from "@clarvis/loop/host";
 import {
+  createTaskObservationScope,
   bestEffort,
   detachObserved,
   NOOP_LOGGER,
@@ -264,6 +265,7 @@ function identifier(value: string, name: string): void {
  * Acknowledgement hides a terminal startup offer, while canonical run/session history stays intact.
  */
 export function createHostedRegistry(options: HostedRegistryOptions): HostedRegistry {
+  const observationScope = createTaskObservationScope();
   const logger = options.logger ?? NOOP_LOGGER;
   const executionChanged = (sessionId: string): void => {
     try {
@@ -437,7 +439,11 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       .finally(() => {
         writes--;
       });
-    commitTail = bestEffort(() => result, { operation: "hosting.state.commit", logger });
+    commitTail = bestEffort(() => result, {
+      scope: observationScope,
+      operation: "hosting.state.commit",
+      logger,
+    });
     return result;
   };
 
@@ -471,6 +477,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
   };
   const cancelAfterDisconnect = async (entry: Entry): Promise<void> => {
     await bestEffort(() => entry.handoff?.promise, {
+      scope: observationScope,
       operation: "hosting.handoff.reconcile",
       logger,
     });
@@ -1035,7 +1042,11 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       admission.retireContinuation(authority);
       delete entry.continuationAuthority;
       await entry.continuationStop;
-      await bestEffort(() => prune(entry), { operation: "hosting.continuation.prune", logger });
+      await bestEffort(() => prune(entry), {
+        scope: observationScope,
+        operation: "hosting.continuation.prune",
+        logger,
+      });
     }
   };
 
@@ -1721,7 +1732,11 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     const wake = (): void => {
       cancelRecoveryWake = undefined;
       if (closing) return;
-      detachObserved(sync, { operation: "hosting.recovery.scheduled", logger });
+      detachObserved(sync, {
+        scope: observationScope,
+        operation: "hosting.recovery.scheduled",
+        logger,
+      });
     };
     if (options.scheduleRecovery !== undefined)
       cancelRecoveryWake = options.scheduleRecovery(milliseconds, wake);
@@ -1900,11 +1915,19 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       closing = true;
       cancelRecoveryWake?.();
       cancelRecoveryWake = undefined;
-      await bestEffort(() => syncing, { operation: "hosting.recovery.sync", logger });
+      await bestEffort(() => syncing, {
+        scope: observationScope,
+        operation: "hosting.recovery.sync",
+        logger,
+      });
       await Promise.all([...connections.values()].map(closeConnection));
       await Promise.all(
         [...entries.values()].map(async (entry) => {
-          await bestEffort(() => entry.recovery, { operation: "hosting.recovery.settle", logger });
+          await bestEffort(() => entry.recovery, {
+            scope: observationScope,
+            operation: "hosting.recovery.settle",
+            logger,
+          });
           entry.preparation.abort();
           await entry.preparationSettled.promise;
           await entry.source?.cancel();

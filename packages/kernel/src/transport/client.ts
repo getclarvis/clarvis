@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { detachObserved, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  detachObserved,
+  NOOP_LOGGER,
+  type Logger,
+} from "@clarvis/capability";
 import { observationSink } from "../core/observed.ts";
 import type {
   AgentSummary,
@@ -156,6 +161,7 @@ export async function connectKernelClient(
   transport: KernelTransport,
   opts: ConnectKernelClientOptions = {},
 ): Promise<RemoteKernel> {
+  const observationScope = createTaskObservationScope();
   const logger = opts.logger ?? NOOP_LOGGER;
   const clientRuns = new Map<string, ClientRun>();
   const configSubs = new Map<string, (change: ConfigChange) => void>();
@@ -219,6 +225,7 @@ export async function connectKernelClient(
     clearClientSubscriptions();
     detachTransportObservers();
     detachObserved(() => transport.close(), {
+      scope: observationScope,
       operation: "kernel_transport_protocol_violation",
       logger: observationSink(logger, "transport.close_failed"),
     });
@@ -469,12 +476,14 @@ export async function connectKernelClient(
       droppable: isDroppableRunEvent,
       onSaturated: () => {
         detachObserved(() => transport.request(methods.cancel, { execution_id: executionId }), {
+          scope: observationScope,
           operation: "kernel_remote_run_saturated_cancel",
           logger: observationSink(logger, "transport.cancel_failed"),
         });
       },
       onAbandoned: () => {
         detachObserved(() => transport.request(methods.cancel, { execution_id: executionId }), {
+          scope: observationScope,
           operation: "kernel_remote_run_abandoned_cancel",
           logger: observationSink(logger, "transport.cancel_failed"),
         });
@@ -605,6 +614,7 @@ export async function connectKernelClient(
       configSubs.set(id, listener);
       const subscribed = transport.request(M.configSubscribe, { kinds, subscription_id: id });
       detachObserved(() => subscribed, {
+        scope: observationScope,
         operation: "kernel_config_subscribe",
         logger: observationSink(logger, "transport.subscribe_failed"),
       });
@@ -624,6 +634,7 @@ export async function connectKernelClient(
             await transport.request(M.configUnsubscribe, { subscription_id: id });
           },
           {
+            scope: observationScope,
             operation: "kernel_config_unsubscribe",
             logger: observationSink(logger, "transport.unsubscribe_failed"),
           },

@@ -22,6 +22,12 @@ When review is requested, plan content must be approved before execution proceed
 
 An attempt to finalize with open tasks produces a bounded nudge and eventually a terminal unfinished result when the lead makes no progress. A checkpoint can pause without closing those tasks. A plan stays by default and is deleted only through the configured explicit discard path after terminal completion. Production: `pendingTaskGate` and `reviewGate` in `packages/plan/src/capability/orchestration.ts`, `DEFAULT_PLAN_RETENTION` in `packages/plan/src/schemas.ts`, and `PlanService` in `packages/plan/src/service.ts`. Test: `packages/plan/tests/component/plan-orchestration.test.ts` and `packages/plan/tests/component/plan-observability.test.ts`.
 
+The best-effort discard observer uses the `TaskObservationScope` of its `forRun` session. A
+failure in another session therefore remains observable even if both use the same logger and
+operation name. Production: `createPlansCapability` in `packages/plan/src/capability/index.ts`.
+Test: `packages/plan/tests/component/plan-observability.test.ts` and
+`packages/capability/tests/unit/tasks.test.ts`.
+
 ## Invariants
 
 1. Spawning a child does not claim, complete, or fail a plan task. The lead records task outcomes through `transition_plan_task`. Production: `beforeSpawn` in `packages/plan/src/capability/orchestration.ts` and `handlePlanRuntimeCall` in `packages/plan/src/capability/runtime-tools.ts`. Test: `packages/plan/tests/component/plan-orchestration.test.ts`.

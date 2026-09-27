@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 
+import { createTaskObservationScope, type TaskObservationScope } from "@clarvis/capability";
 import { ensureWorkspaceSubdir } from "@clarvis/paths";
 import { bestEffortFileStore } from "./tasks.ts";
 
@@ -12,10 +13,12 @@ export interface FileStoreLayout {
 }
 
 export function createFileStoreLayout(options: {
+  observationScope?: TaskObservationScope;
   root: string;
   machineryRoot?: string;
   workspaceRoot?: string;
 }): FileStoreLayout {
+  const observationScope = options.observationScope ?? createTaskObservationScope();
   const machineryRoot = options.machineryRoot ?? options.root;
   const split = machineryRoot !== options.root;
   let initialized: Promise<void> | null = null;
@@ -37,7 +40,7 @@ export function createFileStoreLayout(options: {
       path.join(machineryRoot, ".state", "indexed"),
       path.join(machineryRoot, ".journal"),
     ]) {
-      await bestEffortFileStore("memory_orphan_bookkeeping_cleanup", () =>
+      await bestEffortFileStore(observationScope, "memory_orphan_bookkeeping_cleanup", () =>
         fs.rm(dir, { recursive: true, force: true }),
       );
     }

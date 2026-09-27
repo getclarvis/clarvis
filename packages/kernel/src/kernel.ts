@@ -4,8 +4,8 @@ import { type ExecuteRunDeps, type SkillsProvider } from "@clarvis/loop";
 import type { MemoryFactory } from "@clarvis/memory/capability";
 import { BUILTIN_GRANT_NAMES, readCapabilitySettings } from "@clarvis/loop/host";
 import {
+  createTaskObservationScope,
   detachObserved,
-  suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
   PersistenceError,
@@ -91,6 +91,7 @@ import {
 import { createAgentWorkflowPolicy } from "./application/workflow-policy.ts";
 import { globalRoot } from "@clarvis/paths";
 import { kernelError } from "./core/errors.ts";
+import { createOwnerScopePool } from "./core/owner-scope-pool.ts";
 import { createUnavailableProviderAuthService } from "./subscriptions/unavailable.ts";
 import { createStorageService } from "./storage/storage-service.ts";
 import {
@@ -421,6 +422,7 @@ function createBuiltinExtensionProfileService(): ExtensionProfileService {
  *   synchronous — no I/O is performed here.
  */
 export function createInProcessKernel(opts: CreateKernelOptions): InProcessKernel {
+  const observationScope = createTaskObservationScope();
   if (opts.workspace.projectId !== opts.project.id) {
     throw new Error("createInProcessKernel: workspace.projectId must match project.id.");
   }
@@ -495,7 +497,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     );
   }
 
-  interface OwnerCacheEntry {
+  interface OwnerRuntime {
     services: OwnerScopedKernel;
     stateOwner: string;
     prepareRun(
@@ -503,13 +505,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       goal?: GoalExecutionPolicy,
       goalCreation?: GoalCreationExecutionPolicy,
     ): PreparedKernelRun;
-    refs: number;
-    runRefs: number;
-    runDrained?: Promise<void>;
-    resolveRunDrained?: () => void;
-    pinned: boolean;
-    lastUsedAt: number;
-    timer?: ReturnType<typeof setTimeout>;
   }
 
   /**
@@ -530,17 +525,11 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   if (!Number.isFinite(ownerIdleMs) || ownerIdleMs < 0) {
     throw new Error("createInProcessKernel: ownerCache.idleMs must be non-negative.");
   }
-  const ownerEntries = new Map<string, OwnerCacheEntry>();
-  const retiringOwners = new Map<string, Promise<void>>();
   let memoryRecoveryStarted = false;
   let selectedPluginMutation = false;
   let selectedPluginRecompositionRequired = false;
 
-  const ownerOccupancy = (): number => ownerEntries.size + retiringOwners.size;
-
-  const buildOwner = (
-    owner: string,
-  ): Pick<OwnerCacheEntry, "services" | "stateOwner" | "prepareRun"> => {
+  const buildOwner = (owner: string, generation: number): OwnerRuntime => {
     const stateOwner = workspaceScopeKey(owner, opts.project.id, opts.workspace.id);
     const scope: OwnerScope = {
       owner: stateOwner,
@@ -626,12 +615,12 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         }),
       workflows,
     };
+    const scopedServices = withOwnerRunLease(owner, generation, services);
     return {
-      services,
+      services: scopedServices,
       stateOwner,
       prepareRun(params, goal, goalCreation) {
-        const entry = ownerEntries.get(owner);
-        if (entry === undefined)
+        if (!ownerPool.isCurrent(owner, generation))
           throw kernelError("unavailable", "run owner generation is no longer resident");
         return prepareKernelRun(
           params,
@@ -646,9 +635,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
             ...(opts.skillsProvider === undefined ? {} : { skills: opts.skillsProvider }),
             workflowSettings: readWorkflowsSettings,
             start: (request, prepared) => {
-              if (ownerEntries.get(owner) !== entry)
+              if (!ownerPool.isCurrent(owner, generation))
                 throw kernelError("unavailable", "prepared run owner generation was retired");
-              return entry.services.runs.start(request, prepared);
+              return scopedServices.runs.start(request, prepared);
             },
             startWorkflow: (request, prepared) => workflows.runManagerWorkflow(request, prepared),
           },
@@ -659,131 +648,51 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     };
   };
 
-  const retireOwner = (owner: string, entry: OwnerCacheEntry): Promise<void> => {
-    if (entry.refs > 0 || entry.runRefs > 0 || entry.pinned) return Promise.resolve();
-    if (ownerEntries.get(owner) !== entry) return retiringOwners.get(owner) ?? Promise.resolve();
-    if (entry.timer !== undefined) clearTimeout(entry.timer);
-    ownerEntries.delete(owner);
-    const retiring = Promise.resolve()
-      .then(async () => {
-        const cleanup = await Promise.allSettled([
-          opts.memoryFactory?.stopOwner?.(entry.stateOwner) ?? Promise.resolve(),
-          Promise.resolve().then(() => planFactory?.evictOwner?.(entry.stateOwner)),
-          Promise.resolve().then(() => opts.onOwnerRetired?.(entry.stateOwner)),
-        ]);
-        const failures = cleanup.filter(
-          (result): result is PromiseRejectedResult => result.status === "rejected",
-        );
-        if (failures.length > 0) {
-          throw new AggregateError(
-            failures.map((failure) => failure.reason as unknown),
-            `failed to retire owner '${owner}' cleanly`,
-          );
-        }
-      })
-      .finally(() => {
-        if (retiringOwners.get(owner) === retiring) retiringOwners.delete(owner);
-      });
-    retiringOwners.set(owner, retiring);
-    // Retirement is commonly timer- or release-triggered. Attach an observer at
-    // creation so those detached paths can never surface an unhandled rejection;
-    // callers that await the original promise still receive its failure.
-    detachObserved(() => retiring, {
-      operation: "retire kernel owner",
-      workspace: opts.workspaceRoot,
-      logger,
-    });
-    return retiring;
-  };
-
-  const validateOwner = (owner: string): void => {
-    if (owner.trim() === "") {
-      throw new Error("InProcessKernel.forOwner: 'owner' must be a non-empty string.");
-    }
-  };
-
-  const evictOneIdleOwner = (): boolean => {
-    let candidate: [string, OwnerCacheEntry] | undefined;
-    for (const value of ownerEntries) {
-      const [, entry] = value;
-      if (entry.refs > 0 || entry.runRefs > 0 || entry.pinned) continue;
-      if (candidate === undefined || entry.lastUsedAt < candidate[1].lastUsedAt) candidate = value;
-    }
-    if (candidate === undefined) return false;
-    suppressSecondaryRejection(
-      retireOwner(candidate[0], candidate[1]),
-      "kernel owner retirement observer",
-    );
-    return true;
-  };
-
-  const residentOwner = (owner: string, pin: boolean): OwnerCacheEntry => {
-    validateOwner(owner);
-    if (lifecycle.state !== "open") {
-      throw kernelError("unavailable", "kernel is closing");
-    }
-    if (retiringOwners.has(owner)) {
-      throw kernelError("unavailable", `owner '${owner}' is still releasing resources`);
-    }
-    const hit = ownerEntries.get(owner);
-    if (hit !== undefined) {
-      hit.lastUsedAt = Date.now();
-      if (pin) hit.pinned = true;
-      if (hit.timer !== undefined) {
-        clearTimeout(hit.timer);
-        delete hit.timer;
-      }
-      return hit;
-    }
-    if (ownerOccupancy() >= maxOwners) evictOneIdleOwner();
-    if (ownerOccupancy() >= maxOwners) {
-      throw kernelError(
-        "resource_exhausted",
-        `kernel owner cache is full (${maxOwners} active, pinned, or retiring owners)`,
+  const ownerPool = createOwnerScopePool<OwnerRuntime>({
+    maxOwners,
+    idleMs: ownerIdleMs,
+    build: buildOwner,
+    isOpen: () => lifecycle.state === "open",
+    async retire(owner, value) {
+      const cleanup = await Promise.allSettled([
+        opts.memoryFactory?.stopOwner?.(value.stateOwner) ?? Promise.resolve(),
+        Promise.resolve().then(() => planFactory?.evictOwner?.(value.stateOwner)),
+        Promise.resolve().then(() => opts.onOwnerRetired?.(value.stateOwner)),
+      ]);
+      const failures = cleanup.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
       );
-    }
-    const built = buildOwner(owner);
-    const entry: OwnerCacheEntry = {
-      services: built.services,
-      stateOwner: built.stateOwner,
-      prepareRun: built.prepareRun,
-      refs: 0,
-      runRefs: 0,
-      pinned: pin,
-      lastUsedAt: Date.now(),
-    };
-    ownerEntries.set(owner, entry);
-    entry.services = withOwnerRunLease(owner, entry);
-    return entry;
-  };
-
-  const scheduleOwnerRetirement = (owner: string, entry: OwnerCacheEntry): void => {
-    if (entry.refs > 0 || entry.runRefs > 0 || entry.pinned || ownerEntries.get(owner) !== entry)
-      return;
-    if (ownerIdleMs === 0) {
-      suppressSecondaryRejection(retireOwner(owner, entry), "kernel owner retirement observer");
-      return;
-    }
-    entry.timer = setTimeout(() => {
-      delete entry.timer;
-      suppressSecondaryRejection(retireOwner(owner, entry), "kernel owner retirement observer");
-    }, ownerIdleMs);
-    entry.timer.unref?.();
-  };
+      if (failures.length > 0) {
+        throw new AggregateError(
+          failures.map((failure) => failure.reason as unknown),
+          `failed to retire owner '${owner}' cleanly`,
+        );
+      }
+    },
+    observeRetirement(pending) {
+      detachObserved(() => pending, {
+        scope: observationScope,
+        operation: "retire kernel owner",
+        workspace: opts.workspaceRoot,
+        logger,
+      });
+    },
+  });
 
   /** Keep an owner generation resident for the complete managed-run lifecycle. */
-  const withOwnerRunLease = (owner: string, entry: OwnerCacheEntry): OwnerScopedKernel => {
-    const services = entry.services;
+  const withOwnerRunLease = (
+    owner: string,
+    generation: number,
+    services: OwnerScopedKernel,
+  ): OwnerScopedKernel => {
     const runs = services.runs;
     return {
       ...services,
       runs: {
         ...runs,
         async start(params: Parameters<typeof runs.start>[0], prepared?: PreparedRunExecution) {
-          // Preserve RunService's terminal-handle contract after shutdown. The
-          // base service turns this into a failed handle instead of rejecting.
           if (lifecycle.state !== "open") return runs.start(params, prepared);
-          if (ownerEntries.get(owner) !== entry) {
+          if (!ownerPool.isCurrent(owner, generation)) {
             throw kernelError("unavailable", `owner '${owner}' is no longer resident`);
           }
           if (selectedPluginRecompositionRequired) {
@@ -798,39 +707,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
               "a selected plugin is changing; reconnect after the mutation before starting a run",
             );
           }
-          if (entry.timer !== undefined) {
-            clearTimeout(entry.timer);
-            delete entry.timer;
-          }
-          if (entry.runRefs === 0) {
-            let resolveRunDrained!: () => void;
-            entry.runDrained = new Promise<void>((resolve) => {
-              resolveRunDrained = resolve;
-            });
-            entry.resolveRunDrained = resolveRunDrained;
-          }
-          entry.runRefs += 1;
-          let released = false;
-          const release = (): void => {
-            if (released) return;
-            released = true;
-            entry.runRefs = Math.max(0, entry.runRefs - 1);
-            if (entry.runRefs === 0) {
-              entry.resolveRunDrained?.();
-              delete entry.resolveRunDrained;
-              delete entry.runDrained;
-            }
-            entry.lastUsedAt = Date.now();
-            scheduleOwnerRetirement(owner, entry);
-          };
-          try {
-            const handle = await runs.start(params, prepared);
-            void handle.closed.then(release, release);
-            return handle;
-          } catch (error) {
-            release();
-            throw error;
-          }
+          return ownerPool.startRun(owner, generation, () => runs.start(params, prepared));
         },
       },
     };
@@ -847,50 +724,20 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
    * that missed).
    */
   const forOwner = (owner: string): OwnerScopedKernel => {
-    return residentOwner(owner, true).services;
+    return ownerPool.resident(owner, true).services;
   };
   const acquireOwner = async (owner: string): Promise<OwnerLease<OwnerScopedKernel>> => {
-    const pending = retiringOwners.get(owner);
-    if (pending !== undefined) await pending;
-    const entry = residentOwner(owner, false);
-    entry.refs += 1;
-    let released = false;
-    return {
-      value: entry.services,
-      release(): void {
-        if (released) return;
-        released = true;
-        entry.refs = Math.max(0, entry.refs - 1);
-        entry.lastUsedAt = Date.now();
-        scheduleOwnerRetirement(owner, entry);
-      },
-    };
+    const lease = await ownerPool.acquire(owner);
+    return { value: lease.value.services, release: () => lease.release() };
   };
   const startMemoryRecovery = (): void => {
     if (memoryRecoveryStarted) return;
     memoryRecoveryStarted = true;
-    for (const entry of ownerEntries.values()) opts.memoryFactory?.start(entry.stateOwner);
+    ownerPool.forEachResident((value) => opts.memoryFactory?.start(value.stateOwner));
   };
   const scoped = forOwner(defaultOwner);
 
-  lifecycle.register({
-    async close(): Promise<void> {
-      const retiring: Promise<void>[] = [];
-      for (const [owner, entry] of ownerEntries) {
-        if (entry.timer !== undefined) clearTimeout(entry.timer);
-        entry.refs = 0;
-        entry.pinned = false;
-        const drained = entry.runDrained;
-        retiring.push(
-          drained === undefined
-            ? retireOwner(owner, entry)
-            : drained.then(() => retireOwner(owner, entry)),
-        );
-      }
-      retiring.push(...retiringOwners.values());
-      await Promise.allSettled(retiring);
-    },
-  });
+  lifecycle.register({ close: () => ownerPool.close() });
 
   const config =
     opts.configService ??
@@ -966,12 +813,12 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         if (selectedPluginMutation) {
           throw kernelError("conflict", "another selected plugin mutation is already in progress");
         }
-        if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
+        if (ownerPool.hasActiveRuns()) {
           throw kernelError("conflict", "finish active runs before changing a selected plugin");
         }
         selectedPluginMutation = true;
         try {
-          if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
+          if (ownerPool.hasActiveRuns()) {
             throw kernelError("conflict", "finish active runs before changing a selected plugin");
           }
           const result = await mutation();
@@ -1048,11 +895,12 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     forOwner,
     acquireOwner,
     prepareRun: (params, owner = defaultOwner, goal, goalCreation) =>
-      residentOwner(owner, false).prepareRun(params, goal, goalCreation),
+      ownerPool.resident(owner, false).prepareRun(params, goal, goalCreation),
     readRunTrace: (executionId, owner = defaultOwner) =>
-      runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
+      runDeps.traceStore.getById(ownerPool.resident(owner, false).stateOwner, executionId)?.trace
+        .events,
     readRunEvidenceTrace(executionId, owner = defaultOwner) {
-      const stateOwner = residentOwner(owner, false).stateOwner;
+      const stateOwner = ownerPool.resident(owner, false).stateOwner;
       if (runDeps.traceStore.readEvents !== undefined)
         return runDeps.traceStore.readEvents(stateOwner, executionId);
       const record = runDeps.traceStore.getById(stateOwner, executionId);
@@ -1076,7 +924,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       if (typeof model !== "string")
         throw kernelError("invalid_request", "Goal Steward requires a configured model");
       return createStewardExecutionRuntime({
-        owner: residentOwner(owner, false).stateOwner,
+        owner: ownerPool.resident(owner, false).stateOwner,
         model,
         ...(typeof merged.default_reasoning_effort === "string"
           ? {
@@ -1159,7 +1007,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
             opts.assemblerOptions,
           );
           const runtime = createKernelGoalAgentRuntime({
-            owner: residentOwner(owner, false).stateOwner,
+            owner: ownerPool.resident(owner, false).stateOwner,
             model: profile.model,
             profile,
             providers:

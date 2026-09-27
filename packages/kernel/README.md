@@ -27,6 +27,12 @@ host-owned capabilities into runs, so the engine never imports those product lay
 Clients remain independent of the engine through eight deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
 
+Kernel task cleanup uses a `TaskObservationScope` owned by the kernel, host, lifecycle, transport
+or client instance that schedules it. Repeated failures can be suppressed within that owner without
+hiding a failure from another instance using the same logger. Production:
+`createInProcessKernel` in `packages/kernel/src/kernel.ts` and `connectKernelClient` in
+`packages/kernel/src/transport/client.ts`. Test: `packages/capability/tests/unit/tasks.test.ts`.
+
 | Entry                         | Responsibility                                                                                                                |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `@clarvis/kernel`             | in-process kernel, kernel services/errors, client/server/transports and wire metadata                                         |
@@ -482,7 +488,7 @@ metadata and bodies are materialized then, and resource paths are restricted to 
 allow-list. Monitoring is armed for every identity file, including the selected sidecar, before a
 post-capture digest comparison. A mismatch flips the same in-memory availability latch, withholds the
 affected skill, and emits `onSkillDrift` for an informational host UI instead of failing dependency
-construction or delaying a run. The extension-profile manager's `observeSkillCatalog` then polls those paths
+construction or delaying a run. The manager's private skill catalog monitor then polls those paths
 asynchronously. Standalone authorship queues a coalesced refresh when the authoring run's model and
 tools settle; the later memory-ingest stream grace does not delay the new slash catalog. Other
 physical runs still hold their own catalog leases. The host stream lease remains held through
@@ -532,6 +538,10 @@ is resident; a hosted owner acquired through `acquireOwner` is retired after its
 last lease and the configured idle interval, at which point its memory worker,
 plan cache and host-owned file-store references are released. Compatibility
 callers using `forOwner` deliberately pin their scope until kernel shutdown.
+The private owner-scope pool tracks each resident generation, client lease, run handle and idle
+timer. A retiring owner still occupies cache capacity, and acquiring that same owner waits for its
+cleanup. Run references end when handles close; shutdown waits for them and observes cleanup
+failures. Kernel service construction and selected-plugin admission policy remain in the kernel.
 Configuration remains shared and operator-owned.
 
 Model-facing plan reads and lists accept null for omitted options (active plan, first page and

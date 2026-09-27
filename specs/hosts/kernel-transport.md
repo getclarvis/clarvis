@@ -1159,6 +1159,11 @@ and loopback `notify` all go through `detachObserved` with an `observationSink`
 (`packages/kernel/src/transport/client.ts`, `connectKernelClient`'s `protocolViolation`,
 `streamingStart`, and `config.subscribe`; `packages/kernel/src/transport/loopback.ts`,
 `createLoopbackTransport`'s `notify`).
+Each `connectKernelClient` and `createLoopbackTransport` instance supplies its own
+`TaskObservationScope`, so identical failure keys on separate transports cannot suppress one
+another. Production: `packages/kernel/src/transport/client.ts` (`connectKernelClient`) and
+`packages/kernel/src/transport/loopback.ts` (`createLoopbackTransport`). Test:
+`packages/capability/tests/unit/tasks.test.ts`.
 The sink stamps a fixed event name and the message "a detached kernel operation failed; nothing
 retries it, and whatever it was releasing may still be held" (`packages/kernel/src/core/observed.ts`). Names
 used here: `transport.close_failed`, `transport.cancel_failed`, `transport.subscribe_failed`,

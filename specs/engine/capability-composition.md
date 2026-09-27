@@ -394,7 +394,13 @@ Given `seedMarkers: ["<cap-block>"]`:
 5. Unless connections are supplied, if `mcpAuthorization` is present, build one OAuth coordinator; inject it into the MCP client
    factory, then build the connection manager. This stays independent of the optional
    feature-package imports: `@clarvis/mcp-client` is an ordinary engine dependency.
-6. Unless `llm` is supplied, build the retrying/logging/admission-wrapped AI SDK provider.
+6. Unless `llm` is supplied, build the retrying/logging/admission-wrapped AI SDK provider with a
+   counter port. After dependency construction succeeds, select the optional stream-debug sink
+   from the supplied environment through `@clarvis/llm/metrics`; `BuiltRunDeps.dispose` owns its
+   final flush and listener/timer removal. An injected `llm` creates no LLM sink. Production:
+   `buildExecuteRunDeps` in `packages/loop/src/runtime/build-run-deps.ts` and
+   `selectStreamMetrics` in `packages/llm/src/stream-metrics.ts`. Test:
+   `packages/loop/tests/integration/stream-debug-wiring.test.ts`.
 7. **Skills** (only if `useSkills && env.CLARVIS_SKILLS_ENABLED`): dynamically import
    `@clarvis/skills`, then build a static provider from an array, wrap a function form in
    `dynamicSkills`, or build one host-pinned provider through `snapshotSkills`. The last form

@@ -1,6 +1,11 @@
 import { addGoalAuxiliaryUsage } from "../goals/usage.ts";
 import { createHash } from "node:crypto";
-import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  bestEffort,
+  NOOP_LOGGER,
+  sanitizeText,
+} from "@clarvis/capability";
 import { resolveGoalsSettings } from "@clarvis/goal/settings";
 import { closeGoalRunByRecovery, validateGoalStewardResult } from "@clarvis/goal";
 import { generateExecutionId } from "@clarvis/trace";
@@ -84,6 +89,7 @@ export interface FileRunHost {
  * admission. Offline compaction and generated-state cleanup reserve a host-wide maintenance slot.
  */
 export async function createFileRunHost(options: FileRunHostOptions): Promise<FileRunHost> {
+  const observationScope = createTaskObservationScope();
   const exposeLocalControls = options.exposeLocalControls !== false;
   const logger = options.kernel.logger ?? NOOP_LOGGER;
   const goalChanges = createGoalChanges(logger);
@@ -624,10 +630,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
                 await goalServices.get(connection.peer.id)?.close();
                 goalServices.delete(connection.peer.id);
               },
-              {
-                operation: "hosting.connection.close",
-                logger,
-              },
+              { scope: observationScope, operation: "hosting.connection.close", logger },
             );
             disconnections.add(pending);
             const release = (): void => {

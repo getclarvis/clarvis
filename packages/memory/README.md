@@ -1,5 +1,11 @@
 # `@clarvis/memory`
 
+`createFileMemoryStore` shares one task-observation scope across its layout, lock, journal,
+revision and job cleanup helpers. Each store owns its own scope, while `createMemory` keeps a
+separate scope across drain passes and the worker owns its detached-pass scope. Repeated cleanup
+failures therefore stay bounded within their owner. Production: `packages/memory/src/file-store.ts`
+and `packages/memory/src/memory.ts`. Test: `packages/capability/tests/unit/tasks.test.ts`.
+
 Workspace-local execution memory for AI agents, modelled as a **navigable
 markdown wiki** the model reads and edits directly — no vectors, no embeddings.
 

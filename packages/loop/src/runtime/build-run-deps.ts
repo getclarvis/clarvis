@@ -32,6 +32,7 @@ import {
   withTransportRetry,
   type ModelCallAdmissionController,
 } from "@clarvis/llm";
+import { selectStreamMetrics } from "@clarvis/llm/metrics";
 import {
   activeLevelOf,
   componentLogger,
@@ -668,6 +669,7 @@ export async function buildExecuteRunDeps({
       ...(mcpLogger === undefined ? {} : { logger: mcpLogger }),
     });
 
+  const streamCounters = { count: (name: string, n?: number): void => streamDebug?.count(name, n) };
   const provider =
     suppliedLlm ??
     createAiSdkProvider({
@@ -676,6 +678,7 @@ export async function buildExecuteRunDeps({
       maxResponseBytes: env.CLARVIS_PROVIDER_MAX_RESPONSE_BYTES,
       maxSseEventBytes: env.CLARVIS_PROVIDER_MAX_SSE_EVENT_BYTES,
       logger,
+      metrics: streamCounters,
       ...(resolveSubscription === undefined ? {} : { resolveSubscription }),
     });
   const modelCallAdmission =
@@ -860,6 +863,10 @@ export async function buildExecuteRunDeps({
     extensionAdmission,
   };
 
+  const streamDebug =
+    suppliedLlm === undefined
+      ? selectStreamMetrics(environment["CLARVIS_STREAM_DEBUG"], "loop")
+      : undefined;
   return {
     deps,
     resolved,
@@ -867,17 +874,21 @@ export async function buildExecuteRunDeps({
     modelCallAdmission,
     extensionAdmission,
     dispose: async () => {
-      closeSkillSnapshot();
-      const closed = await Promise.allSettled([
-        suppliedConnections === undefined ? connections.closeAll() : Promise.resolve(),
-        authorization?.close() ?? Promise.resolve(),
-      ]);
-      if (suppliedModelCallAdmission === undefined) modelCallAdmission.close();
-      if (suppliedExtensionAdmission === undefined) extensionAdmission.close();
-      const failure = closed.find(
-        (result): result is PromiseRejectedResult => result.status === "rejected",
-      );
-      if (failure !== undefined) throw failure.reason;
+      try {
+        closeSkillSnapshot();
+        const closed = await Promise.allSettled([
+          suppliedConnections === undefined ? connections.closeAll() : Promise.resolve(),
+          authorization?.close() ?? Promise.resolve(),
+        ]);
+        if (suppliedModelCallAdmission === undefined) modelCallAdmission.close();
+        if (suppliedExtensionAdmission === undefined) extensionAdmission.close();
+        const failure = closed.find(
+          (result): result is PromiseRejectedResult => result.status === "rejected",
+        );
+        if (failure !== undefined) throw failure.reason;
+      } finally {
+        streamDebug?.dispose();
+      }
     },
   };
 }

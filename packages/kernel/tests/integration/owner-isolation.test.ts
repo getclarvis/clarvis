@@ -215,6 +215,22 @@ function record(owner: string, id: string, startedAt: number): ExecutionRecord {
 }
 
 describe("owner isolation", () => {
+  it("keeps the same owner in two kernels as separate resident service generations", async () => {
+    const ws = virtualWorkspace();
+    const first = makeKernel(ws);
+    const second = makeKernel(ws);
+    const firstServices = first.kernel.forOwner("alice");
+    const secondServices = second.kernel.forOwner("alice");
+    expect(firstServices).not.toBe(secondServices);
+    expect(firstServices.sessions).not.toBe(secondServices.sessions);
+    expect(first.memoryStoreFor(stateOwner("alice"))).not.toBe(
+      second.memoryStoreFor(stateOwner("alice")),
+    );
+    await first.kernel.close();
+    expect(second.kernel.forOwner("alice")).toBe(secondServices);
+    await second.kernel.close();
+  });
+
   it("keeps internal executions outside every public run surface", async () => {
     const ws = virtualWorkspace();
     const { kernel, traceStore, deps } = makeKernel(ws);

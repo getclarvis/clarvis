@@ -29,12 +29,13 @@ scheme wrapper in the kernel pins the origin and overwrites identity headers aft
 the adapter removes its placeholder key, keeps existing byte/SSE/abort bounds, uses Responses for
 both schemes, and reports `billing_source: "subscription"` without inventing monetary cost.
 
-## Two entries, on purpose
+## Entries and lazy loading
 
 | Entry                  | Contents                                                                          | Loads the SDKs? |
 | ---------------------- | --------------------------------------------------------------------------------- | --------------- |
 | `@clarvis/llm`         | `createAiSdkProvider`, the decorators, `classifyProviderError`, `toModelMessages` | no              |
 | `@clarvis/llm/adapter` | `AiSdkAdapter`, `streamMetrics`                                                   | yes             |
+| `@clarvis/llm/metrics` | `selectStreamMetrics` and its counter type for host-owned instrumentation         | no              |
 
 The split is load-bearing, not organisational. The four provider SDKs are the heaviest imports in
 the workspace, and a host assembling its run dependencies wants `withTransportRetry` long before any
@@ -45,6 +46,12 @@ dynamic import instead, building it once on the first `call`.
 `tests/architecture/lazy-entry.test.ts` asserts that no static import or re-export reachable from `src/index.ts`
 arrives at the adapter. Without it the property is invisible: adding an `export *` would break it
 with a green typecheck and a green suite.
+
+`buildExecuteRunDeps` selects a stream-debug sink from its supplied environment and disposes it with
+the host dependencies. `createAiSdkProvider` and direct `AiSdkAdapter` construction accept an
+optional counter port; without one, streaming instrumentation is inert. The batcher and tool-input
+reporter receive that port per call. Provider and stream modules have no process-global counter
+access, and disposing one call never disposes the host's sink.
 
 ## Test ownership
 

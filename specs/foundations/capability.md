@@ -162,7 +162,7 @@ Test: `composes dispatch policies with first refusal winning` in
 | `splitFrontmatterFence` | markdown fence split | `packages/capability/src/frontmatter-fence.ts` |
 | `escapeRegExp`, `globToRegExp` | `*`-only glob | `packages/capability/src/glob.ts` |
 | `contentToText` | `MessageContent -> string` | `packages/capability/src/message-content.ts` |
-| `bestEffort`, `detachObserved`, `suppressSecondaryRejection` | failure-tolerant task helpers | `packages/capability/src/tasks.ts` |
+| `createTaskObservationScope`, `bestEffort`, `detachObserved`, `suppressSecondaryRejection` | owner-scoped failure-tolerant task helpers | `packages/capability/src/tasks.ts` |
 | `unref` | best-effort timer unref | `packages/capability/src/unref.ts` |
 Everything else re-exported from `index.ts` is either type-only or belongs to a delegated module:
 `hooks-config` (hooks-execution), `env*` and `sanitize` (security-confinement-and-redaction),
@@ -953,16 +953,19 @@ The public surface a caller of `bestEffort` programs against:
 | Type | Fields | Cite |
 | --- | --- | --- |
 | `TaskFailure` | `operation`, `cause`, `workspace?` | `packages/capability/src/tasks.ts` |
-| `TaskObservation` | `operation`, `workspace?`, `logger?`, `observer?`, `dedupeKey?`, `rateLimitMs?`, `clock?` | `packages/capability/src/tasks.ts` |
+| `TaskObservation` | required `scope`, `operation`, `workspace?`, `logger?`, `observer?`, `dedupeKey?`, `rateLimitMs?` | `packages/capability/src/tasks.ts` |
+| `TaskObservationScope` | `observe(error, observation)`; private bounded history | `packages/capability/src/tasks.ts` |
 
-`bestEffort(run, options)` awaits `run()` and routes any throw or rejection to `observe`
-(`packages/capability/src/tasks.ts`). `observe` (`packages/capability/src/tasks.ts`):
+`createTaskObservationScope({ clock? })` creates one independent registry. Its default clock is
+`Date.now`; callers that deliberately share suppression pass the same scope to both helpers.
+`bestEffort(run, options)` awaits `run()` and routes any throw or rejection to
+`options.scope.observe` (`packages/capability/src/tasks.ts`). The scope's `observe` method:
 
-1. `now = options.clock?.() ?? Date.now()`.
+1. Reads its construction-time clock.
 2. `key = options.dedupeKey ?? \`${operation}\0${workspace ?? ""}\`` — a NUL-separated composite.
 3. If the previous emission for that key is newer than `rateLimitMs` (default `60_000`),
    **return without notifying anyone**.
-4. If the registry is at `MAX_DEDUPE_KEYS = 1_024` and the key is new, evict the oldest inserted key.
+4. If this scope's registry is at `MAX_DEDUPE_KEYS = 1_024` and the key is new, evict the oldest inserted key.
 5. Re-insert the key so it moves to the end of insertion order.
 6. Build a `TaskFailure` whose `cause` is `sanitizeErrorMessage(...)`.
 7. Call `observer` inside a bare `try/catch`, then `logger.warn(failure,
@@ -1148,11 +1151,13 @@ and directs the caller to retry with the full message history. Production: `pack
 **INV-C39.** `bestEffort` never rejects, even when the observer throws, and even when the logger
 itself throws. Production: `packages/capability/src/tasks.ts`. Test: `packages/capability/tests/unit/tasks.test.ts`.
 
-**INV-C40.** Failure observation is rate-limited per `(operation, workspace)` (or an explicit
-`dedupeKey`), defaulting to 60 seconds, and suppressed failures notify neither observer nor logger.
+**INV-C40.** Within one scope, failure observation is rate-limited per `(operation, workspace)`
+(or an explicit `dedupeKey`), defaulting to 60 seconds; suppressed failures notify neither observer
+nor logger. Distinct scopes observe their first failure independently even with identical keys and
+the same logger. The clock belongs to the scope, and `rateLimitMs: 0` disables suppression.
 Production: `packages/capability/src/tasks.ts`. Test: `packages/capability/tests/unit/tasks.test.ts`.
 
-**INV-C41.** The dedupe registry is bounded at 1024 keys, evicting the oldest inserted key.
+**INV-C41.** Each scope's dedupe registry is bounded at 1024 keys, evicting the oldest inserted key.
 Production: `packages/capability/src/tasks.ts`. Test: `packages/capability/tests/unit/tasks.test.ts`.
 
 **INV-C42.** `suppressSecondaryRejection` requires a non-blank primary observation channel name.
@@ -1327,12 +1332,6 @@ widening of the contract, preferring a port over exposing an engine type
   registry that consumes it (`packages/capability/src/trace-projectors.ts`, tested at
   `tests/unit/trace-projectors.test.ts`) belongs to [trace-recording-and-persistence](trace.md); only the
   declaration is covered here.
-- **The `tasks.ts` dedupe registry is process-global module state.** `lastEmission`
-  (`packages/capability/src/tasks.ts`) is a module-level `Map` shared by every caller in the process, so two unrelated
-  subsystems using the same `operation`/`workspace` pair rate-limit each other. Whether that sharing
-  is intended is not stated; every test that could collide passes a UUID, either as an explicit
-  `dedupeKey` (`packages/capability/tests/unit/tasks.test.ts`) or inside the `operation` string
-  (`packages/capability/tests/unit/tasks.test.ts`).
 - **Rationale is generally absent by design.** Where the source carries a `@remarks`
   block giving a reason, this document quotes it and cites the source. Where it does not, no reason is
   derivable and none is asserted here — see §2.7 for the two such gaps in `api.ts` itself (why

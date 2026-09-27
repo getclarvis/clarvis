@@ -1,4 +1,9 @@
-import { bestEffort, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  bestEffort,
+  NOOP_LOGGER,
+  type Logger,
+} from "@clarvis/capability";
 import type { HostedRunFrame, HostedRunSnapshot, HostingService } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
 import { decodeHostedFrame, wireId } from "./hosting-codec.ts";
@@ -21,6 +26,7 @@ export async function* readHostedSnapshot(
   snapshot: HostedRunSnapshot,
   logger: Logger = NOOP_LOGGER,
 ): AsyncGenerator<HostedRunFrame> {
+  const observationScope = createTaskObservationScope();
   if (
     !wireId(snapshot.snapshot_id) ||
     !wireId(snapshot.cursor.execution_id) ||
@@ -96,6 +102,7 @@ export async function* readHostedSnapshot(
     if (fragments.length !== 0 || sequence !== snapshot.cursor.sequence) throw corrupt();
   } finally {
     await bestEffort(() => service.releaseSnapshot(snapshot.snapshot_id), {
+      scope: observationScope,
       operation: "hosting.snapshot.release",
       logger,
     });

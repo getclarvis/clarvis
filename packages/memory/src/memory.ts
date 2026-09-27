@@ -12,7 +12,7 @@ import { createMemoryTools } from "./tools.ts";
 import type { MemoryBudgets, MemoryTx, RunSnapshot } from "./types.ts";
 import type { CreateMemoryOptions, IndexReport, Memory, ReviewDigest } from "./memory-contract.ts";
 import { systemClock, type MemoryClock } from "./clock.ts";
-import { createRateLimiter, NOOP_LOGGER } from "@clarvis/capability";
+import { createRateLimiter, createTaskObservationScope, NOOP_LOGGER } from "@clarvis/capability";
 
 /** Build the Memory facade over an injected persistence port. */
 export function createMemory(opts: CreateMemoryOptions): Memory {
@@ -20,6 +20,7 @@ export function createMemory(opts: CreateMemoryOptions): Memory {
   const store = opts.store;
   const clock = opts.clock ?? systemClock;
   const logger = opts.logger ?? NOOP_LOGGER;
+  const observationScope = createTaskObservationScope();
 
   const reindex = (tx?: Pick<MemoryTx, "read" | "write" | "list">): Promise<string[]> =>
     tx === undefined
@@ -78,6 +79,7 @@ export function createMemory(opts: CreateMemoryOptions): Memory {
         owner,
         logger,
         admitBlocked,
+        observationScope,
         ...(drainOpts.limit !== undefined ? { limit: drainOpts.limit } : {}),
         ...(drainOpts.signal !== undefined ? { signal: drainOpts.signal } : {}),
       }),

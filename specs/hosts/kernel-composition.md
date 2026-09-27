@@ -139,10 +139,28 @@ configuration, plugins, Extension Profiles, secrets, model catalogs, provider au
 files, memory, plans, workflows, skills, sessions, tasks, and storage. These are control-plane services; model tool
 surfaces are composed separately by the loop capabilities.
 
-An owner handle is acquired lazily and cached only within this one kernel. Closing the kernel stops
-new acquisitions, settles owners/resources, and attempts every close even when one fails. Concurrent
-close calls share the current attempt. Failed resources remain registered in `closing` state, and a
-later close retries them without repeating successful resources or reopening admission. The file
+An owner handle is acquired lazily and cached only within this one kernel. The private
+`createOwnerScopePool` owns resident generations, client and run references, idle timers, and
+retirements. `forOwner` pins its scope; `acquireOwner` returns an idempotent lease. A run retains
+its generation through handle closure, including after a terminal result; a failed start releases
+that reference. The pool uses one clock for `lastUsedAt` and timer scheduling, and timers do not keep
+the process alive. An idle generation is retired only after its final reference is released. Its
+cleanup continues to occupy capacity, and acquisition of the same owner waits for that cleanup;
+an old timer or release cannot affect a newer generation. Building services, checking selected
+plugin mutation fences, and starting memory recovery after boot remain Kernel decisions. These are
+private implementation boundaries: the synchronous construction API, owner APIs, and persisted
+owner identity are unchanged.
+
+Production: `createOwnerScopePool`, `resident`, `acquire`, `startRun`, and `close` in
+`packages/kernel/src/core/owner-scope-pool.ts`; `buildOwner` and `withOwnerRunLease` in
+`packages/kernel/src/kernel.ts`. Test: `packages/kernel/tests/unit/owner-scope-pool.test.ts`
+and `packages/kernel/tests/integration/owner-isolation.test.ts`.
+
+Closing the kernel stops new acquisitions, waits for protected runs, and attempts every owner
+cleanup even when one fails. Owner cleanup failures are observed by the kernel task scope; a caller
+waiting to reacquire that owner receives the failure. Concurrent close calls share the current
+attempt. Failed non-owner lifecycle resources remain registered in `closing` state, and a later
+close retries them without repeating successful resources or reopening admission. The file
 host closes its other dependencies even when one disposal fails.
 
 Production: `packages/kernel/src/kernel.ts` (`InProcessKernel`, `createInProcessKernel`);
@@ -262,8 +280,9 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 
 6. **Kernel construction starts no memory-index inference; explicit recovery start is idempotent and
    applies once to resident owners plus every later owner generation.**
-   Production: `InProcessKernel.startMemoryRecovery`, `buildOwner`, and `residentOwner` in
-   `packages/kernel/src/kernel.ts`; host calls in `packages/code/src/runtime.tsx`,
+   Production: `InProcessKernel.startMemoryRecovery` and `buildOwner` in
+   `packages/kernel/src/kernel.ts`; `forEachResident` and `resident` in
+   `packages/kernel/src/core/owner-scope-pool.ts`; host calls in `packages/code/src/runtime.tsx`,
    `packages/kernel/src/serve.ts`.
    Test: `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery
    only after the host releases boot`).

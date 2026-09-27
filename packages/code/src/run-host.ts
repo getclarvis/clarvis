@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { batch, createRoot, createSignal, type Accessor, type Setter } from "solid-js";
+import { batch, createSignal, type Accessor, type Setter } from "solid-js";
+import { createRunCoordinator, type ScheduledReservation } from "./core/run-coordinator.ts";
 import {
   sameLoopBinding,
   type LoopBinding,
@@ -35,10 +36,7 @@ import type { KernelRunClient } from "./adapters/kernel-run-client.ts";
 import type { CompactResult, MemoryIngestNotice, RunHandle } from "./adapters/run-types.ts";
 import {
   applyEvent,
-  boundTranscriptText,
-  createTranscriptStore,
   teeSink,
-  transcriptTextFingerprint,
   type RunSink,
   type TranscriptNode,
   type TranscriptStore,
@@ -52,6 +50,7 @@ import type { MemoryMode } from "./adapters/memory-mode.ts";
 import type { PlanMode } from "./adapters/execution-safety.ts";
 import type { CatalogCost } from "./adapters/models-catalog.ts";
 import { contentToText } from "./adapters/message-content.ts";
+import { exportTranscriptBatches } from "./adapters/transcript-export.ts";
 import type { EventSource } from "./adapters/event-span.ts";
 import {
   reduceWorkflowProjection,
@@ -272,16 +271,6 @@ export interface RunHost {
 }
 
 /**
- * Nodes yielded per batch while streaming a transcript export.
- *
- * @remarks Chunking exists so an export of an arbitrarily long session never
- * materializes the whole transcript at once; the size only decides how often the
- * generator yields back to the event loop, and neither direction changes the
- * result. Small enough that a batch is not itself a large allocation, large
- * enough that the per-batch overhead disappears against the nodes in it.
- */
-const EXPORT_BATCH_NODE_LIMIT = 128;
-/**
  * Number of complete semantic turns retained in the live Solid transcript.
  *
  * @remarks The bound on *resident* turns, not on the session: an older turn is
@@ -292,8 +281,6 @@ const EXPORT_BATCH_NODE_LIMIT = 128;
  * something up, which the export and the trace answer better than a live tree.
  */
 export const RESIDENT_TRANSCRIPT_TURN_LIMIT = 20;
-const EXPORT_INCOMPLETE_PREFIX =
-  "EXPORT INCOMPLETE — original transcript prose was released from the live TUI";
 
 interface ResidentTurnRef {
   userKey: string;
@@ -346,30 +333,6 @@ function composerText(content: MessageContent): string {
     .join("\n");
 }
 
-type ProseNode = TranscriptNode & { kind: "user" | "assistant" | "reasoning" };
-
-function isReleasedProse(node: TranscriptNode): node is ProseNode {
-  return (
-    (node.kind === "user" || node.kind === "assistant" || node.kind === "reasoning") &&
-    node.proseReleased === true
-  );
-}
-
-function sourceExecutionId(node: ProseNode): string | undefined {
-  if (node.kind === "user") return node.sourceExecutionId;
-  const separator = node.key.indexOf("::");
-  return separator > 0 ? node.key.slice(0, separator) : undefined;
-}
-
-function incompleteExportNode(node: ProseNode, reason: string): TranscriptNode {
-  return {
-    ...node,
-    proseReleased: undefined,
-    textTruncated: true,
-    text: `${EXPORT_INCOMPLETE_PREFIX}; ${reason}.`,
-  };
-}
-
 function replayRunEvents(sink: RunSink, stored: RunDetail | null): void {
   const events = stored?.events;
   if (!events || events.length === 0) return;
@@ -415,28 +378,24 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   const presentStatus = deps.presentStatus ?? plainStatusLine;
 
   let currentSink: { executionId: string; sink: RunSink; transcript: RunSink } | undefined;
-  let currentHandle: RunHandle | undefined;
+  const coordinator = createRunCoordinator<RunHandle>();
+  const [coordination, setCoordination] = createSignal(coordinator.snapshot());
+  coordinator.observe(setCoordination);
+  const runActive = (): boolean => coordination().runActive;
+  const bashActive = (): boolean => coordination().bashActive;
+  const compactionActive = (): boolean => coordination().compactionActive;
+  const scheduledBusy = (): boolean => {
+    coordination();
+    return coordinator.scheduledBusy();
+  };
   const [deniedAction, setDeniedAction] = createSignal<ReturnType<RunHost["deniedAction"]>>(null);
   const [deniedActions, setDeniedActions] = createSignal<ReturnType<RunHost["deniedActions"]>>([]);
   const pendingJudgeDenials = new Map<
     string,
     { executionId: string; attempt: number; reason: string }
   >();
-  const physicalHandles = new Set<RunHandle>();
-  /** Serializes a new semantic turn behind reconciliation without extending steer mode. */
-  let currentSettlement: { promise: Promise<void>; release: () => void } | undefined;
-  let runOwnershipEpoch = 0;
   let cancelRequested = false;
   let session: Session | undefined;
-  const [runActive, setRunActive] = createSignal(false);
-  const [interactiveControl, setInteractiveControl] = createSignal(true);
-  const [disconnectPolicy, setDisconnectPolicy] =
-    createSignal<HostedRunRef["disconnect_policy"]>("cancel");
-  const [compactionActive, setCompactionActive] = createSignal(false);
-  const [physicalRunCount, setPhysicalRunCount] = createSignal(0);
-  let bashAbort: AbortController | undefined;
-  let localWork: Promise<void> | undefined;
-  const [bashActive, setBashActive] = createSignal(false);
   const [runStatus, setRunStatus] = createSignal("idle");
   const setStatus = (line: StatusLine): void => {
     setRunStatus(presentStatus(line));
@@ -452,31 +411,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
    * also folds the event into `workflowActivity`. */
   let workflowRunId: string | null = null;
   let draftRestore: ((text: string, content?: MessageContent) => void) | undefined;
-  let loadEpoch = 0;
-  const [sessionGeneration, setSessionGeneration] = createSignal(0);
-  const [sessionLoading, setSessionLoading] = createSignal(false);
-  const [humanSubmissions, setHumanSubmissions] = createSignal(0);
-  const [compactionCalls, setCompactionCalls] = createSignal(0);
-  const [localCommandCount, setLocalCommandCount] = createSignal(0);
-  const [scheduledReserved, setScheduledReserved] = createSignal(false);
-  const [settlementActive, setSettlementActive] = createSignal(false);
-  interface ScheduledReservation {
-    request: ScheduledTurnRequest;
-    executionId: string;
-    ready: Promise<void>;
-    releaseReady(): void;
-    cancelled: boolean;
-    handles: RunHandle[];
-  }
-  let scheduledReservation: ScheduledReservation | undefined;
 
   function scheduledBinding(materialize = false): LoopBinding | null {
-    const generation = sessionGeneration();
-    if (sessionLoading()) return null;
+    const generation = coordination().generation;
+    if (coordination().loading) return null;
     const profile = deps.activeProfile();
     if (!profile) return null;
     if (!session && materialize) {
-      loadEpoch += 1;
+      coordinator.advanceLoadEpoch();
       session = createSession(boundSessionDeps, { agentProfile: profile });
     }
     const meta = materialize ? session?.ensureIdentity("Scheduled conversation") : session?.meta();
@@ -505,9 +447,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function goalBinding(): GoalBinding | null {
-    const generation = sessionGeneration();
+    const generation = coordination().generation;
     runActive();
-    if (sessionLoading()) return null;
+    if (coordination().loading) return null;
     const id = session?.meta()?.id;
     return id === undefined ? null : { sessionId: id, generation };
   }
@@ -523,31 +465,20 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const profile = deps.activeProfile();
     if (!profile) throw new Error("Select an Agent Profile before creating a goal.");
     if (!session) {
-      loadEpoch++;
+      coordinator.advanceLoadEpoch();
       session = createSession(boundSessionDeps, { agentProfile: profile });
     }
     const sess = session;
     const hadIdentity = sess.meta() !== null;
     await prepareHostedSession(sess, "Goal conversation");
     if (session !== sess) throw new Error("Conversation changed during goal preparation.");
-    if (!hadIdentity) setSessionGeneration((generation) => generation + 1);
+    if (!hadIdentity) coordinator.bumpGeneration();
     const binding = goalBinding();
     if (binding === null) throw new Error("Goal conversation is unavailable.");
     return binding;
   }
 
-  const scheduledBusy = (): boolean =>
-    scheduledReserved() ||
-    humanSubmissions() > 0 ||
-    sessionLoading() ||
-    settlementActive() ||
-    runActive() ||
-    physicalRunCount() > 0 ||
-    localCommandCount() > 0 ||
-    compactionActive() ||
-    compactionCalls() > 0;
-
-  function assertAutomatic(reservation: ScheduledReservation): void {
+  function assertAutomatic(reservation: ScheduledReservation<RunHandle>): void {
     if (
       reservation.cancelled ||
       !reservation.request.valid() ||
@@ -599,19 +530,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const blocked = deps.scheduledBlockedReason?.();
     if (blocked) return { status: "deferred", reason: blocked };
     if (scheduledBusy()) return { status: "deferred", reason: "The conversation is occupied." };
-    let releaseReady!: () => void;
-    const reservation: ScheduledReservation = {
-      request,
-      executionId: "exec_" + crypto.randomUUID(),
-      cancelled: false,
-      handles: [],
-      ready: new Promise<void>((resolve) => {
-        releaseReady = resolve;
-      }),
-      releaseReady: () => releaseReady(),
-    };
-    scheduledReservation = reservation;
-    setScheduledReserved(true);
+    const reservation = coordinator.reserveScheduled(request, "exec_" + crypto.randomUUID());
     const completion = (async (): Promise<LoopTurnCompletion> => {
       let result: LoopTurnCompletion;
       try {
@@ -630,7 +549,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           usage: {},
         };
       } finally {
-        reservation.releaseReady();
+        coordinator.markScheduledPrepared(reservation);
       }
       const closed = await Promise.allSettled(reservation.handles.map((handle) => handle.closed));
       if (closed.some((entry) => entry.status === "rejected"))
@@ -639,8 +558,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           status: "unknown",
           reason: "Run closure failed; inspect its result before resuming.",
         };
-      if (scheduledReservation === reservation) scheduledReservation = undefined;
-      setScheduledReserved(scheduledReservation !== undefined);
+      coordinator.releaseScheduled(reservation);
       return result;
     })();
     return {
@@ -648,7 +566,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       executionId: reservation.executionId,
       completion,
       cancel: async () => {
-        reservation.cancelled = true;
+        coordinator.cancelScheduled(reservation);
         const handle = reservation.handles.at(-1);
         if (handle) await handle.cancel();
       },
@@ -683,8 +601,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       : { extensionProfile: client.currentExtensionProfile }),
   };
   let sessionRetirement: Promise<void> = Promise.resolve();
-  let handoffFlight: Promise<HostedRunReceipt> | undefined;
-  let pendingHandoff: { operationId: string; executionId: string } | undefined;
 
   async function prepareHostedSession(
     sess: Session,
@@ -795,13 +711,13 @@ export function createRunHost(deps: RunHostDeps): RunHost {
               setMcpStartupNotice({ sequence: ++mcpStartupNoticeSequence, servers });
             }
           }
-          if (event.type === "compaction_started") setCompactionActive(true);
+          if (event.type === "compaction_started") coordinator.setCompactionActive(true);
           else if (
             event.type === "compaction" ||
             event.type === "compaction_skipped" ||
             event.type === "run_ended"
           )
-            setCompactionActive(false);
+            coordinator.setCompactionActive(false);
         }
       }
       if (source === "live" && workflowRunId !== null && isWorkflowProjectionEvent(event)) {
@@ -844,7 +760,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function canControlCurrentRun(): boolean {
-    return runActive() && interactiveControl() && currentHandle !== undefined;
+    return (
+      runActive() && coordination().interactiveControl && coordinator.currentHandle() !== undefined
+    );
   }
 
   async function authorizeDeniedAction(selection?: {
@@ -856,7 +774,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           (item) => item.callId === selection.callId && item.attempt === selection.attempt,
         )
       : deniedAction();
-    const handle = currentHandle;
+    const handle = coordinator.currentHandle();
     if (!denial || !handle || handle.executionId !== denial.executionId || !canControlCurrentRun())
       return false;
     const receipt = await client.steer({
@@ -873,19 +791,25 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function interruptTool(toolExecutionId: string): Promise<ToolInterruptReceipt> {
-    const handle = currentHandle;
-    const ownership = runOwnershipEpoch;
-    if (!handle || !runActive() || !interactiveControl() || handle.interruptTool === undefined) {
+    const handle = coordinator.currentHandle();
+    const ownership = coordinator.generation();
+    if (
+      !handle ||
+      !runActive() ||
+      !coordination().interactiveControl ||
+      handle.interruptTool === undefined
+    ) {
       return { tool_execution_id: toolExecutionId, status: "not_running" };
     }
     store.setToolInterruptRequest(toolExecutionId, true);
     try {
       const receipt = await handle.interruptTool(toolExecutionId);
-      if (currentHandle !== handle || ownership !== runOwnershipEpoch) return receipt;
+      if (coordinator.currentHandle() !== handle || ownership !== coordinator.generation())
+        return receipt;
       if (receipt.status === "not_running") store.setToolInterruptRequest(toolExecutionId, false);
       return receipt;
     } catch (error) {
-      if (currentHandle === handle && ownership === runOwnershipEpoch) {
+      if (coordinator.currentHandle() === handle && ownership === coordinator.generation()) {
         store.setToolInterruptRequest(toolExecutionId, false);
         store.appendNotice(`Could not interrupt the shell: ${errorText(error)}`, "warn");
       }
@@ -894,12 +818,12 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function cancelCurrentRun(): boolean {
-    if (bashAbort) {
+    if (coordinator.bashAbort()) {
       // Aborting is idempotent at the platform boundary, but it must not be
       // idempotent at the keyboard boundary: once cancellation is pending,
       // another ^C belongs to the quit gate instead of being swallowed here.
-      if (bashAbort.signal.aborted) return false;
-      bashAbort.abort();
+      if (coordinator.bashAbort()!.signal.aborted) return false;
+      coordinator.bashAbort()!.abort();
       setStatus(["! cancelling", { mark: "ellipsis" }]);
       return true;
     }
@@ -908,13 +832,13 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     // `Canceled` for the rest of the session. Pressing ^c in the instant a run
     // finishes did exactly that, permanently relabelling a run whose correct
     // answer was already on screen under a `✓ Completed` node.
-    if (!currentHandle || !runActive() || cancelRequested) return false;
+    if (!coordinator.currentHandle() || !runActive() || cancelRequested) return false;
     cancelRequested = true;
     setStatus(["cancelling", { mark: "ellipsis" }]);
-    const handle = currentHandle;
-    if (scheduledReservation?.handles.includes(handle)) scheduledReservation.cancelled = true;
+    const handle = coordinator.currentHandle()!;
+    if (coordinator.scheduled()?.handles.includes(handle)) coordinator.cancelScheduled();
     void handle.cancel().catch((error: unknown) => {
-      if (currentHandle !== handle || !runActive()) return;
+      if (coordinator.currentHandle() !== handle || !runActive()) return;
       cancelRequested = false;
       setStatus(["cancel request failed ", { mark: "emDash" }, ` ${errorText(error)}`]);
     });
@@ -922,8 +846,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function latestExecutionId(): string | undefined {
-    return runActive() && currentHandle !== undefined
-      ? currentHandle.executionId
+    return runActive() && coordinator.currentHandle() !== undefined
+      ? coordinator.currentHandle()!.executionId
       : [...(session?.meta()?.turns ?? [])]
           .reverse()
           .find((turn) => turn.kind === "conversation" && turn.executionId !== undefined)
@@ -931,7 +855,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function compactCurrentRun(request?: string): Promise<void> {
-    if (scheduledReserved() && !runActive()) {
+    if (coordination().scheduledReserved && !runActive()) {
       setStatus(["a scheduled turn is preparing or closing; compact after it settles"]);
       return;
     }
@@ -941,13 +865,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       return;
     }
     const settled = !runActive();
-    setCompactionCalls((count) => count + 1);
-    if (settled) setCompactionActive(true);
+    const call = coordinator.reserveCompaction();
+    if (settled) coordinator.setCompactionActive(true, call.generation);
     try {
       const result = await client.compact({
         executionId,
         ...(request?.trim() ? { request: request.trim() } : {}),
       });
+      if (call.generation !== coordinator.generation()) return;
       if (result.status === "queued") {
         setStatus(["compaction queued ", { mark: "emDash" }, " before the next model call"]);
       } else if (result.status === "compacted") {
@@ -960,10 +885,11 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         setStatus([`compaction skipped: ${result.reason.replaceAll("_", " ")}`]);
       }
     } catch (error) {
-      setStatus([`compaction failed: ${errorText(error)}`]);
+      if (call.generation === coordinator.generation())
+        setStatus([`compaction failed: ${errorText(error)}`]);
     } finally {
-      setCompactionCalls((count) => count - 1);
-      if (settled) setCompactionActive(false);
+      call.release();
+      if (settled) coordinator.setCompactionActive(false, call.generation);
     }
   }
 
@@ -977,14 +903,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function fitCurrentContext(targetWindowTokens: number): Promise<CompactResult | null> {
-    if (scheduledReserved() && !runActive()) return null;
+    if (coordination().scheduledReserved && !runActive()) return null;
     const executionId = latestExecutionId();
     if (executionId === undefined) return null;
-    setCompactionCalls((count) => count + 1);
+    const call = coordinator.reserveCompaction();
     try {
       return await client.compact({ executionId, mechanicalTargetTokens: targetWindowTokens });
     } finally {
-      setCompactionCalls((count) => count - 1);
+      call.release();
     }
   }
 
@@ -999,37 +925,22 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       ]).then(() => undefined);
       detachObserved("hosting.session.retirement", () => sessionRetirement);
     }
-    if (scheduledReservation) {
-      scheduledReservation.cancelled = true;
-      scheduledReservation.releaseReady();
-    }
-    runOwnershipEpoch += 1;
-    setSessionGeneration((generation) => generation + 1);
-    const settlement = currentSettlement;
-    currentSettlement = undefined;
-    setSettlementActive(false);
-    settlement?.release();
-    bashAbort?.abort();
-    if (currentHandle && hosting === undefined) {
+    const retired = coordinator.invalidate(hosting !== undefined);
+    if (retired.currentHandle && hosting === undefined) {
       cancelRequested = true;
-      void currentHandle.cancel().catch(() => undefined);
+      void retired.currentHandle.cancel().catch(() => undefined);
     }
     if (hosting !== undefined) {
-      for (const handle of physicalHandles) {
+      for (const handle of retired.physicalHandles) {
         if (handle.releaseObservation !== undefined)
           detachObserved("hosting.observation.release", () => handle.releaseObservation!());
-        physicalHandles.delete(handle);
-        setPhysicalRunCount((count) => Math.max(0, count - 1));
       }
     }
     currentSink = undefined;
-    currentHandle = undefined;
     workflowRunId = null;
     currentStatusExecId = null;
     heldIngest = null;
     diagnosticBind({ execution_id: undefined });
-    setRunActive(false);
-    setCompactionActive(false);
     setSessionUsageBaseline(null);
     deps.attention?.setTitle(null);
   }
@@ -1041,19 +952,19 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           "This connection cannot keep a run alive after the TUI exits. Background handoff is available only on a local host; use /background list to inspect or cancel runs while this connection remains open.",
         ),
       );
-    if (handoffFlight !== undefined) return handoffFlight;
+    if (coordinator.handoffFlight() !== undefined) return coordinator.handoffFlight()!;
     const hosting = client.hosting;
-    const handle = currentHandle;
+    const handle = coordinator.currentHandle();
     const sess = session;
     if (hosting === undefined || handle === undefined || sess === undefined)
       return Promise.reject(new Error("there is no hosted run to move to background"));
     if (bashActive() || compactionActive())
       return Promise.reject(new Error("finish the local command or compaction before background"));
-    const ownership = runOwnershipEpoch;
+    const ownership = coordinator.generation();
     const flight = (async () => {
       let receipt: HostedRunReceipt | null;
-      if (pendingHandoff?.executionId === handle.executionId) {
-        receipt = await hosting.receipt(pendingHandoff.operationId);
+      if (coordinator.pendingHandoff()?.executionId === handle.executionId) {
+        receipt = await hosting.receipt(coordinator.pendingHandoff()!.operationId);
         if (receipt === null)
           throw new Error("background handoff is unconfirmed; reconnect to inspect the hosted run");
       } else {
@@ -1065,11 +976,11 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           ref.session_id !== sess.meta()?.id ||
           ref.workspace_id !== workspaceId ||
           session !== sess ||
-          runOwnershipEpoch !== ownership
+          coordinator.generation() !== ownership
         )
           throw new Error("conversation changed before background handoff");
         const operationId = crypto.randomUUID();
-        pendingHandoff = { executionId: handle.executionId, operationId };
+        coordinator.recordHandoff(handle.executionId, operationId);
         try {
           receipt = await hosting.detach({
             execution_id: ref.execution_id,
@@ -1087,7 +998,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             details?.handoff?.operation_id === operationId &&
             details.handoff.admission === "refused"
           ) {
-            pendingHandoff = undefined;
+            coordinator.refuseHandoff(operationId);
             throw error;
           }
           const recovered = await hosting.receipt(operationId).catch(() => null);
@@ -1095,7 +1006,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           receipt = recovered;
         }
       }
-      if (session === sess && runOwnershipEpoch === ownership) {
+      if (session === sess && coordinator.generation() === ownership) {
         teardownRuns("teardown");
         elicit.cancelPending();
         setStatus(["run continues in background"]);
@@ -1105,15 +1016,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         );
       return receipt;
     })();
-    handoffFlight = flight;
-    void flight.then(
-      () => {
-        if (handoffFlight === flight) handoffFlight = undefined;
-      },
-      () => {
-        if (handoffFlight === flight) handoffFlight = undefined;
-      },
-    );
+    coordinator.beginHandoff(flight);
     return flight;
   }
 
@@ -1149,7 +1052,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     onError: (e: unknown) => void;
   }): Promise<void> {
     const { sess, executionId } = opts;
-    const ownershipEpoch = runOwnershipEpoch;
+    const ownershipEpoch = coordinator.generation();
     const hosted = client.hosting !== undefined;
     const attention = deps.attention;
     const transcript = store.openRun(executionId);
@@ -1161,34 +1064,26 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     diagnosticBind({ execution_id: executionId });
     const baseline = sess.meta()?.totals;
     setSessionUsageBaseline(baseline === undefined ? null : { ...baseline });
-    setDisconnectPolicy(hosted ? (opts.disconnectPolicy ?? "cancel") : "cancel");
-    setRunActive(true);
-    setInteractiveControl(opts.interactiveControl !== false);
-    setCompactionActive(false);
+    const runOwnership = coordinator.beginRun(
+      hosted ? (opts.disconnectPolicy ?? "cancel") : "cancel",
+      opts.interactiveControl !== false,
+    );
     setRunStartedAt(Date.now());
     setStatus(opts.initialStatus);
     attention?.setTitle("running");
     let publicationCompleted = false;
     let admitted = !hosted;
-    let releaseSettlement!: () => void;
-    const settlement = {
-      promise: new Promise<void>((resolve) => {
-        releaseSettlement = resolve;
-      }),
-      release: () => releaseSettlement(),
-    };
-    currentSettlement = settlement;
-    setSettlementActive(true);
     let interactiveReleased = false;
     const releaseInteractiveOwnership = (): void => {
-      if (interactiveReleased || ownershipEpoch !== runOwnershipEpoch || currentSink?.sink !== sink)
+      if (
+        interactiveReleased ||
+        ownershipEpoch !== coordinator.generation() ||
+        currentSink?.sink !== sink
+      )
         return;
       interactiveReleased = true;
-      currentHandle = undefined;
+      if (!runOwnership.releaseInteractive()) return;
       workflowRunId = null;
-      setRunActive(false);
-      setInteractiveControl(false);
-      setCompactionActive(false);
       attention?.setTitle(null);
       if (heldIngest?.execution_id === executionId) {
         const notice = heldIngest;
@@ -1198,7 +1093,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     };
     try {
       const envelope = await opts.run((h) => {
-        currentHandle = h;
+        coordinator.trackHandle(h);
         if (h.admitted !== undefined) {
           void h.admitted
             .then(async () => {
@@ -1206,27 +1101,21 @@ export function createRunHost(deps: RunHostDeps): RunHost {
               const id = sess.meta()?.id;
               if (id === undefined) return;
               const canonical = await sessionStore.load(id, { refresh: true });
-              if (canonical !== null && session === sess && ownershipEpoch === runOwnershipEpoch)
+              if (
+                canonical !== null &&
+                session === sess &&
+                ownershipEpoch === coordinator.generation()
+              )
                 sess.acceptHosted(canonical);
             })
             .catch(() => undefined);
         }
-        physicalHandles.add(h);
-        setPhysicalRunCount((count) => count + 1);
-        void h.closed.then(
-          () => {
-            if (physicalHandles.delete(h)) setPhysicalRunCount((count) => Math.max(0, count - 1));
-          },
-          () => {
-            if (physicalHandles.delete(h)) setPhysicalRunCount((count) => Math.max(0, count - 1));
-          },
-        );
       });
-      if (session !== sess || ownershipEpoch !== runOwnershipEpoch) return;
+      if (session !== sess || ownershipEpoch !== coordinator.generation()) return;
       if (hosted) {
         const id = sess.meta()?.id;
         const canonical = id === undefined ? null : await sessionStore.load(id, { refresh: true });
-        if (session !== sess || ownershipEpoch !== runOwnershipEpoch) return;
+        if (session !== sess || ownershipEpoch !== coordinator.generation()) return;
         if (canonical === null) throw new Error("hosted conversation could not be reconciled");
         sess.acceptHosted(canonical);
       }
@@ -1241,7 +1130,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         storedReadDegraded = true;
         store.settleRun(executionId, envelope?.status === "completed");
       }
-      if (session !== sess || ownershipEpoch !== runOwnershipEpoch) return;
+      if (session !== sess || ownershipEpoch !== coordinator.generation()) return;
       opts.onStored(envelope, stored, sink);
       if (envelope?.status === "failed" && envelope.error)
         store.appendRunFailure(executionId, envelope.error);
@@ -1257,7 +1146,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       if (!cancelRequested && attention?.away())
         attention.notify(`run ${presentStatus(runOutcomeStatus(envelope))}`);
     } catch (e) {
-      if (session === sess && ownershipEpoch === runOwnershipEpoch) {
+      if (session === sess && ownershipEpoch === coordinator.generation()) {
         opts.onError(e);
         store.settleRun(executionId);
         if (!publicationCompleted && admitted) {
@@ -1269,17 +1158,13 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         if (!cancelRequested && attention?.away()) attention.notify("run failed");
       }
     } finally {
-      if (ownershipEpoch === runOwnershipEpoch && currentSink?.sink === sink) {
+      if (ownershipEpoch === coordinator.generation() && currentSink?.sink === sink) {
         releaseInteractiveOwnership();
         diagnosticBind({ execution_id: undefined });
         currentSink = undefined;
       }
-      if (currentSettlement === settlement) {
-        currentSettlement = undefined;
-        setSettlementActive(false);
-      }
-      settlement.release();
-      if (session === sess && ownershipEpoch === runOwnershipEpoch) elicit.cancelPending();
+      runOwnership.finish();
+      if (session === sess && ownershipEpoch === coordinator.generation()) elicit.cancelPending();
     }
   }
 
@@ -1289,14 +1174,15 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     skill?: { name: string; task?: string; plansMode?: PlansMode },
     goalIntent?: { kind: "create"; seed: string },
   ): Promise<void> {
-    const epoch = runOwnershipEpoch;
-    setHumanSubmissions((count) => count + 1);
+    const epoch = coordinator.generation();
+    const submission = coordinator.reserveHuman();
     try {
-      if (scheduledReservation && !currentHandle) await scheduledReservation.ready;
-      if (epoch !== runOwnershipEpoch) return;
+      if (coordinator.scheduled() && !coordinator.currentHandle())
+        await coordinator.scheduled()!.ready;
+      if (epoch !== coordinator.generation()) return;
       await submitPreparedTurn(content, display, skill, goalIntent);
     } finally {
-      setHumanSubmissions((count) => count - 1);
+      submission.release();
     }
   }
 
@@ -1305,9 +1191,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     display?: string,
     skill?: { name: string; task?: string; plansMode?: PlansMode },
     goalIntent?: { kind: "create"; seed: string },
-    automatic?: ScheduledReservation,
+    automatic?: ScheduledReservation<RunHandle>,
   ): Promise<LoopTurnCompletion | void> {
-    const preparationEpoch = runOwnershipEpoch;
+    const preparationEpoch = coordinator.generation();
     const profile = deps.activeProfile();
     if (!profile) {
       setStatus(["no backend yet"]);
@@ -1323,26 +1209,26 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     } catch (error) {
       if (automatic) throw error;
       if (!(error instanceof MentionImageError)) throw error;
-      if (preparationEpoch !== runOwnershipEpoch) return;
+      if (preparationEpoch !== coordinator.generation()) return;
       setStatus([error.message]);
       draftRestore?.(draftText, typeof content === "string" ? undefined : content);
       return;
     }
     if (automatic) assertAutomatic(automatic);
-    if (preparationEpoch !== runOwnershipEpoch) return;
-    const settlement = currentSettlement;
+    if (preparationEpoch !== coordinator.generation()) return;
+    const settlement = coordinator.settlement();
     if (!runActive() && settlement !== undefined) await settlement.promise;
-    if (preparationEpoch !== runOwnershipEpoch) return;
+    if (preparationEpoch !== coordinator.generation()) return;
     if (automatic) assertAutomatic(automatic);
-    if (automatic === undefined && runActive() && currentHandle) {
-      const execId = currentHandle.executionId;
+    if (automatic === undefined && runActive() && coordinator.currentHandle()) {
+      const execId = coordinator.currentHandle()!.executionId;
       const queuedReceipt =
         currentSink?.executionId === execId
           ? currentSink.transcript.queueSteer?.(draftText)
           : undefined;
       try {
         const res = await client.steer({ executionId: execId, message: msg, profile });
-        if (preparationEpoch !== runOwnershipEpoch) return;
+        if (preparationEpoch !== coordinator.generation()) return;
         if (res.status !== "steered") queuedReceipt?.discard();
         setStatus(
           res.status === "steered"
@@ -1350,7 +1236,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             : [`steer: ${res.status}`],
         );
       } catch {
-        if (preparationEpoch !== runOwnershipEpoch) return;
+        if (preparationEpoch !== coordinator.generation()) return;
         queuedReceipt?.fail();
         setStatus(["steer failed ", { mark: "emDash" }, " message restored to the input"]);
         draftRestore?.(draftText, typeof content === "string" ? undefined : content);
@@ -1358,7 +1244,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       return;
     }
     if (!session) {
-      loadEpoch += 1;
+      coordinator.advanceLoadEpoch();
       session = createSession(boundSessionDeps, { agentProfile: profile });
     }
     const sess = session;
@@ -1368,16 +1254,16 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       hostedSession = await prepareHostedSession(sess, draftText);
     } catch (error) {
       if (automatic) throw error;
-      if (preparationEpoch === runOwnershipEpoch) {
+      if (preparationEpoch === coordinator.generation()) {
         setStatus([`turn was not admitted: ${errorText(error)}`]);
         draftRestore?.(draftText, typeof content === "string" ? undefined : content);
       }
       return;
     }
-    if (preparationEpoch !== runOwnershipEpoch || session !== sess) return;
+    if (preparationEpoch !== coordinator.generation() || session !== sess) return;
     if (automatic) assertAutomatic(automatic);
     const assertPreparation = (): void => {
-      if (session !== sess || preparationEpoch !== runOwnershipEpoch)
+      if (session !== sess || preparationEpoch !== coordinator.generation())
         throw new Error("Conversation changed during turn preparation.");
       if (automatic) assertAutomatic(automatic);
     };
@@ -1485,8 +1371,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         const attach = (handle: RunHandle): void => {
           setHandle(handle);
           if (automatic) {
-            automatic.handles.push(handle);
-            automatic.releaseReady();
+            coordinator.trackScheduledHandle(automatic, handle);
+            coordinator.markScheduledPrepared(automatic);
           }
         };
         const handle =
@@ -1614,11 +1500,11 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function submitSkillRun(name: string, task: string, agent: string): Promise<void> {
-    if (scheduledReserved()) {
+    if (coordination().scheduledReserved) {
       setStatus(["busy ", { mark: "emDash" }, " finish the scheduled turn first"]);
       return;
     }
-    const settlement = currentSettlement;
+    const settlement = coordinator.settlement();
     if (!runActive() && settlement !== undefined) await settlement.promise;
     if (runActive()) {
       setStatus(["busy ", { mark: "emDash" }, " finish the current run first"]);
@@ -1626,7 +1512,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     const profile = deps.activeProfile();
     if (!session) {
-      loadEpoch += 1;
+      coordinator.advanceLoadEpoch();
       session = createSession(boundSessionDeps, { agentProfile: profile || undefined });
     }
     const sess = session;
@@ -1675,15 +1561,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function runBangCommand(cmd: string): boolean {
-    if (scheduledReserved() || humanSubmissions() > 0 || sessionLoading()) return false;
-    if (currentSettlement !== undefined || compactionCalls() > 0 || physicalRunCount() > 0)
-      return false;
-    if (bashActive()) {
+    const admission = coordinator.localCommandAdmission();
+    if (admission === "already-running") {
       setStatus(["a ! command is already running ", { mark: "emDash" }, " draft kept"]);
       return false;
     }
+    if (admission === "occupied") return false;
     if (!session) {
-      loadEpoch += 1;
+      coordinator.advanceLoadEpoch();
       session = createSession(boundSessionDeps, {
         agentProfile: deps.activeProfile() || undefined,
       });
@@ -1693,11 +1578,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const finish = store.beginLocalBash(cmd);
     let finished = false;
     const abort = new AbortController();
-    bashAbort = abort;
-    setBashActive(true);
-    setLocalCommandCount((count) => count + 1);
+    const command = coordinator.beginLocalCommand(abort);
     setStatus(["! running", { mark: "ellipsis" }]);
-    localWork = (async () => {
+    const work = (async () => {
       let lease: HostedActivityLease | undefined;
       try {
         if (hosting !== undefined) {
@@ -1719,7 +1602,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             if (session === sess && canonical !== null) sess.acceptHosted(canonical);
           }
         }
-        if (bashAbort === abort && session === sess)
+        if (coordinator.bashAbort() === abort && session === sess)
           setStatus([
             result.cancelled
               ? "! cancelled"
@@ -1744,17 +1627,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         try {
           if (lease !== undefined) await hosting!.releaseActivity(lease.lease_id);
         } finally {
-          if (bashAbort === abort) {
-            bashAbort = undefined;
-            setBashActive(false);
-          }
-          setLocalCommandCount((count) => count - 1);
+          command.release();
         }
       }
     })();
+    coordinator.setLocalWork(command, work);
     detachObserved(
       "local_bash",
-      () => localWork,
+      () => work,
       (e) => {
         if (session === sess) setStatus([`shell failed: ${errorText(e)}`]);
       },
@@ -1763,8 +1643,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function stopLocalWork(): Promise<void> {
-    bashAbort?.abort();
-    await Promise.allSettled(localWork === undefined ? [] : [localWork]);
+    coordinator.bashAbort()?.abort();
+    await Promise.allSettled(coordinator.localWork());
   }
 
   /** Number of canonical session turns represented by the transcript's single prefix notice. */
@@ -1866,9 +1746,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function clearSession(opts?: { flush?: boolean }): void {
-    loadEpoch += 1;
+    coordinator.advanceLoadEpoch();
     teardownRuns("clear");
-    setSessionLoading(false);
+    coordinator.finishLoading();
     if (opts?.flush !== false) session?.flush();
     session = undefined;
     store.clear();
@@ -1880,262 +1760,28 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setStatus(["idle"]);
   }
 
-  async function* exportNodeBatches(): AsyncGenerator<readonly TranscriptNode[]> {
-    let scratch!: TranscriptStore;
-    const dispose = createRoot((d) => {
-      scratch = createTranscriptStore({
-        ...(deps.describeToolCall ? { describeToolCall: deps.describeToolCall } : {}),
-        // This store exists for one persisted run at a time. Applying the live
-        // aggregate caps here would replace export content with the very
-        // memory notices the lazy reload exists to repair. The trace store's
-        // per-record ceiling bounds this one-run scratch lifetime instead.
-        proseTotalLimitBytes: Number.MAX_SAFE_INTEGER,
-        hydratedToolLimit: Number.MAX_SAFE_INTEGER,
-        hydratedToolBytesLimit: Number.MAX_SAFE_INTEGER,
-        hydratedToolSingleBytesLimit: Number.MAX_SAFE_INTEGER,
-      });
-      return d;
+  function exportNodeBatches(): AsyncIterable<readonly TranscriptNode[]> {
+    return exportTranscriptBatches({
+      snapshot: () => {
+        const capturedSession = session;
+        const meta = capturedSession?.meta();
+        return {
+          sessionId: meta?.id ?? null,
+          turns: meta?.turns,
+          foldedTurnCount,
+          foldState: () => (session === capturedSession ? { foldedTurnCount, foldedPrefix } : null),
+          residentNodes: store.exportLeadNodes?.() ?? store.nodes,
+          isolatedChildren: store.exportLeadNodes !== undefined,
+        };
+      },
+      getRun: (executionId) => client.getRun(executionId),
+      ...(deps.describeToolCall === undefined ? {} : { describeToolCall: deps.describeToolCall }),
     });
-
-    async function* exportResidentNodes(
-      nodes: readonly TranscriptNode[],
-    ): AsyncGenerator<readonly TranscriptNode[]> {
-      let outputBatch: TranscriptNode[] = [];
-      let cachedExecutionId: string | undefined;
-      let cachedDetail: RunDetail | null = null;
-      let restored = new Map<string, TranscriptNode>();
-      let fetchFailed = false;
-
-      const loadPersisted = async (executionId: string): Promise<void> => {
-        if (executionId === cachedExecutionId) return;
-        cachedExecutionId = executionId;
-        cachedDetail = null;
-        restored = new Map();
-        fetchFailed = false;
-        try {
-          cachedDetail = await client.getRun(executionId);
-        } catch {
-          fetchFailed = true;
-          return;
-        }
-        if (cachedDetail === null) return;
-        scratch.clear();
-        const sink = scratch.openRun(executionId);
-        batch(() => {
-          sink.beginReconcile();
-          for (const event of cachedDetail!.events) applyEvent(sink, event, "replay");
-          sink.endReconcile();
-          sink.complete();
-        });
-        restored = new Map(scratch.nodes.map((candidate) => [candidate.key, candidate]));
-      };
-
-      for (const node of nodes) {
-        let exported = node;
-        if (isReleasedProse(node)) {
-          const executionId = sourceExecutionId(node);
-          if (executionId === undefined) {
-            exported = incompleteExportNode(node, "no persisted run identifies this block");
-          } else {
-            await loadPersisted(executionId);
-            // `loadPersisted` mutates this cache across an async closure; retain
-            // its runtime state explicitly instead of relying on CFA across the call.
-            const persisted = cachedDetail as RunDetail | null;
-            if (fetchFailed) {
-              exported = incompleteExportNode(node, `run ${executionId} could not be fetched`);
-            } else if (persisted === null) {
-              exported = incompleteExportNode(node, `run ${executionId} is no longer retained`);
-            } else if (node.kind === "user") {
-              const content = persisted.messages.at(-1)?.content;
-              if (content === undefined) {
-                exported = incompleteExportNode(
-                  node,
-                  `run ${executionId} has no recoverable prompt`,
-                );
-              } else {
-                const text = contentToText(content);
-                if (
-                  node.sourceTextFingerprint !== undefined &&
-                  node.sourceTextFingerprint !== transcriptTextFingerprint(text)
-                ) {
-                  exported = incompleteExportNode(
-                    node,
-                    `run ${executionId}'s persisted prompt does not match this displayed block`,
-                  );
-                } else {
-                  const bounded = boundTranscriptText(text);
-                  exported = {
-                    ...node,
-                    text: bounded.text,
-                    textTruncated: bounded.truncated ? true : undefined,
-                    proseReleased: undefined,
-                  };
-                }
-              }
-            } else {
-              const candidate = restored.get(node.key);
-              if (
-                candidate === undefined ||
-                (candidate.kind !== "assistant" && candidate.kind !== "reasoning") ||
-                candidate.proseReleased === true
-              ) {
-                exported = incompleteExportNode(
-                  node,
-                  `run ${executionId} has no recoverable ${node.kind} block`,
-                );
-              } else {
-                exported = { ...candidate };
-              }
-            }
-          }
-        }
-        outputBatch.push(exported);
-        if (outputBatch.length >= EXPORT_BATCH_NODE_LIMIT) {
-          yield outputBatch;
-          outputBatch = [];
-        }
-      }
-      if (outputBatch.length > 0) yield outputBatch;
-    }
-
-    async function* exportResidentWithChildren(
-      nodes: readonly TranscriptNode[],
-    ): AsyncGenerator<readonly TranscriptNode[]> {
-      const segments: TranscriptNode[][] = [];
-      let segment: TranscriptNode[] = [];
-      for (const node of nodes) {
-        if (node.kind === "user" && segment.length > 0) {
-          segments.push(segment);
-          segment = [];
-        }
-        segment.push(node);
-      }
-      if (segment.length > 0) segments.push(segment);
-
-      for (const current of segments) {
-        const user = current.find((node) => node.kind === "user");
-        const executionId = user?.kind === "user" ? user.sourceExecutionId : undefined;
-        if (executionId === undefined) {
-          yield* exportResidentNodes(current);
-          continue;
-        }
-        let detail: RunDetail | null = null;
-        try {
-          detail = await client.getRun(executionId);
-        } catch {
-          detail = null;
-        }
-        if (detail === null) {
-          if (current.some((node) => node.kind === "subagent")) {
-            yield* exportResidentNodes([
-              ...current,
-              {
-                key: `export:missing-children:${executionId}`,
-                kind: "assistant",
-                status: "error",
-                text: `EXPORT INCOMPLETE — run ${executionId} child transcripts could not be reloaded.`,
-              },
-            ]);
-          } else yield* exportResidentNodes(current);
-          continue;
-        }
-        scratch.clear();
-        const sink = scratch.openRun(executionId);
-        batch(() => {
-          sink.beginReconcile();
-          for (const event of detail.events) applyEvent(sink, event, "replay");
-          sink.endReconcile();
-          sink.complete();
-        });
-        const replayed = [...scratch.nodes];
-        const replayedKeys = new Set(replayed.map((node) => node.key));
-        const insertion = current.findIndex((node) => node.key.startsWith(`${executionId}::`));
-        const at = insertion < 0 ? 1 : insertion;
-        const before = current.slice(0, at).filter((node) => !replayedKeys.has(node.key));
-        const after = current.slice(at).filter((node) => !replayedKeys.has(node.key));
-        yield* exportResidentNodes([...before, ...replayed, ...after]);
-      }
-    }
-
-    try {
-      const residentNodes = store.exportLeadNodes?.() ?? store.nodes;
-      if (foldedTurnCount === 0) {
-        if (store.exportLeadNodes !== undefined) {
-          yield* exportResidentWithChildren(residentNodes);
-          return;
-        }
-        if (!residentNodes.some(isReleasedProse)) {
-          yield residentNodes;
-          return;
-        }
-        yield* exportResidentNodes(residentNodes);
-        return;
-      }
-
-      const canonicalTurns = session?.meta()?.turns;
-      for (let index = 0; index < foldedTurnCount; index += 1) {
-        scratch.clear();
-        const turn = canonicalTurns?.[index];
-        if (turn === undefined) {
-          scratch.appendUserMessage(`Earlier turn ${index + 1}`);
-          scratch.appendNotice(
-            "folded — this turn's session metadata could not be reloaded",
-            "info",
-          );
-          yield [...scratch.nodes];
-          continue;
-        }
-        const executionId = turn.executionId;
-        if (executionId === undefined) {
-          scratch.appendUserMessage(turn.userPreview);
-          scratch.appendNotice("folded — this turn has no persisted run to reload", "info");
-          yield [...scratch.nodes];
-          continue;
-        }
-        let detail: RunDetail | null = null;
-        try {
-          detail = await client.getRun(executionId);
-        } catch {
-          detail = null;
-        }
-        if (!detail) {
-          scratch.appendUserMessage(turn.userPreview, undefined, executionId);
-          scratch.appendNotice("folded — this turn's reply could not be reloaded", "info");
-        } else {
-          const persistedUserContent =
-            turn.kind === "conversation" ? detail.messages.at(-1)?.content : undefined;
-          scratch.appendUserMessage(
-            persistedUserContent ?? turn.userPreview,
-            undefined,
-            executionId,
-          );
-          if (turn.kind === "conversation" && persistedUserContent === undefined)
-            scratch.appendNotice(
-              "folded — this turn's complete prompt could not be reloaded",
-              "info",
-            );
-          const sink = scratch.openRun(executionId);
-          batch(() => {
-            sink.beginReconcile();
-            for (const event of detail.events) applyEvent(sink, event, "replay");
-            sink.endReconcile();
-            sink.complete();
-          });
-        }
-        yield [...scratch.nodes];
-      }
-      if (store.exportLeadNodes !== undefined)
-        yield* exportResidentWithChildren(residentNodes.slice(foldedPrefix));
-      else yield* exportResidentNodes(residentNodes.slice(foldedPrefix));
-    } finally {
-      dispose();
-    }
   }
 
   async function loadSessionMeta(meta: SessionMeta): Promise<void> {
-    const epoch = ++loadEpoch;
+    const epoch = coordinator.beginLoading();
     teardownRuns("switch");
-    setSessionLoading(true);
     session?.flush();
     session = undefined;
     store.clear();
@@ -2165,7 +1811,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           currentPlanProviderKey: deps.planProviderKey,
           renderTurn: ({ executionId, userContent, events, recovery }) => {
             const index = renderedTurnIndex++;
-            if (epoch !== loadEpoch || index < windowStart) return;
+            if (epoch !== coordinator.loadEpoch() || index < windowStart) return;
             const persistedTurn = meta.turns[index];
             const preview =
               persistedTurn?.userPreview ??
@@ -2196,11 +1842,11 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         { renderWindow: RESIDENT_TRANSCRIPT_TURN_LIMIT },
       );
     } catch (error) {
-      if (epoch !== loadEpoch) return;
-      setSessionLoading(false);
+      if (epoch !== coordinator.loadEpoch()) return;
+      coordinator.finishLoading();
       throw error;
     }
-    if (epoch !== loadEpoch) return;
+    if (epoch !== coordinator.loadEpoch()) return;
     canonicalTurnIds = meta.turns.map(turnIdentity);
     session = createSession(boundSessionDeps, {
       meta,
@@ -2208,7 +1854,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       agentProfile: meta.agentProfile,
       historyComplete: resumed.degraded.length === 0,
     });
-    setSessionLoading(false);
+    coordinator.finishLoading();
     history.seed(seeds);
     if (meta.agentProfile) deps.setActiveProfile(meta.agentProfile);
     const previousExtensionProfile =
@@ -2244,8 +1890,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function resumeSessionById(id: SessionId): Promise<void> {
-    const requestEpoch = ++loadEpoch;
-    setSessionLoading(true);
+    const requestEpoch = coordinator.beginLoading();
     const previous = session?.meta()?.id;
     if (previous) deps.onSessionInvalidated?.(previous, "switch");
     let meta: SessionMeta | null;
@@ -2253,7 +1898,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     try {
       if (client.hosting !== undefined) {
         let retained = await client.hosting.list();
-        if (requestEpoch !== loadEpoch) return;
+        if (requestEpoch !== coordinator.loadEpoch()) return;
         if (
           !retained.some((entry) => entry.session_id === id && entry.execution_state !== "closed")
         ) {
@@ -2262,7 +1907,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           } catch (error) {
             recoveryNotice = `pending input retained: ${errorText(error)}`;
           }
-          if (requestEpoch !== loadEpoch) return;
+          if (requestEpoch !== coordinator.loadEpoch()) return;
           retained = await client.hosting.list();
         }
         const ref = retained
@@ -2272,13 +1917,13 @@ export function createRunHost(deps: RunHostDeps): RunHost {
               Number(a.execution_state === "closed") - Number(b.execution_state === "closed") ||
               b.created_at - a.created_at,
           )[0];
-        if (requestEpoch !== loadEpoch) return;
+        if (requestEpoch !== coordinator.loadEpoch()) return;
         if (ref?.execution_state === "unknown")
           throw new Error(
             "this conversation has a run with an unknown outcome; inspect it in /background list or start another conversation",
           );
         if (ref !== undefined) {
-          setSessionLoading(false);
+          coordinator.finishLoading();
           await attachHostedRun(ref, ref.control === "other" ? "observe" : "acquire");
           return;
         }
@@ -2289,22 +1934,23 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           "this conversation was archived after recovery; start a new conversation for new work",
         );
     } catch (error) {
-      if (requestEpoch === loadEpoch) {
-        setSessionLoading(false);
+      if (requestEpoch === coordinator.loadEpoch()) {
+        coordinator.finishLoading();
         setStatus([`resume failed: ${errorText(error)}`]);
       }
       return;
     }
-    if (requestEpoch !== loadEpoch) return;
+    if (requestEpoch !== coordinator.loadEpoch()) return;
     if (!meta) {
-      setSessionLoading(false);
+      coordinator.finishLoading();
       setStatus(["session not found"]);
       return;
     }
     const loading = loadSessionMeta(meta);
-    const restoredEpoch = loadEpoch;
+    const restoredEpoch = coordinator.loadEpoch();
     await loading.catch((e) => setStatus([`resume failed: ${errorText(e)}`]));
-    if (restoredEpoch === loadEpoch && recoveryNotice !== undefined) setStatus([recoveryNotice]);
+    if (restoredEpoch === coordinator.loadEpoch() && recoveryNotice !== undefined)
+      setStatus([recoveryNotice]);
   }
 
   async function synchronizeGoal(binding: GoalBinding, view: GoalView): Promise<void> {
@@ -2313,15 +1959,15 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       session === sess &&
       sess !== undefined &&
       binding.sessionId === sess.meta()?.id &&
-      binding.generation === sessionGeneration() &&
-      !sessionLoading();
+      binding.generation === coordination().generation &&
+      !coordination().loading;
     if (!valid() || client.hosting === undefined) return;
     if (
-      currentHandle !== undefined &&
-      currentHandle.executionId === view.physical_run?.execution_id
+      coordinator.currentHandle() !== undefined &&
+      coordinator.currentHandle()!.executionId === view.physical_run?.execution_id
     )
       return;
-    if (currentSettlement !== undefined) await currentSettlement.promise;
+    if (coordinator.settlement() !== undefined) await coordinator.settlement()!.promise;
     if (!valid() || scheduledBusy()) return;
     const meta = await sessionStore.load(binding.sessionId, { refresh: true });
     if (!valid() || meta === null || scheduledBusy()) return;
@@ -2441,18 +2087,18 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       throw new Error("backend does not support hosted observation");
     if (ref.workspace_id !== workspaceId)
       throw new Error("hosted run belongs to another workspace");
-    if (currentHandle?.executionId === ref.execution_id) {
+    if (coordinator.currentHandle()?.executionId === ref.execution_id) {
       if (control === "observe") {
         setStatus(["already attached to this execution"]);
         return;
       }
-      const handle = currentHandle;
-      const ownership = runOwnershipEpoch;
+      const handle = coordinator.currentHandle()!;
+      const ownership = coordinator.generation();
       if (handle.acquireControl === undefined)
         throw new Error("backend does not support control of an existing observation");
       await handle.acquireControl(control);
-      if (currentHandle === handle && runOwnershipEpoch === ownership) {
-        setInteractiveControl(true);
+      if (coordinator.currentHandle() === handle && coordinator.generation() === ownership) {
+        coordinator.acquireControl(handle);
         setStatus(["controlling hosted run"]);
       }
       return;
@@ -2465,23 +2111,28 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       throw new Error(
         "this conversation was archived after recovery; start a new conversation for new work",
       );
-    const requestEpoch = ++loadEpoch;
-    const previousHandle = currentHandle;
+    const requestEpoch = coordinator.advanceLoadEpoch();
+    const previousHandle = coordinator.currentHandle();
     const meta = await sessionStore.load(ref.session_id, { refresh: true });
-    if (requestEpoch !== loadEpoch || currentHandle !== previousHandle || humanSubmissions() > 0)
+    if (
+      requestEpoch !== coordinator.loadEpoch() ||
+      coordinator.currentHandle() !== previousHandle ||
+      coordination().humanSubmissions > 0
+    )
       return;
     if (meta === null) throw new Error("hosted conversation is unavailable");
     if (ref.execution_state === "closed") {
       await loadSessionMeta(meta);
-      if (loadEpoch === requestEpoch + 1) await client.hosting.acknowledge(ref.execution_id);
+      if (coordinator.loadEpoch() === requestEpoch + 1)
+        await client.hosting.acknowledge(ref.execution_id);
       return;
     }
     const turn = meta.turns.find((entry) => entry.executionId === ref.execution_id);
     if (turn === undefined) throw new Error("hosted execution has no matching conversation turn");
-    const resumeEpoch = loadEpoch + 1;
+    const resumeEpoch = coordinator.loadEpoch() + 1;
     await loadSessionMeta({ ...meta, turns: meta.turns.filter((entry) => entry !== turn) });
     await sessionRetirement;
-    if (resumeEpoch !== loadEpoch) return;
+    if (resumeEpoch !== coordinator.loadEpoch()) return;
     const sess = session;
     if (sess === undefined || sess.meta()?.id !== ref.session_id)
       throw new Error("conversation changed during hosted attach");
@@ -2516,17 +2167,21 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   return {
     runActive,
     continuesOnExit: () =>
-      deps.backgroundHandoffSurvivesExit() && runActive() && disconnectPolicy() === "continue",
+      deps.backgroundHandoffSurvivesExit() &&
+      runActive() &&
+      coordination().disconnectPolicy === "continue",
     bashActive,
     compactionActive,
     physicalWorkActive: () =>
-      physicalRunCount() > 0 || localCommandCount() > 0 || compactionCalls() > 0,
+      coordination().physicalRunCount > 0 ||
+      coordination().localCommandCount > 0 ||
+      coordination().compactionCalls > 0,
     memory: () => {
       const sessionMemory = session?.memory();
       let eventQueueItems = 0;
       let eventQueueBytes = 0;
       let eventQueueDropped = 0;
-      for (const handle of physicalHandles) {
+      for (const handle of coordinator.physicalHandles()) {
         const buffered = handle.buffered?.();
         eventQueueItems += buffered?.buffered_items ?? 0;
         eventQueueBytes += buffered?.buffered_bytes ?? 0;
@@ -2543,7 +2198,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           deps.isManagerProfile?.() === true && sessionMemory?.session_history_complete === true
             ? sessionMemory.session_payload_bytes
             : 0,
-        physical_run_handles: physicalHandles.size,
+        physical_run_handles: coordinator.physicalHandles().size,
         local_process_active: bashActive(),
         event_queue_items: eventQueueItems,
         event_queue_bytes: eventQueueBytes,

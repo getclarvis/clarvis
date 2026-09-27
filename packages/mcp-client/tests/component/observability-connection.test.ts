@@ -54,6 +54,23 @@ function open(
 }
 
 describe("openConnection observability", () => {
+  it("observes failed cleanup for two connections using the same logger", async () => {
+    const recording = createRecordingLogger();
+    const factory: MCPClientFactory = async () => ({
+      ...handle({ listTools: () => Promise.reject(new Error("catalog failed")) }),
+      close: () => Promise.reject(new Error("close failed")),
+    });
+    const results = await Promise.allSettled([open(factory, recording), open(factory, recording)]);
+    expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+    expect(
+      recording.records.filter(
+        (record) =>
+          record.message === "best_effort_failed" &&
+          record.fields.operation === "mcp_failed_listing_close",
+      ),
+    ).toHaveLength(2);
+  });
+
   it("binds the connection's identity and reports a successful handshake", async () => {
     const recording = createRecordingLogger();
     const opened = await open(

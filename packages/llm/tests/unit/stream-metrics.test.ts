@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/bun-test.ts";
+import { selectStreamMetrics as selectStreamMetricsEntry } from "@clarvis/llm/metrics";
 import {
   createStreamMetrics,
   createStreamMetricsCounter,
@@ -7,6 +8,7 @@ import {
 } from "#src/stream-metrics.ts";
 
 test("an absent debug path selects an inert sink without process resources", () => {
+  expect(selectStreamMetricsEntry).toBe(selectStreamMetrics);
   const metrics = selectStreamMetrics(undefined, "loop");
   expect(() => {
     metrics.count("delta");

@@ -13,7 +13,9 @@ families, and that turns everything those calls can do wrong into one normalized
 dependencies (`packages/llm/package.json`).
 
 Concretely it owns five things. (a) The **adapter**: `AiSdkAdapter`
-(`packages/llm/src/ai-sdk-adapter.ts`) builds the right SDK client from a
+(`packages/llm/src/ai-sdk-adapter.ts`) coordinates `buildRegistryFactory` in
+`packages/llm/src/ai-sdk/provider-factory.ts` and `runStreamCall` in
+`packages/llm/src/ai-sdk/stream-call.ts`. It builds the right SDK client from a
 `ResolvedProviderConfig`, converts the loop's messages/tools/tuning into the AI SDK call shape,
 streams or generates, and maps every failure. (b) The **decorator stack** — prompt-cache defaults
 (`packages/llm/src/prompt-cache-provider.ts`), call logging (`packages/llm/src/logging-llm-provider.ts`), transport retry
@@ -23,7 +25,7 @@ each an `LLMProvider` wrapping an `LLMProvider`. (c) The **classifier**, `classi
 (`packages/capability/src/run.ts`) a failure is, and therefore whether it is retried at all.
 (d) The **transport bounds**: `createBoundedFetch` (`packages/llm/src/ai-sdk/bounded-fetch.ts`) caps a response
 body and one unterminated SSE event before an SDK parser can retain them. (e) A deliberate
-**two-entry split** so that importing a decorator does not statically load four provider SDKs
+**lazy entry split** so that importing a decorator does not statically load four provider SDKs
 (`packages/llm/src/index.ts`, `packages/llm/src/lazy.ts`), enforced by `tests/architecture/lazy-entry.test.ts`.
 
 The package has no `zod` dependency and defines no settings schema
@@ -40,6 +42,7 @@ it by `@clarvis/loop`'s `buildExecuteRunDeps` (`packages/loop/src/runtime/build-
 | --- | --- | --- | --- | --- |
 | `.` | `./src/index.ts` | `./dist/index.d.ts` | `./dist/index.js` | `packages/llm/package.json` |
 | `./adapter` | `./src/adapter.ts` | `./dist/adapter.d.ts` | `./dist/adapter.js` | `packages/llm/package.json` |
+| `./metrics` | `./src/metrics.ts` | `./dist/metrics.d.ts` | `./dist/metrics.js` | `packages/llm/package.json` |
 | `./package.json` | literal | — | — | `packages/llm/package.json` |
 
 `packages/llm/src/index.ts` re-exports seven modules (`lazy.ts`, `classify-provider-error.ts`,
@@ -54,7 +57,7 @@ the reason: re-exporting it "would statically pull `@ai-sdk/anthropic`, `@ai-sdk
 | Symbol | Kind | File | Signature / value |
 | --- | --- | --- | --- |
 | `createAiSdkProvider` | fn | `packages/llm/src/lazy.ts` | `(opts: AiSdkProviderOptions) => LLMProvider` |
-| `AiSdkProviderOptions` | iface | `packages/llm/src/lazy.ts` | `{ resolveRegistryKey; resolveSubscription?; timeoutMs?; maxResponseBytes?; maxSseEventBytes?; logger? }` |
+| `AiSdkProviderOptions` | iface | `packages/llm/src/lazy.ts` | `{ resolveRegistryKey; resolveSubscription?; timeoutMs?; maxResponseBytes?; maxSseEventBytes?; logger?; metrics? }` |
 | `parseRetryAfter` | fn | `packages/llm/src/classify-provider-error.ts` | `(value: string \| null \| undefined, now?: number) => number \| undefined` |
 | `classifyProviderError` | fn | `packages/llm/src/classify-provider-error.ts` | `(input: ClassifyInput) => Classification` |
 | `HeaderLike` | iface | `packages/llm/src/classify-provider-error.ts` | `{ get(name): string \| null }` |
@@ -87,27 +90,32 @@ the reason: re-exporting it "would statically pull `@ai-sdk/anthropic`, `@ai-sdk
 | Symbol | Kind | File | What |
 | --- | --- | --- | --- |
 | `AiSdkAdapter` | class | `packages/llm/src/ai-sdk-adapter.ts` | the `LLMProvider` over the AI SDK |
-| `AiSdkProviderConfig` | iface | `packages/llm/src/ai-sdk-adapter.ts` | `{ resolveRegistryKey?; generateText?; streamText?; fetch?; resolveSubscription?; logger? }` |
+| `AiSdkProviderConfig` | iface | `packages/llm/src/ai-sdk-adapter.ts` | `{ resolveRegistryKey?; generateText?; streamText?; fetch?; resolveSubscription?; logger?; metrics? }` |
 | `AiSdkGuardrails` | iface | `packages/llm/src/ai-sdk-adapter.ts` | `{ timeoutMs?; maxResponseBytes?; maxSseEventBytes? }` |
 | `SubscriptionRequestAuth` | iface | `packages/llm/src/ai-sdk-adapter.ts` | token-opaque `{ scheme; apply(input, init) }` request authority |
 | `createBoundedFetch` | fn | `packages/llm/src/ai-sdk/bounded-fetch.ts` | `(options?) => typeof fetch` |
 | `DEFAULT_PROVIDER_MAX_RESPONSE_BYTES` | const | `packages/llm/src/ai-sdk/bounded-fetch.ts` | `32 * 1024 * 1024` |
 | `DEFAULT_PROVIDER_MAX_SSE_EVENT_BYTES` | const | `packages/llm/src/ai-sdk/bounded-fetch.ts` | `4 * 1024 * 1024` |
 | `ProviderResponseLimitError` | class | `packages/llm/src/ai-sdk/bounded-fetch.ts` | `{ limit: "response" \| "sse_event"; maxBytes }` |
-| `createStreamMetricsCounter` | fn | `packages/llm/src/stream-metrics.ts` | `(source, { now, memoryUsage, emit }) => { count, flushWindow, finish }` |
 | `createStreamMetrics` | fn | `packages/llm/src/stream-metrics.ts` | `(path, source, overrides?) => StreamMetrics` |
-| `selectStreamMetrics` | fn | `packages/llm/src/stream-metrics.ts` | `(path, source) => StreamMetrics` |
 | `streamMetrics` | fn | `packages/llm/src/stream-metrics.ts` | `(source = "loop", readPath?) => StreamMetrics` (process-wide memo) |
 | `StreamMetrics` | iface | `packages/llm/src/stream-metrics.ts` | `{ count(name, n?), dispose() }` |
 
-### 2.4 Modules with no entrypoint owner
+`./metrics` exports `selectStreamMetrics` and `StreamMetrics` through
+`packages/llm/src/metrics.ts` without loading provider SDK values. The adapter entry retains its
+existing metrics exports for direct callers; the main entry still does not reach metrics statically.
+`createStreamMetricsCounter` is a private testable calculation in
+`packages/llm/src/stream-metrics.ts`.
+
+### 2.4 Private modules behind the adapter
 
 `src/ai-sdk/errors.ts`, `src/ai-sdk/request-options.ts`, `src/ai-sdk/result.ts`,
-`src/ai-sdk/streaming.ts`, `src/model-call-timeout-bridge.ts` and
-`src/openai-compatible-request.ts` export symbols that neither `index.ts` nor `adapter.ts` names.
-They are reachable only by relative path — which is how the unit tests import them, e.g.
-`packages/llm/tests/unit/ai-sdk-modules.test.ts` and
-`packages/llm/tests/unit/model-call-admission.test.ts`. Most of their individual exports are
+`src/ai-sdk/streaming.ts`, `src/ai-sdk/provider-factory.ts`, `src/ai-sdk/stream-call.ts`,
+`src/model-call-timeout-bridge.ts` and
+`src/openai-compatible-request.ts` export private symbols that neither public entrypoint re-exports.
+The adapter and its helpers import them internally; unit tests use package-owned `#src/` imports,
+e.g. `packages/llm/tests/unit/ai-sdk-modules.test.ts` and
+`packages/llm/tests/unit/stream-call.test.ts`. Most of their individual exports are
 described where their behavior is first discussed in sections 3–4 below (e.g.
 `buildCallTuning`/`buildRequestOptions` in 3.2–3.5, `buildCallResult`/`normalizeUsage`/
 `normalizeModelText` in 4.8, `toProviderError` in 4.9, `makeDeltaBatcher`/`makeToolInputReporter`
@@ -120,10 +128,11 @@ citation is locatable by symbol, not only by line.
 
 | Variable | Read at | Effect |
 | --- | --- | --- |
-| `CLARVIS_STREAM_DEBUG` | `packages/llm/src/stream-metrics.ts` | when non-empty, `streamMetrics()` returns a JSONL file sink instead of the no-op |
-| *(any name)* | `packages/llm/src/ai-sdk-adapter.ts` | `process.env[name]` is the **default** credential/header resolver when `AiSdkProviderConfig.resolveRegistryKey` is absent |
+| `CLARVIS_STREAM_DEBUG` | `packages/loop/src/runtime/build-run-deps.ts` | the host selects one JSONL sink through `selectStreamMetrics` and disposes it with its run dependencies |
+| *(any name)* | `packages/llm/src/ai-sdk/provider-factory.ts` | `process.env[name]` is the **default** credential/header resolver when `AiSdkProviderConfig.resolveRegistryKey` is absent |
 
-There is no other environment read in `packages/llm/src`. The provider timeouts, retry budget and
+The retained `streamMetrics()` compatibility export can still read `CLARVIS_STREAM_DEBUG` when
+called directly, but the adapter and its streaming helpers do not call it. The provider timeouts, retry budget and
 transport bounds arrive as arguments from the host (`packages/loop/src/runtime/build-run-deps.ts`).
 
 ---
@@ -257,11 +266,16 @@ The same wire-cache integration test pins
 `createStreamMetricsCounter` calculates windows and lifetime totals from an explicit clock,
 memory sample and sink, without a timer or file. `createStreamMetrics` owns the one-second timer,
 process-exit listener and JSONL append. `dispose()` removes the timer and listener and flushes once;
-an exit after disposal does not append again. `streamMetrics()` selects the file named by
-`CLARVIS_STREAM_DEBUG` once per process. Production: `packages/llm/src/stream-metrics.ts`
-(`createStreamMetricsCounter`, `createStreamMetrics`, `selectStreamMetrics`, `streamMetrics`). Test:
+an exit after disposal does not append again. The loop host reads `CLARVIS_STREAM_DEBUG`, selects
+one sink with `selectStreamMetrics`, passes its counter port to the lazy adapter, and disposes the
+sink with its run dependencies. Direct adapters and helpers default to inert instrumentation.
+Production: `packages/llm/src/stream-metrics.ts` (`createStreamMetricsCounter`,
+`createStreamMetrics`, `selectStreamMetrics`), `packages/loop/src/runtime/build-run-deps.ts`
+(`buildExecuteRunDeps`), and `packages/llm/src/ai-sdk/streaming.ts` (`makeDeltaBatcher`,
+`makeToolInputReporter`). Test:
 `packages/llm/tests/unit/stream-metrics.test.ts` and
-`packages/llm/tests/integration/stream-metrics.test.ts`. Two record shapes:
+`packages/llm/tests/integration/stream-metrics.test.ts` and
+`packages/loop/tests/integration/stream-debug-wiring.test.ts`. Two record shapes:
 
 - a window line, every 1000 ms, carrying
   `{ at, source, window_ms, counts, rates, rss, heap_used, external }` — emitted even
@@ -280,7 +294,7 @@ Counters written by this package: `provider_delta`, `provider_chars`, and
 
 `createAiSdkProvider` (`packages/llm/src/lazy.ts`) returns an `LLMProvider` whose `call` memoizes a build
 promise. The source performs `await import("./ai-sdk-adapter.ts")` and constructs
-`AiSdkAdapter` with `resolveRegistryKey`/`resolveSubscription`/`logger` as the config and
+`AiSdkAdapter` with `resolveRegistryKey`/`resolveSubscription`/`logger`/`metrics` as the config and
 `timeoutMs`/`maxResponseBytes`/`maxSseEventBytes` as guardrails. Only `import type`
 reaches `@clarvis/capability` from this module (`packages/llm/src/lazy.ts`), which is what keeps the main entry
 SDK-free.
@@ -294,14 +308,15 @@ the resolver's value into the `Authorization` header.
 `packages/llm/src/ai-sdk-adapter.ts`:
 
 1. **Refuse an unresolved provider.** No `params.providerConfig` → `ProviderError` kind `"client"`.
-2. **Build the client** via `resolveRegistryModel` → `buildRegistryFactory`. Ordering inside:
+2. **Build the client** via `resolveRegistryModel` → `buildRegistryFactory` in
+   `packages/llm/src/ai-sdk/provider-factory.ts`. Ordering inside:
    - resolve the key through `resolveRegistryKey ?? process.env`;
    - resolve `${VAR}` headers through the *same* lookup (`packages/llm/src/openai-compatible-request.ts`);
    - if `apiKeyEnv` is named but unset → `ProviderError` kind `"client"` naming the variable;
    - switch on `kind`: `openai`/`anthropic`/`google` call `requireKey()`, `openai-compatible` uses
      its optional API key, and `openai-codex`/`xai-grok` require `resolveSubscription`, resolve fresh
      request authority at the physical fetch boundary, and use fixed Responses base URLs
-     (`packages/llm/src/ai-sdk-adapter.ts`). The placeholder SDK key is never sent because
+     (`packages/llm/src/ai-sdk/provider-factory.ts`). The placeholder SDK key is never sent because
      `SubscriptionRequestAuth.apply` owns the final authenticated request; the integration test
      asserts this at `packages/llm/tests/integration/provider-request-shape.test.ts`.
 3. **Describe the pair once** — `describeResolvedModel` emits `llm.provider.resolved` at
@@ -323,7 +338,8 @@ the resolver's value into the `Authorization` header.
    `buildCallResult(result)`. The subscription exception is required by the pinned ChatGPT Codex
    Responses transport, which rejects `stream: false`; an internal caller may discard deltas but
    may not select one-shot generation.
-8. **Finally** — `batcher?.dispose(); cleanup();`.
+8. **Finally** — `runStreamCall` disposes its per-call batcher; `AiSdkAdapter.call` clears the
+   timeout bridge. Neither disposes the host-owned metrics sink.
 
 Production: `AiSdkAdapter.call` in `packages/llm/src/ai-sdk-adapter.ts`
 (`providerRequiresStream`, the generation branch, and the no-op delta sink). Test:
@@ -332,7 +348,7 @@ calls even without a delta consumer"`).
 
 ### 4.3 The streaming path
 
-`packages/llm/src/ai-sdk-adapter.ts`:
+`runStreamCall` in `packages/llm/src/ai-sdk/stream-call.ts`:
 
 - `Output.text()` is replaced by `nonRetainingTextOutput`, whose `parsePartialOutput` returns
   `{ partial: text.length }`. `packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts`
@@ -361,13 +377,13 @@ calls even without a delta consumer"`).
 - After `batcher.flush()`, a `streamError` is turned into an error. **The timeout is recognised here,
   before generic mapping**, so it retains the explicit inactivity subtype and the stream's available
   attempt evidence. The outer catch performs the same recognition for async throws that bypass a
-  structured stream-error part.
+  structured stream-error part inside `runStreamCall`.
 - No error but `aggregate === undefined` → `llm.stream.no_aggregate` at `warn` and a `ProviderError`
   of kind `"transient"`. Pinned by
   `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts`.
 - Otherwise `buildCallResult(aggregate)` and merge any stream-retained text lifecycle metadata;
-  subscription-backed results additionally carry `billing_source: "subscription"`
-  (`packages/llm/src/ai-sdk-adapter.ts`).
+  the adapter adds prefix evidence and `billing_source: "subscription"` for subscription-backed
+  results (`packages/llm/src/ai-sdk-adapter.ts`).
 
 `streamStarted` is computed as `outputObserved || batcher.emitted()` — a
 `tool-input-start` alone is enough, pinned by
@@ -771,8 +787,8 @@ Numbered; each carries the production site and the test that pins it.
 
 **LLM-1 (owns INV-032).** The main entry `src/index.ts` never statically reaches
 `ai-sdk-adapter.ts` or `stream-metrics.ts`, and nothing it statically reaches names `ai` or any
-`@ai-sdk/*` specifier.
-Production: `packages/llm/src/index.ts`; the escape hatch is the dynamic
+`@ai-sdk/*` specifier. The lightweight `src/metrics.ts` entry also does not reach those SDKs.
+Production: `packages/llm/src/index.ts`, `packages/llm/src/metrics.ts`; the escape hatch is the dynamic
 `await import("./ai-sdk-adapter.ts")` at `packages/llm/src/lazy.ts`.
 Test: `packages/llm/tests/architecture/lazy-entry.test.ts`.
 
@@ -793,10 +809,10 @@ Test: same file.
 **LLM-5.** A provider declaring `apiKeyEnv` whose variable is unset fails locally with a
 `ProviderError` naming the variable, before any request is sent — including for
 `openai-compatible`, which otherwise requires no key.
-Production: `packages/llm/src/ai-sdk-adapter.ts` (and the keyless path).
+Production: `buildRegistryFactory` in `packages/llm/src/ai-sdk/provider-factory.ts`.
 Test: `packages/llm/tests/component/ai-sdk-adapter.test.ts` (asserts the variable name is in
 the message and `generateText` was never called) (a keyless endpoint declaring nothing
-still works).
+still works), and `packages/llm/tests/unit/provider-factory.test.ts` (revoked key).
 
 **LLM-6.** `llm.provider.resolved` is emitted at most once per `(provider, model)` pair, never at
 all when the client could not be built, and carries the base URL's **host only**, header **names**
@@ -822,7 +838,8 @@ set of the serialized body, which contains no `diagnostics`.
 **LLM-9.** SDK-level retries are disabled on every call (`maxRetries: 0`), so `withTransportRetry`
 is the sole retry authority.
 Production: `packages/llm/src/ai-sdk-adapter.ts`.
-Test: **unpinned** — no test asserts `callArgs.maxRetries === 0`.
+Test: `packages/llm/tests/component/ai-sdk-adapter.test.ts` asserts
+`callArgs.maxRetries === 0` for generation.
 
 **LLM-10.** A per-call timeout is a `ModelCallInactivityError` classified as `transient`, never as a
 permanent `client` fault. On a streaming path the deadline resets on every provider part; generation
@@ -830,20 +847,23 @@ has no progress signal and remains absolutely bounded.
 The error subtype is owned by `packages/capability/src/llm-port.ts`; the adapter, retry wrapper,
 timeout bridge and consumers import that same contract directly, without compatibility
 re-exports or a second timeout timer.
-Production: `timeoutAbort` and both timeout branches in `AiSdkAdapter.call`.
+Production: `timeoutAbort` and the generation timeout branch in `AiSdkAdapter.call` in
+`packages/llm/src/ai-sdk-adapter.ts`, and the stream timeout branch in `runStreamCall` in
+`packages/llm/src/ai-sdk/stream-call.ts`.
 Test: `packages/llm/tests/component/ai-sdk-adapter.test.ts` (generate) and
 `packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts` (silent timeout and active stream).
 `packages/capability/tests/unit/errors.test.ts` pins the shared subtype and its known usage fields.
 
 **LLM-11.** A stream that ends with no aggregate is a **transient** failure, reported at `warn` with
 `stream_started` and `partial_output_tokens`.
-Production: `packages/llm/src/ai-sdk-adapter.ts`.
+Production: `runStreamCall` in `packages/llm/src/ai-sdk/stream-call.ts`.
 Test: `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts`.
 
 **LLM-12.** `streamStarted` is true if any output was observed **or** the batcher emitted anything —
 a `tool-input-start` before any prose counts — and the timeout bridge receives the same fact.
-Production: `firstOutput` and timeout attempt-cost construction in `AiSdkAdapter.call`; `emitted()`
-in `makeDeltaBatcher`.
+Production: `firstOutput` and timeout attempt-cost construction in `runStreamCall` in
+`packages/llm/src/ai-sdk/stream-call.ts`; `emitted()` in `makeDeltaBatcher` in
+`packages/llm/src/ai-sdk/streaming.ts`.
 Test: `packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts` (tool-input error and timeout bridge).
 
 **LLM-13.** A transient failure whose stream reached `onStreamDelta` or `onToolInputDelta` is **not**
@@ -1076,13 +1096,19 @@ Production: `packages/llm/src/ai-sdk/errors.ts` (`llm.error.body_unparsed`);
 `packages/llm/src/classify-provider-error.ts` (`llm.error.body_unstringifiable`) (`llm.error.cause_unstringifiable`).
 Test: `packages/llm/tests/unit/observability.test.ts`.
 
-**LLM-49.** `streamMetrics()` selects a JSONL file sink when `CLARVIS_STREAM_DEBUG` is non-empty,
-otherwise selects a no-op, and memoizes that first selection process-wide. Debug sink emission
-failures do not interrupt a run; `dispose()` cancels the timer and listener and flushes at most once.
-Production: `packages/llm/src/stream-metrics.ts` (`streamMetrics`, `createStreamMetricsCounter`,
-`createStreamMetrics`). Test: `packages/llm/tests/unit/stream-metrics.test.ts` exercises failure
-tolerance and lifecycle; `packages/llm/tests/integration/stream-metrics.test.ts` exercises enabled
-and disabled selection in separate Bun children plus physical append.
+**LLM-49.** Host composition selects a JSONL sink when `CLARVIS_STREAM_DEBUG` is non-empty,
+otherwise an inert sink. Streaming helpers receive only its counter port and never select a
+process-global sink. Debug sink emission failures do not interrupt a run; host `dispose()` cancels
+the timer and listener and flushes at most once. The retained `streamMetrics()` compatibility
+export still memoizes its own direct selection, outside the adapter path.
+Production: `selectStreamMetrics` and `createStreamMetrics` in
+`packages/llm/src/stream-metrics.ts`, `buildExecuteRunDeps` in
+`packages/loop/src/runtime/build-run-deps.ts`, and `runStreamCall` in
+`packages/llm/src/ai-sdk/stream-call.ts`. Test:
+`packages/llm/tests/unit/stream-metrics.test.ts`,
+`packages/llm/tests/integration/stream-metrics.test.ts`,
+`packages/llm/tests/unit/stream-call.test.ts`, and
+`packages/loop/tests/integration/stream-debug-wiring.test.ts`.
 
 **LLM-50.** `createStreamMetrics` and `createStreamMetricsCounter` are statically imported by their
 tests; coverage does not depend on cache-busted dynamic imports of the process-memoized selector.
@@ -1127,14 +1153,14 @@ and derives its required headers after assembly” in
 | Error | Class | Where raised | Retryable |
 | --- | --- | --- | --- |
 | unresolved provider config | `ProviderError` kind `client` | `packages/llm/src/ai-sdk-adapter.ts` | no |
-| `apiKeyEnv` names an unset variable | `ProviderError` kind `client` | `packages/llm/src/ai-sdk-adapter.ts` | no |
-| key-requiring kind with no key | `ProviderError` kind `client` | `packages/llm/src/ai-sdk-adapter.ts` | no |
-| subscription kind with no kernel resolver | `ProviderError` kind `client` | `packages/llm/src/ai-sdk-adapter.ts` | no |
+| `apiKeyEnv` names an unset variable | `ProviderError` kind `client` | `packages/llm/src/ai-sdk/provider-factory.ts` | no |
+| key-requiring kind with no key | `ProviderError` kind `client` | `packages/llm/src/ai-sdk/provider-factory.ts` | no |
+| subscription kind with no kernel resolver | `ProviderError` kind `client` | `packages/llm/src/ai-sdk/provider-factory.ts` | no |
 | recognized `subscription_*` failure | sanitized `ProviderError`; kind `auth`, `quota`, or `client` by code | `packages/llm/src/ai-sdk/errors.ts` | no under current mapping |
 | `openai-compatible` with no `baseUrl` | `ProviderError` kind `client` | `packages/llm/src/openai-compatible-request.ts` | no |
 | header `${VAR}` unset | `ProviderError` kind `client` | `packages/llm/src/openai-compatible-request.ts` | no |
 | per-call timeout | `ModelCallInactivityError` → `transient`, with stream-start/available partial usage | `timeoutAbort`, `ModelCallInactivityError`, timeout branches in `AiSdkAdapter.call` | yes, including after earlier visible progress |
-| stream ended with no aggregate | `ProviderError` kind `transient` | `packages/llm/src/ai-sdk-adapter.ts` | yes |
+| stream ended with no aggregate | `ProviderError` kind `transient` | `packages/llm/src/ai-sdk/stream-call.ts` | yes |
 | response/SSE bound breached | `ProviderResponseLimitError`, flattened to `ProviderError` kind `client` | `packages/llm/src/ai-sdk/bounded-fetch.ts`; `packages/llm/src/ai-sdk/errors.ts` | no |
 | any HTTP/API failure | `ProviderError` with classified kind | `packages/llm/src/ai-sdk/errors.ts` | depends |
 | in-stream structured error | `ProviderError` with the payload's own status | `packages/llm/src/ai-sdk/errors.ts` | depends |
@@ -1173,8 +1199,8 @@ immediately.
 | `llm.cache.breakpoint_lost` | warn | `packages/llm/src/ai-sdk-adapter.ts` |
 | `llm.cache.request` | debug | `packages/llm/src/ai-sdk-adapter.ts` |
 | `llm.request.tuning` | debug | `packages/llm/src/ai-sdk-adapter.ts` |
-| `llm.stream.first_token` | debug | `packages/llm/src/ai-sdk-adapter.ts` |
-| `llm.stream.no_aggregate` | warn | `packages/llm/src/ai-sdk-adapter.ts` |
+| `llm.stream.first_token` | debug | `packages/llm/src/ai-sdk/stream-call.ts` |
+| `llm.stream.no_aggregate` | warn | `packages/llm/src/ai-sdk/stream-call.ts` |
 | `llm.call.start` | debug | `packages/llm/src/logging-llm-provider.ts` |
 | `llm.call.pending` | warn | `withCallLogging`; carries `stream_started` and optional `last_progress_ms` |
 | `llm.call.done` / `llm.call.slow` | debug / warn | `packages/llm/src/logging-llm-provider.ts`; carries `finish_reason: result.finishReason` (`undefined` when the result has none — pinned by `packages/llm/tests/unit/logging-llm-provider.test.ts`) |
@@ -1202,8 +1228,8 @@ logger is defaulted to `NOOP_LOGGER` at construction rather than optionally chai
 | Dependency | Kind | What forces it |
 | --- | --- | --- |
 | `@clarvis/capability` | runtime, static | `LLMProvider`/`LLMCallParams`/`LLMCallResult` are the port implemented (`packages/llm/src/ai-sdk-adapter.ts`); `ProviderError`, `NOOP_LOGGER`, `levelEnabled` are value imports; `normalizeToolArguments` (`packages/llm/src/ai-sdk/result.ts`); `sanitizeErrorMessage` (`packages/llm/src/ai-sdk/errors.ts`); `contentToText` (`packages/llm/src/to-model-messages.ts`); `unref` (`packages/llm/src/retry-llm-provider.ts`, `packages/llm/src/model-call-admission.ts`); `CodedError` (`packages/llm/src/model-call-admission.ts`); `suppressSecondaryRejection` (`packages/llm/src/ai-sdk/bounded-fetch.ts`); `resolveStringMapWith`/`MissingEnvVarsError`/`FORBIDDEN_PROVIDER_BODY_KEYS` (`packages/llm/src/openai-compatible-request.ts`); `reasoningOutputFloor` (`packages/llm/src/ai-sdk/request-options.ts`) |
-| `ai` | runtime, static — **adapter side only** | `generateText`/`streamText`/`Output` (`packages/llm/src/ai-sdk-adapter.ts`); `jsonSchema`/`tool` (`packages/llm/src/ai-sdk/request-options.ts`); `APICallError` (`packages/llm/src/ai-sdk/errors.ts`) |
-| `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`, `@ai-sdk/google` | runtime, static — **adapter side only** | the four `create*` factories at `packages/llm/src/ai-sdk-adapter.ts`, dispatched |
+| `ai` | runtime, static — **adapter side only** | `generateText`/`streamText` (`packages/llm/src/ai-sdk-adapter.ts`), `Output` (`packages/llm/src/ai-sdk/stream-call.ts`); `jsonSchema`/`tool` (`packages/llm/src/ai-sdk/request-options.ts`); `APICallError` (`packages/llm/src/ai-sdk/errors.ts`) |
+| `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`, `@ai-sdk/google` | runtime, static — **adapter side only** | the four `create*` factories in `packages/llm/src/ai-sdk/provider-factory.ts` |
 | `node:fs` | runtime | `appendFileSync` (`packages/llm/src/stream-metrics.ts`) |
 
 `@clarvis/paths` is **not** a dependency — this package writes no Clarvis directory. The only path it
@@ -1256,11 +1282,9 @@ takes one value import, `contentToText`).
 
 ## 8. Open questions
 
-1. **LLM-9 is unpinned.** `maxRetries: 0` (`packages/llm/src/ai-sdk-adapter.ts`) is what makes
-   `withTransportRetry` the sole retry authority, and no test asserts it. Deleting the line would
-   double-retry every transient failure silently, with a green suite. No indirect assertion has
-   been found (attempt counting in `packages/llm/tests/component/ai-sdk-adapter.test.ts` uses a
-   mocked `generateText`, which never consults the field).
+1. **LLM-9 generation is pinned.** `packages/llm/tests/component/ai-sdk-adapter.test.ts`
+   asserts `maxRetries: 0` in the SDK generation arguments. The streaming branch shares the same
+   assembled `callArgs` (`packages/llm/src/ai-sdk-adapter.ts`).
 
 2. ~~**`AiSdkGuardrails.timeoutMs` is documented as the only guardrail on the constructor's `@param`
    line.**~~ **Resolved: the TSDoc was stale.** All three fields are used, and the `@param` now says

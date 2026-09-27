@@ -1,4 +1,5 @@
 import {
+  createTaskObservationScope,
   detachObserved,
   bestEffort,
   NOOP_LOGGER,
@@ -52,6 +53,7 @@ function positive(value: number): number {
 export async function serveLocalFileKernel(
   options: ServeLocalFileKernelOptions,
 ): Promise<LocalFileKernelHost | null> {
+  const observationScope = createTaskObservationScope();
   const idleTimeout = positive(options.idleTimeoutMs ?? 60_000);
   const interval = Math.min(positive(options.checkIntervalMs ?? 1000), idleTimeout);
   const logger = options.kernel.logger ?? NOOP_LOGGER;
@@ -157,7 +159,12 @@ export async function serveLocalFileKernel(
     };
     const schedule = (): void => {
       timer = setTimeout(
-        () => detachObserved(tick, { operation: "hosting.lifecycle.tick", logger }),
+        () =>
+          detachObserved(tick, {
+            scope: observationScope,
+            operation: "hosting.lifecycle.tick",
+            logger,
+          }),
         interval,
       );
       timer.unref?.();
@@ -165,7 +172,11 @@ export async function serveLocalFileKernel(
     schedule();
     return { identity, generation: state.generation, host, closed: completion.promise, close };
   } catch (error) {
-    await bestEffort(() => listener?.close(), { operation: "hosting.listener.close", logger });
+    await bestEffort(() => listener?.close(), {
+      scope: observationScope,
+      operation: "hosting.listener.close",
+      logger,
+    });
     if (host !== undefined) await host.close();
     await state.close();
     throw error;

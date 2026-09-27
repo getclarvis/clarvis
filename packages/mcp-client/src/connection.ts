@@ -5,8 +5,10 @@ import type {
   McpServerConfig,
   ResourceToolKind,
   ToolTransport,
+  TaskObservationScope,
 } from "@clarvis/capability";
 import {
+  createTaskObservationScope,
   MissingEnvVarsError,
   NOOP_LOGGER,
   bestEffort,
@@ -133,6 +135,7 @@ export async function openConnection({
   onEvent,
   logger,
 }: OpenConnectionOptions): Promise<OpenedConnection> {
+  const observationScope = createTaskObservationScope();
   const log = bind(logger ?? NOOP_LOGGER, {
     workspace: scope.workspace,
     owner: scope.owner,
@@ -143,7 +146,17 @@ export async function openConnection({
   const connect = (): Promise<MCPClientHandle> => {
     attempts += 1;
     return observedConnect(
-      { factory, server, relay, connectTimeoutMs, signal, scope, authorizationWait, logger: log },
+      {
+        factory,
+        server,
+        relay,
+        connectTimeoutMs,
+        signal,
+        scope,
+        authorizationWait,
+        logger: log,
+        observationScope,
+      },
       attempts,
     );
   };
@@ -174,6 +187,7 @@ export async function openConnection({
   } catch (err) {
     const close = (): Promise<void> =>
       bestEffort(() => handle.close(), {
+        scope: observationScope,
         operation: "mcp_failed_listing_close",
         workspace: scope.workspace,
         dedupeKey: `mcp_failed_listing_close\0${scope.workspace}\0${server.name}`,
@@ -182,6 +196,7 @@ export async function openConnection({
     if (err instanceof MCPAuthorizationPendingError) {
       const completion = err.completion.finally(close);
       detachObserved(() => completion, {
+        scope: observationScope,
         operation: "mcp_oauth_pending_connection_close",
         workspace: scope.workspace,
         dedupeKey: `mcp_oauth_pending_connection_close\0${scope.workspace}\0${server.name}`,
@@ -232,6 +247,7 @@ export async function openConnection({
   );
 
   const session = createResilientSession({
+    observationScope,
     initialHandle: handle,
     reconnect: connect,
     mcpName: server.name,
@@ -366,6 +382,7 @@ async function loadToolCatalog(
 }
 
 interface ConnectAttemptContext {
+  observationScope: TaskObservationScope;
   factory: MCPClientFactory;
   server: McpServerConfig;
   relay: ElicitationRelay | undefined;
@@ -429,6 +446,7 @@ async function observedConnect(
       ctx.scope,
       ctx.authorizationWait,
       ctx.logger,
+      ctx.observationScope,
     );
     ctx.logger.info(
       {
@@ -465,6 +483,7 @@ async function connectWithinBound(
   scope: PoolScope,
   authorizationWait: MCPAuthorizationWait | undefined,
   logger: Logger,
+  observationScope: TaskObservationScope,
 ): Promise<MCPClientHandle> {
   const connectAbort = new AbortController();
   const abortError = (): MCPConnectionFailedError =>
@@ -561,6 +580,7 @@ async function connectWithinBound(
         (lateHandle) => {
           if (abandoned)
             detachObserved(() => lateHandle.close(), {
+              scope: observationScope,
               operation: "mcp_late_connection_close",
               dedupeKey: `mcp_late_connection_close\0${server.name}`,
               logger,
@@ -569,6 +589,7 @@ async function connectWithinBound(
         () => {},
       ),
     {
+      scope: observationScope,
       operation: "mcp_late_connection_watch",
       dedupeKey: `mcp_late_connection_watch\0${server.name}`,
       logger,

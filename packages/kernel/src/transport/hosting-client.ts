@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { detachObserved, suppressSecondaryRejection, type Logger } from "@clarvis/capability";
+import {
+  createTaskObservationScope,
+  detachObserved,
+  suppressSecondaryRejection,
+  type Logger,
+} from "@clarvis/capability";
 import type {
   ElicitationRequest,
   HostedRunAttachment,
@@ -52,6 +57,7 @@ export function createHostingClient(options: {
   logger: Logger;
   protocolViolation(message: string): void;
 }): { service: HostingService; close(reason?: unknown): void } {
+  const observationScope = createTaskObservationScope();
   const { transport, logger } = options;
   const subscriptions = new Map<string, Subscription>();
   const requests = createServiceProxy<Omit<HostingService, "start" | "attach">>(
@@ -63,6 +69,7 @@ export function createHostingClient(options: {
   const release = (subscription: Subscription): void => {
     if (subscription.observationId === undefined || closed) return;
     detachObserved(() => requests.releaseObservation(subscription.observationId!), {
+      scope: observationScope,
       operation: "hosting.observation.release",
       logger,
     });

@@ -1,9 +1,10 @@
-import { detachObserved, type Logger } from "@clarvis/capability";
+import { createTaskObservationScope, detachObserved, type Logger } from "@clarvis/capability";
 
 const DEFAULT_WORKSPACE_HOUSEKEEPING_INTERVAL_MS = 30 * 60_000;
 
 /** Long-lived, bounded filesystem collectors owned by one workspace kernel. */
 export class WorkspaceHousekeeping {
+  private readonly observationScope = createTaskObservationScope();
   private timer: ReturnType<typeof setInterval> | undefined;
   private active: Promise<void> | undefined;
 
@@ -20,6 +21,7 @@ export class WorkspaceHousekeeping {
     if (this.timer !== undefined) return;
     const run = (): void =>
       detachObserved(() => this.runOnce(), {
+        scope: this.observationScope,
         operation: "workspace_housekeeping",
         ...(this.options.logger === undefined ? {} : { logger: this.options.logger }),
       });

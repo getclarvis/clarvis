@@ -596,6 +596,42 @@ describe("exportNodeBatches", () => {
     dispose();
   });
 
+  test("a session switch stops old folded reads without exporting the new conversation", async () => {
+    let releaseFirst!: (detail: RunDetail) => void;
+    let waiting = false;
+    const { host, dispose } = mount((id) => {
+      if (id === "exec_0" && !waiting) {
+        waiting = true;
+        return new Promise<RunDetail>((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve(detailFor(id));
+    });
+    await host.loadSessionMeta(metaWith(25));
+    const iterator = host.exportNodeBatches()[Symbol.asyncIterator]();
+    const pendingFirst = iterator.next();
+    expect(waiting).toBe(true);
+
+    await host.loadSessionMeta({
+      ...metaWith(1),
+      id: "session-new",
+      turns: [
+        { kind: "conversation", userPreview: "new question", executionId: "new_0", status: "done" },
+      ],
+    });
+    releaseFirst(detailFor("exec_0"));
+    const batches: TranscriptNode[] = [...(await pendingFirst).value!];
+    for await (const batch of { [Symbol.asyncIterator]: () => iterator }) batches.push(...batch);
+    const exported = renderTranscriptMarkdown(batches);
+    expect(exported).toContain(answerLine(0));
+    for (let index = 1; index < 5; index += 1) expect(exported).not.toContain(answerLine(index));
+    for (let index = 5; index < 25; index += 1) expect(exported).toContain(answerLine(index));
+    expect(exported).not.toContain("answer new_0");
+    expect(host.sessionMeta()?.id).toBe("session-new");
+    dispose();
+  });
+
   test("a folded turn whose trace is gone degrades to a notice instead of failing", async () => {
     const { host, dispose } = mount((id) =>
       id === "exec_2" ? Promise.resolve(null) : Promise.resolve(detailFor(id)),

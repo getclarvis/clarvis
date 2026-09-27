@@ -8,6 +8,9 @@ Host composition may set `includeEnvironmentPreamble: false` on `ExecuteRunDeps`
 executions without operational tools. Ordinary runs retain the real environment preamble.
 Capability activation receives `executionBaseLlm` before per-execution decoration and the resolved
 `resolvedPromptCacheTtl`; composing a child execution must preserve the host provider wrappers.
+`buildExecuteRunDeps` selects the LLM stream-debug counter from its supplied environment through
+`@clarvis/llm/metrics`, passes it into the lazy provider, and disposes it once with its host
+dependencies. An injected LLM does not create that counter.
 Conditional `requiredFor(view)` declarations are resolved before concurrent activation, and
 registered settings specs can declare `referencedModels(view)` for generic provider validation.
 

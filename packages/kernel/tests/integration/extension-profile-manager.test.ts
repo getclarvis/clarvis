@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   statSync,
   truncateSync,
@@ -18,6 +19,7 @@ import {
   globalPaths,
   workspacePaths,
   workspaceStatePaths,
+  writeFileAtomicSync,
 } from "@clarvis/paths";
 import type {
   ExtensionProfileDefinition,
@@ -98,7 +100,10 @@ describe("Extension Profile manager", () => {
   function manager(
     cliSelection?: string,
     logger?: RecordingLogger,
-    monitor: Pick<ExtensionProfileManagerOptions, "onSkillDrift" | "watchSkillPath"> = {},
+    monitor: Pick<
+      ExtensionProfileManagerOptions,
+      "onSkillDrift" | "watchSkillPath" | "profileWriteDocument"
+    > = {},
   ) {
     return createExtensionProfileManager({
       globalDir,
@@ -980,6 +985,57 @@ describe("Extension Profile manager", () => {
     ).toBeFalse();
   });
 
+  it("restores the definition when selection writing fails after it, and diagnoses rollback failure", async () => {
+    const ref = { scope: "global" as const, name: "recoverable" };
+    const setup = manager();
+    const created = await setup.service.create({
+      ref,
+      definition: definition({ description: "before" }),
+    });
+    setup.close();
+    const definitionFile = join(globalPaths(globalDir).extensionProfilesDir, "recoverable.json");
+    const selectionFile = globalPaths(globalDir).extensionProfileSelectionFile;
+    const before = readFileSync(definitionFile, "utf8");
+    const input = {
+      ref,
+      expected_revision: created.revision!,
+      selection_scope: "global" as const,
+      definition: definition({ description: "after" }),
+    };
+    for (const failRestore of [false, true]) {
+      let definitionWrites = 0;
+      const target = manager(undefined, undefined, {
+        profileWriteDocument: (path, data) => {
+          if (path === selectionFile) throw new Error("selection storage failed");
+          if (path === definitionFile && ++definitionWrites === 2 && failRestore)
+            throw new Error("definition restore failed");
+          writeFileAtomicSync(path, data);
+        },
+      });
+      try {
+        target.resolveActive([], TRUSTED);
+        const preview = await target.service.previewComposition(input);
+        if (failRestore) {
+          await expect(
+            target.service.applyComposition(input, { preview_token: preview.token }),
+          ).rejects.toMatchObject({
+            code: "unavailable",
+            message: expect.stringContaining("could not be fully restored"),
+          });
+        } else {
+          await expect(
+            target.service.applyComposition(input, { preview_token: preview.token }),
+          ).rejects.toThrow("selection storage failed");
+          expect(readFileSync(definitionFile, "utf8")).toBe(before);
+          expect(existsSync(selectionFile)).toBe(false);
+        }
+      } finally {
+        target.close();
+      }
+      if (failRestore) expect(readFileSync(definitionFile, "utf8")).not.toBe(before);
+    }
+  });
+
   it("previews normal precedence when a workspace choice shadows a new global default", async () => {
     const setup = manager();
     const local = { scope: "workspace" as const, name: "local" };
@@ -1336,6 +1392,48 @@ describe("Extension Profile manager", () => {
     const after = target.resolveActive([], TRUSTED);
     expect(after.fingerprint).not.toBe(before.fingerprint);
     target.close();
+  });
+
+  it("keeps two managers' previews, watchers, and pinned snapshots independent", async () => {
+    const skillRoot = agentsSkillsDirs({ home, cwd: workspaceRoot, env: {} }).user;
+    writeSkill(skillRoot, "research");
+    const ref = { scope: "global" as const, name: "empty" };
+    const callbacksA = new Map<string, () => void>();
+    const callbacksB = new Map<string, () => void>();
+    const first = manager(undefined, undefined, {
+      watchSkillPath: (path, callback) => {
+        callbacksA.set(path, callback);
+        return { close() {} };
+      },
+    });
+    const second = manager(undefined, undefined, {
+      watchSkillPath: (path, callback) => {
+        callbacksB.set(path, callback);
+        return { close() {} };
+      },
+    });
+    try {
+      await create(first, ref, definition());
+      const beforeA = first.resolveActive([], TRUSTED);
+      const beforeB = second.resolveActive([], TRUSTED);
+      const previewA = await first.service.preview(ref, { selection_scope: "global" });
+      const previewB = await second.service.preview(ref, { selection_scope: "global" });
+      await expect(
+        second.service.select(ref, { selection_scope: "global", preview_token: previewA.token }),
+      ).rejects.toThrow();
+      expect(previewB.token).not.toBe(previewA.token);
+      first.observeSkillCatalog([]);
+      second.observeSkillCatalog([]);
+      writeSkill(skillRoot, "new-skill");
+      callbacksA.get(skillRoot)!();
+      first.flushSkillRefresh();
+      expect(first.resolveActive([], TRUSTED).fingerprint).not.toBe(beforeA.fingerprint);
+      expect(second.resolveActive([], TRUSTED).fingerprint).toBe(beforeB.fingerprint);
+      expect(callbacksB.has(skillRoot)).toBeTrue();
+    } finally {
+      first.close();
+      second.close();
+    }
   });
 
   it("observes initially absent skill roots and coalesces their creation into one generation", () => {

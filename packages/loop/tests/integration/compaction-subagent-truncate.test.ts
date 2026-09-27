@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from "../bun-test.ts";
-import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { describe, it, expect, afterEach, onTestFinished } from "../bun-test.ts";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { workspaceStatePaths } from "@clarvis/paths";
@@ -24,6 +24,11 @@ describe("a Subagent survives a tool result larger than its window", () => {
     const mcp = mockMCPFactory({ docs: { tools: [{ name: "fetch", call: () => BIG }] } });
 
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), "clarvis-truncate-"));
+    onTestFinished(async () => {
+      if (harness !== null)
+        throw new Error(`truncation fixture still has a live harness: ${workspaceRoot}`);
+      await rm(workspaceRoot, { recursive: true, force: true });
+    });
     harness = await makeHarness({
       llm,
       mcpFactory: mcp,

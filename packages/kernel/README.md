@@ -57,7 +57,9 @@ leaves user content untouched and makes this optional guide unavailable. The hos
 active product root explicitly to connected kernels; a package-local Kernel module derives its
 checkout from the package identity without naming an output directory.
 `createSystemDocsProvider` keeps body and resource bytes stable for an
-active host generation. See [self-configuration](../../specs/hosts/self-configuration.md) and
+active host generation. An invalid Extension Profile selection during file-host setup closes that
+capture before returning the error.
+See [self-configuration](../../specs/hosts/self-configuration.md) and
 [skills](../../specs/execution/skills.md).
 
 Steering acceptance persists the host-selected destination in its receipt before source delivery.

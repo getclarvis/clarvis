@@ -186,7 +186,7 @@ jobs:
       - name: format policy
         run: bun run format:check
       - name: structural checks and complete tooling suite
-        run: bun run lint:intent
+        run: bun run test:cleanup -- bun run lint:intent
       - name: serialized prompt cache contracts (no credentials)
         run: bun run test:cache
 
@@ -265,9 +265,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build:packages
       - name: native sandbox qualification
-        run: bun --filter @clarvis/sandbox test:native
+        run: bun run test:cleanup -- bun --filter @clarvis/sandbox test:native
       - name: native tools qualification
-        run: bun --filter @clarvis/tools test:native
+        run: bun run test:cleanup -- bun --filter @clarvis/tools test:native
 
   # The stable required context also gates native Intel evidence.
   keyboard-macos:
@@ -295,8 +295,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build:packages
       - name: native sandbox qualification
-        run: bun --filter @clarvis/sandbox test:native
+        run: bun run test:cleanup -- bun --filter @clarvis/sandbox test:native
       - name: native tools qualification
-        run: bun --filter @clarvis/tools test:native
-      - run: bun --filter @clarvis/tools test
-      - run: bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts
+        run: bun run test:cleanup -- bun --filter @clarvis/tools test:native
+      - run: bun run test:cleanup -- bun --filter @clarvis/tools test
+      - run: bun run test:cleanup -- bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts

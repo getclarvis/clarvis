@@ -11,9 +11,10 @@ import {
   executeWithIsolationBinding,
 } from "#src/execution/isolation-service.ts";
 import { createAgentTools, dispatch } from "@clarvis/tools";
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
 
 test("run bindings retain global preference and separate owners", async () => {
-  const root = mkdtempSync(join(tmpdir(), "clarvis-isolation-run-"));
+  const root = ownedTempDirSync(join(tmpdir(), "clarvis-isolation-run-"));
   const homeRoot = join(root, "home");
   const workspaceRoot = join(root, "workspace");
   const globalRoot = join(homeRoot, ".clarvis");

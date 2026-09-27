@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -9,6 +9,9 @@ const helper = resolve("packages/code/tests/helpers/tracked-temp.ts");
 test("two files in one Bun runner each release their acquired root, including on assertion failure", async () => {
   const fixture = await mkdtemp(join(tmpdir(), "clarvis-temp-lifecycle-"));
   try {
+    const temporary = join(fixture, "temporary");
+    const home = join(fixture, "home");
+    await Promise.all([mkdir(temporary), mkdir(home)]);
     for (const failed of [false, true]) {
       const files = [join(fixture, "first.test.ts"), join(fixture, "second.test.ts")];
       for (const [index, file] of files.entries()) {
@@ -20,6 +23,10 @@ test("two files in one Bun runner each release their acquired root, including on
       const env = Object.fromEntries(
         Object.entries(process.env).filter(([key]) => !key.startsWith("CLARVIS_")),
       ) as Record<string, string>;
+      env.HOME = home;
+      env.TMPDIR = temporary;
+      env.TMP = temporary;
+      env.TEMP = temporary;
       const child = Bun.spawn(
         [process.execPath, "test", "--no-isolate", "--timeout", "60000", ...files],
         {
@@ -39,6 +46,7 @@ test("two files in one Bun runner each release their acquired root, including on
         expect(roots).toHaveLength(2);
         expect(new Set(roots).size).toBe(2);
         expect(roots.every((root) => !existsSync(root))).toBe(true);
+        expect(await readdir(temporary)).toEqual([]);
         expect(code === 0).toBe(!failed);
         if (failed) expect(stderr).toContain("expect(received).toBe(expected)");
       } finally {

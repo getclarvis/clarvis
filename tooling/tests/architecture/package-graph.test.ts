@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { describe, expect, onTestFinished, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   analyzePackageGraph as analyzePackageGraphWithArchitecture,
@@ -43,7 +44,8 @@ describe("parseModuleEdges", () => {
 });
 
 function fixture(): string {
-  const root = `${process.env.TMPDIR ?? "/tmp"}/clarvis-graph-${crypto.randomUUID()}`;
+  const root = mkdtempSync(join(tmpdir(), "clarvis-graph-"));
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "packages", "a", "src"), { recursive: true });
   mkdirSync(join(root, "packages", "b", "src"), { recursive: true });
   writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));

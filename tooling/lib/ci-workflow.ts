@@ -153,7 +153,11 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       typecheck: ["bun run typecheck"],
       lint: ["bun run lint:eslint"],
       knip: ["bun run knip"],
-      checks: ["bun run format:check", "bun run lint:intent", "bun run test:cache"],
+      checks: [
+        "bun run format:check",
+        "bun run test:cleanup -- bun run lint:intent",
+        "bun run test:cache",
+      ],
       coverage: [
         "if test -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi",
         "bun --filter @clarvis/sandbox build:assets && bun --filter @clarvis/tools build:assets",
@@ -229,8 +233,8 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       [
         "bun install --frozen-lockfile",
         "bun run build:packages",
-        "bun --filter @clarvis/sandbox test:native",
-        "bun --filter @clarvis/tools test:native",
+        "bun run test:cleanup -- bun --filter @clarvis/sandbox test:native",
+        "bun run test:cleanup -- bun --filter @clarvis/tools test:native",
       ],
       "sandbox-macos-intel",
     );
@@ -250,12 +254,16 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       [
         "bun install --frozen-lockfile",
         "bun run build:packages",
-        "bun --filter @clarvis/sandbox test:native",
-        "bun --filter @clarvis/tools test:native",
-        "bun --filter @clarvis/tools test",
-        "bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts",
+        "bun run test:cleanup -- bun --filter @clarvis/sandbox test:native",
+        "bun run test:cleanup -- bun --filter @clarvis/tools test:native",
+        "bun run test:cleanup -- bun --filter @clarvis/tools test",
+        "bun run test:cleanup -- bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts",
       ],
       "keyboard-macos",
+    );
+    check(
+      scripts["test:cleanup"] === "bun run tooling/checks/test-temporary-audit.ts",
+      "Local temporary audit entry changed",
     );
     check(
       scripts.lint === "bun run lint:eslint && bun run lint:intent && bun run knip",

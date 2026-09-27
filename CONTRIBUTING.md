@@ -120,12 +120,16 @@ Run the smallest checks that cover the change while iterating. Common examples:
 bun --filter @clarvis/code build
 bun --filter @clarvis/code typecheck
 bun --filter @clarvis/code test
+bun run test:cleanup -- bun --filter @clarvis/code test
 bun run check:specs
 bun run check:graph
 ```
 
 Use `bun run test`, not a raw root `bun test`, for the supported complete suite. Markdown changes run
 `bun run check:specs`; package or dependency-edge changes also run `bun run check:graph`.
+Use `bun run test:cleanup -- bun run test` when qualifying cleanup across the complete suite. The
+wrapper executes the suite once and fails if it leaves files or directories in its exclusive
+temporary area; direct test commands remain available for iteration.
 
 Interactive Code changes must be exercised in a real PTY. Build the current artifact first, run
 `bun run smoke`, and include a screenshot or concise interaction record when a visual behavior

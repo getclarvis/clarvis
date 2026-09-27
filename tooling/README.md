@@ -32,15 +32,26 @@ run in the fast suite. Production: `lib/test-harness.ts` (`checkSuiteComposition
 `tests/unit/test-harness.test.ts` and `tests/unit/fast-test-resource-rules.test.ts`.
 
 The test preload creates one protected `CLARVIS_HOME` for a direct runner and removes only that
-root at exit. A removal failure is diagnosed on stderr and makes an otherwise successful runner
-fail. Its explicit handoff lets child test processes reuse the root without acquiring cleanup
-authority. `test:tooling` also runs a same-process, two-file canary for Code's per-acquisition
+root in a runner `afterAll` hook after file hooks finish. A removal failure fails the test command
+with the owned root in the diagnostic. Its explicit handoff lets child test processes reuse the root
+without acquiring cleanup authority. `test:tooling` also runs a same-process, two-file canary for Code's per-acquisition
 temporary-directory finalizer, including controlled assertion failure. Fixture owners close live
 resources before deleting their roots; a crash or `SIGKILL` cannot execute these finalizers.
-Production: `test-runtime/clarvis-home-preload.ts` (`removeOwnedTestRoot`) and
+Production: `test-runtime/clarvis-home-preload.ts` (`installTestHome`),
+`test-runtime/clarvis-test-home.ts` (`acquireTestHome`), and
 `../packages/code/tests/helpers/tracked-temp.ts` (`openTempDir`). Test:
 `tests/integration/clarvis-home-preload.test.ts` and
 `tests/integration/temp-resource-lifecycle.test.ts`.
+
+`bun run test:cleanup -- <command> [args...]` audits one existing command under an exclusive
+temporary area. The observer reports the command exit and remaining entry names before removing
+its own area; a passing command with residue fails. CI composes the same observer with the existing
+coverage executor for each workspace attempt, while tooling and native gates use the focused
+entrypoint. Production: `lib/test-temporary-audit.ts` (`runTestTemporaryAudit`),
+`checks/test-temporary-audit.ts` (`main`), and `checks/ci-coverage.ts` (`main`). Test:
+`tests/unit/test-temporary-audit.test.ts`, `tests/integration/test-temporary-audit.test.ts`,
+`tests/integration/test-temporary-audit-contract.test.ts`, and
+`tests/integration/ci-coverage.test.ts`.
 
 The real-Git release fixture uses `withoutGitRepositoryEnvironment` from `@clarvis/paths` before
 starting child processes. This keeps hook and linked-worktree repository context out of its

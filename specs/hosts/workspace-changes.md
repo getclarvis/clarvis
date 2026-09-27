@@ -93,14 +93,18 @@ Git comparisons:
 `All` is the net effect, not a concatenation of staged and unstaged patches. Without commits, the
 base is the empty tree computed with `hash-object -t tree` without `-w`. Untracked patches use
 `git diff --no-index` against a controlled empty temp file; exit code 1 means differences.
+Each Git operation removes that file and its exclusive directory after the subprocess settles,
+including a failed or cancelled operation. If both the operation and removal fail, both causes
+remain in the reported error; removal failure names the directory.
 Headers are rewritten to the real path and `/dev/null`. Ignored files are excluded. A workspace
 subdirectory is confined to that prefix. Submodules appear as gitlink changes without recursive
 walks. External symlink targets are not read for untracked diffs. Rename detection uses
 `--find-renames=50%` and `diff.renameLimit=400`; these thresholds have no operator setting.
 
-Production: `createGitChangesProvider` in
+Production: `createGitChangesProvider` (`withEmptyFile`) in
 [git-changes-provider.ts](../../packages/kernel/src/workspace/git-changes-provider.ts).
 Test: [git-changes-provider.test.ts](../../packages/kernel/tests/integration/git-changes-provider.test.ts)
+(`releases its Git scratch directory after a real child command`)
 and [git-raw-parser.test.ts](../../packages/kernel/tests/unit/git-raw-parser.test.ts).
 
 ### 4.3 TUI

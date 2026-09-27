@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it, onTestFinished } from "bun:test";
 import { ownerFromWorkspace } from "@clarvis/kernel/paths";
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
 import { connectOrLaunchLocalKernel } from "@clarvis/kernel/bootstrap";
@@ -10,8 +11,50 @@ import type { KernelClient } from "@clarvis/protocol";
 
 import { WorkspaceClientManager } from "#src/adapters/workspace-client-manager.ts";
 import { prepareStartupFoundation } from "#src/startup-foundation.ts";
-import { openTempDir } from "../helpers/tracked-temp.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
+
+let hostArea = "";
+let managers: WorkspaceClientManager[] = [];
+
+beforeEach(() => {
+  const previous = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP };
+  const area = mkdtempSync(join(tmpdir(), "h-"));
+  hostArea = area;
+  managers = [];
+  onTestFinished(async () => {
+    const failures: unknown[] = [];
+    for (const manager of managers.reverse()) {
+      try {
+        await manager.close();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    for (const name of ["TMPDIR", "TMP", "TEMP"] as const) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+    if (failures.length > 0)
+      throw new AggregateError(failures, `workspace hosts did not close; root retained: ${area}`);
+    rmSync(area, { recursive: true, force: true });
+  });
+  process.env.TMPDIR = area;
+  process.env.TMP = area;
+  process.env.TEMP = area;
+});
+
+function tempWorkspaceRoot(prefix: string): string {
+  return mkdtempSync(join(hostArea, prefix));
+}
+
+function trackManager(manager: WorkspaceClientManager): WorkspaceClientManager {
+  managers.push(manager);
+  return manager;
+}
+
+async function createManager(...args: Parameters<typeof WorkspaceClientManager.create>) {
+  return trackManager(await WorkspaceClientManager.create(...args));
+}
 
 function git(cwd: string, ...args: string[]): void {
   execFileSync("git", args, {
@@ -23,10 +66,10 @@ function git(cwd: string, ...args: string[]): void {
 
 describe("WorkspaceClientManager", () => {
   it("explicit idle reload replaces the host generation", async () => {
-    const root = openTempDir("clarvis-workspace-idle-reload-");
+    const root = tempWorkspaceRoot("clarvis-workspace-idle-reload-");
     const workspaceRoot = join(root, "workspace");
     mkdirSync(workspaceRoot);
-    const manager = await WorkspaceClientManager.create({
+    const manager = await createManager({
       workspaceRoot,
       globalDir: join(root, "global"),
     });
@@ -44,12 +87,12 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("a candidate that fails inspection cannot replace a healthy connection", async () => {
-    const root = openTempDir("clarvis-workspace-recovery-candidate-");
+    const root = tempWorkspaceRoot("clarvis-workspace-recovery-candidate-");
     const workspaceRoot = join(root, "workspace");
     mkdirSync(workspaceRoot);
     let connects = 0;
     let candidateClosed = false;
-    const manager = await WorkspaceClientManager.create(
+    const manager = await createManager(
       { workspaceRoot, globalDir: join(root, "global") },
       {
         connectHost: async (options) => {
@@ -88,12 +131,12 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("recovers a broken socket without restarting the host or replaying execution", async () => {
-    const root = openTempDir("clarvis-workspace-reconnect-");
+    const root = tempWorkspaceRoot("clarvis-workspace-reconnect-");
     const workspaceRoot = join(root, "workspace");
     mkdirSync(workspaceRoot);
     let connected: KernelClient | undefined;
     let restartRequests = 0;
-    const manager = await WorkspaceClientManager.create(
+    const manager = await createManager(
       { workspaceRoot, globalDir: join(root, "global") },
       {
         connectHost: async (options) => {
@@ -132,10 +175,10 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("a refused reload preserves its original connection while physical activity is reserved", async () => {
-    const root = openTempDir("clarvis-workspace-reload-");
+    const root = tempWorkspaceRoot("clarvis-workspace-reload-");
     const workspaceRoot = join(root, "workspace");
     mkdirSync(workspaceRoot);
-    const manager = await WorkspaceClientManager.create({
+    const manager = await createManager({
       workspaceRoot,
       globalDir: join(root, "global"),
     });
@@ -159,7 +202,7 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("prepares the startup foundation from process-pinned paths and owner", async () => {
-    const root = openTempDir("clarvis-startup-foundation-");
+    const root = tempWorkspaceRoot("clarvis-startup-foundation-");
     const workspace = join(root, "workspace");
     mkdirSync(workspace);
     const ambient = environmentFixture();
@@ -174,12 +217,14 @@ describe("WorkspaceClientManager", () => {
           CLARVIS_OWNER: "startup-owner",
         }),
       );
-      manager = await prepareStartupFoundation({
-        kind: "run",
-        ascii: false,
-        debug: { enabled: false },
-        extensionProfileSelector: "builtin:default",
-      });
+      manager = trackManager(
+        await prepareStartupFoundation({
+          kind: "run",
+          ascii: false,
+          debug: { enabled: false },
+          extensionProfileSelector: "builtin:default",
+        }),
+      );
       expect(manager.current.path).toBe(realpathSync(workspace));
       expect(manager.defaultOwner).toBe("startup-owner");
       await manager.close();
@@ -193,11 +238,13 @@ describe("WorkspaceClientManager", () => {
           CLARVIS_OWNER: undefined,
         }),
       );
-      manager = await prepareStartupFoundation({
-        kind: "run",
-        ascii: false,
-        debug: { enabled: false },
-      });
+      manager = trackManager(
+        await prepareStartupFoundation({
+          kind: "run",
+          ascii: false,
+          debug: { enabled: false },
+        }),
+      );
       expect(manager.defaultOwner).toBe(ownerFromWorkspace(workspace));
     } finally {
       await manager?.close();
@@ -206,7 +253,7 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("opens only the process-pinned workspace", async () => {
-    const root = openTempDir("clarvis-workspaces-");
+    const root = tempWorkspaceRoot("clarvis-workspaces-");
     const workspaceRoot = join(root, "workspace");
     mkdirSync(workspaceRoot);
     const globalDir = join(root, "global");
@@ -215,7 +262,7 @@ describe("WorkspaceClientManager", () => {
     git(workspaceRoot, "config", "user.name", "Clarvis Tests");
     git(workspaceRoot, "commit", "--allow-empty", "-m", "initial", "--quiet");
 
-    const manager = await WorkspaceClientManager.create({
+    const manager = await createManager({
       workspaceRoot,
       globalDir,
     });
@@ -232,7 +279,7 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("derives the default owner from the selected linked checkout", async () => {
-    const workspaceRoot = openTempDir("clarvis-primary-owner-");
+    const workspaceRoot = tempWorkspaceRoot("clarvis-primary-owner-");
     const externalRoot = join(workspaceRoot, "linked");
     const primaryRoot = join(workspaceRoot, "primary");
     git(workspaceRoot, "init", "--quiet", primaryRoot);
@@ -241,7 +288,7 @@ describe("WorkspaceClientManager", () => {
     git(primaryRoot, "commit", "--allow-empty", "-m", "initial", "--quiet");
     git(primaryRoot, "worktree", "add", "--quiet", "-b", "linked", externalRoot, "HEAD");
 
-    const manager = await WorkspaceClientManager.create({
+    const manager = await createManager({
       workspaceRoot: externalRoot,
       globalDir: join(workspaceRoot, "global"),
     });
@@ -252,10 +299,10 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("uses the remote host namespace, reconnects SSH and never requests local controls", async () => {
-    const root = openTempDir("clarvis-workspace-remote-");
+    const root = tempWorkspaceRoot("clarvis-workspace-remote-");
     const workspaceRoot = join(root, "workspace");
     mkdirSync(workspaceRoot);
-    const backing = await WorkspaceClientManager.create({
+    const backing = await createManager({
       workspaceRoot,
       globalDir: join(root, "global"),
     });
@@ -265,7 +312,7 @@ describe("WorkspaceClientManager", () => {
     const lifecycle: string[] = [];
     let connects = 0;
     let active = 0;
-    const manager = await WorkspaceClientManager.create(
+    const manager = await createManager(
       {
         workspaceRoot: "/srv/remote/project",
         globalDir: join(root, "unused-client-global"),

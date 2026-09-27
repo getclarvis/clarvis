@@ -1,13 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  truncateSync,
-  writeFileSync,
-} from "node:fs";
+import { describe, it, expect, beforeEach } from "bun:test";
+import { cpSync, mkdirSync, realpathSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -20,15 +12,14 @@ import { convertHooksDocument } from "#src/plugins/hook-dialects.ts";
 import { mcpServerPluginSchema, mcpServerSettingsSchema } from "@clarvis/loop/host";
 import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
 import { EXTERNAL_HOOK_EVENT_NAMES, hookSchema, MAX_HOOK_TIMEOUT_MS } from "@clarvis/capability";
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
 
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "clarvis-manifest-"));
-});
-
-afterEach(() => {
-  rmSync(root, { recursive: true, force: true });
+  const parent = ownedTempDirSync(join(tmpdir(), "clarvis-manifest-"));
+  root = join(parent, "plugin");
+  mkdirSync(root);
 });
 
 function write(relative: string, body: unknown): void {
@@ -1779,7 +1770,7 @@ describe("a companion document never costs more than the key it fills", () => {
 describe("a manifest that lives in a host dot-directory", () => {
   let dir = "";
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "clarvis-borrowed-base-"));
+    dir = ownedTempDirSync(join(tmpdir(), "clarvis-borrowed-base-"));
     mkdirSync(join(dir, ".alpha-plugin", "hooks"), { recursive: true });
     mkdirSync(join(dir, "skills", "greet"), { recursive: true });
     writeFileSync(
@@ -1787,8 +1778,6 @@ describe("a manifest that lives in a host dot-directory", () => {
       "---\nname: greet\ndescription: Say hello.\n---\nHi.\n",
     );
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
-
   const write = (manifest: Record<string, unknown>): void =>
     writeFileSync(join(dir, ".alpha-plugin", "plugin.json"), JSON.stringify(manifest));
 

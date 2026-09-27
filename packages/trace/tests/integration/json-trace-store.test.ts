@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, onTestFinished } from "bun:test";
 import {
   chmodSync,
   existsSync,
@@ -41,10 +41,9 @@ let dir: string;
 let store: TraceStore;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "clarvis-json-"));
+  const owned = dir;
+  onTestFinished(() => rmSync(owned, { recursive: true, force: true }));
   store = createJsonTraceStore({ dir });
-});
-afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
 });
 
 describe("json-trace-store — orphaned temp files", () => {
@@ -910,7 +909,6 @@ describe("json-trace-store — summary sidecar", () => {
 
 describe("json-trace-store getById — corrupt file", () => {
   it("throws a typed PersistenceError naming the id", async () => {
-    dir = mkdtempSync(join(tmpdir(), "clarvis-corrupt-"));
     const store = createJsonTraceStore({ dir });
     await store.insert(makeExecutionRecord({ id: "exec_corrupt", owner_key_name: "o" }));
 
@@ -929,7 +927,6 @@ describe("json-trace-store getById — corrupt file", () => {
   });
 
   it("a valid file still rehydrates normally", async () => {
-    dir = mkdtempSync(join(tmpdir(), "clarvis-corrupt-ok-"));
     const store = createJsonTraceStore({ dir });
     await store.insert(makeExecutionRecord({ id: "exec_ok", owner_key_name: "o" }));
     expect(store.getById("o", "exec_ok")?.id).toBe("exec_ok");

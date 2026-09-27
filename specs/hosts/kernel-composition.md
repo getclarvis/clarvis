@@ -76,6 +76,12 @@ in-process kernel, recovers persisted runs, and installs workspace housekeeping.
 failure unwinds already-created resources before rethrowing. It does not start durable memory-index
 recovery; the host releases that background inference through `startMemoryRecovery()` after its
 first-paint or readiness boundary.
+An invalid Extension Profile selection during file-host setup also closes the captured system
+documentation snapshot, plugin contributions and the profile manager before failing. Independent
+cleanup failures are combined with the setup error. Production:
+`packages/kernel/src/file-kernel.ts` (`createFileKernel`, `failStartup`). Test:
+`packages/kernel/tests/integration/local-host-lifecycle.test.ts`
+(`failed kernel construction leaves neither publication nor a held lease`).
 
 The file host always supplies the loop's remote-MCP authorization coordinator with
 `globalPaths(globalDir).mcpOAuthFile`. `openMcpAuthorizationUrl` is the separate host-authority seam:

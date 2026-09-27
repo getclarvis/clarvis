@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from "../bun-test.ts";
-import { mkdtempSync } from "node:fs";
+import { describe, it, expect, afterEach, onTestFinished } from "../bun-test.ts";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
@@ -159,6 +159,10 @@ describe("what a provider's prefix cache actually sees", () => {
 
   it("captures every request and reports where consecutive ones diverge", async () => {
     const ws = mkdtempSync(join(tmpdir(), "cache-capture-"));
+    onTestFinished(() => {
+      if (harness !== null) throw new Error(`cache fixture still has a live harness: ${ws}`);
+      rmSync(ws, { recursive: true, force: true });
+    });
     /**
      * Stands in for a capability's canonical reminder: each revision appends
      * while earlier publications remain in the serialized history. The real

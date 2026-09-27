@@ -1,12 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "bun:test";
@@ -42,6 +34,7 @@ import {
 import { createMemoryConfigStore } from "#src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 import { recordingLogger } from "../helpers/logger.ts";
+import { ownedTempDirSync, trackOwnedResource } from "../helpers/owned-root.ts";
 import { createWorkflowsService } from "#src/workflows/workflows-service.ts";
 import {
   WORKFLOW_MAX_EDGES,
@@ -121,16 +114,18 @@ function buildDeps(
     }
     return scriptedCall(params);
   };
+  const connections = createConnectionManager({
+    workspace: workspaceRoot,
+    factory: defaultMCPClientFactory,
+    connectTimeoutMs: env.CLARVIS_MCP_CONNECT_TIMEOUT_MS,
+    callTimeoutMs: env.CLARVIS_MCP_TOOL_CALL_TIMEOUT_MS,
+  });
+  trackOwnedResource(workspaceRoot, () => connections.closeAll());
   return {
     executionVisibility: "public",
     env,
     llm,
-    connections: createConnectionManager({
-      workspace: workspaceRoot,
-      factory: defaultMCPClientFactory,
-      connectTimeoutMs: env.CLARVIS_MCP_CONNECT_TIMEOUT_MS,
-      callTimeoutMs: env.CLARVIS_MCP_TOOL_CALL_TIMEOUT_MS,
-    }),
+    connections,
     traceStore: createMemoryTraceStore(),
     workspaceRoot,
     capabilities: [createAgentToolsCapability(), createAskUserCapability(), ...extraCapabilities],
@@ -149,8 +144,8 @@ const IS_TITLE = (params: { tools?: { wireName: string }[] }): boolean =>
 /** Build a kernel and hand back the {@link MockLLM} driving it, so a test can
  * observe what each agent was actually prompted with. */
 function makeKernelWithLLM(script: MockLLMScriptStep[], routes?: readonly MockLLMRoute[]) {
-  const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-"));
-  const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-global-"));
+  const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-"));
+  const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-global-"));
   const deps = buildDeps(ws, script, routes);
   const kernel = createInProcessKernel({
     deps,
@@ -159,19 +154,22 @@ function makeKernelWithLLM(script: MockLLMScriptStep[], routes?: readonly MockLL
     configStore: seededConfig(),
     globalConfigDir,
   });
+  trackOwnedResource(ws, () => kernel.close());
   return { kernel, llm: deps.llm as MockLLM };
 }
 
 function makeKernel(script: MockLLMScriptStep[], routes?: readonly MockLLMRoute[]) {
-  const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-"));
-  const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-global-"));
-  return createInProcessKernel({
+  const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-"));
+  const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-global-"));
+  const kernel = createInProcessKernel({
     deps: buildDeps(ws, script, routes),
     workspaceRoot: ws,
     ...kernelIdentity(ws),
     configStore: seededConfig(),
     globalConfigDir,
   });
+  trackOwnedResource(ws, () => kernel.close());
+  return kernel;
 }
 
 describe("WorkflowStore (file-backed)", () => {
@@ -190,7 +188,7 @@ describe("WorkflowStore (file-backed)", () => {
   }
 
   it("round-trips a record and lists newest-first, tolerating a missing dir", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-"));
     const store = createWorkflowStore({ dir, owner: "o" });
     expect(store.list()).toEqual([]);
     store.save(record("a", 10));
@@ -203,7 +201,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("pages a large catalog from bounded sidecars without parsing workflow bodies", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-page-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-page-"));
     const ownerDir = join(globalPaths(dir).workflowRecordsDir, "o");
     mkdirSync(ownerDir, { recursive: true });
     const ids: string[] = [];
@@ -250,7 +248,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("repairs a legacy sidecar and deletes it with the authoritative record", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-legacy-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-legacy-"));
     const ownerDir = join(globalPaths(dir).workflowRecordsDir, "o");
     mkdirSync(ownerDir, { recursive: true });
     writeFileSync(join(ownerDir, "legacy.json"), JSON.stringify(record("legacy", 42)));
@@ -263,7 +261,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("rejects a persisted workflow whose Admiral checkpoint has an invalid shape", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-sequence-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-sequence-"));
     const ownerDir = join(globalPaths(dir).workflowRecordsDir, "o");
     mkdirSync(ownerDir, { recursive: true });
     writeFileSync(
@@ -287,7 +285,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("caps edges and large task/error/reason strings with an explicit marker", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-bounds-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-bounds-"));
     const store = createWorkflowStore({ dir, owner: "o" });
     const huge = "é".repeat(20_000);
     const value = record("bounded", 10);
@@ -324,7 +322,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("paginates through the replacement path of the bounded top-K heap", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-heap-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-heap-"));
     const ownerDir = join(globalPaths(dir).workflowRecordsDir, "o");
     const store = createWorkflowStore({ dir, owner: "o" });
     for (const id of ["a", "b", "c", "d", "e"]) store.save(record(id, 0));
@@ -353,7 +351,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("rejects an already-cancelled catalog scan before reading a record", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-cancelled-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-cancelled-"));
     const store = createWorkflowStore({ dir, owner: "o" });
     store.save(record("never-read", 1));
     const controller = new AbortController();
@@ -365,7 +363,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("rejects a new record and skips a legacy one when its summary cannot fit 8 KiB", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-summary-bound-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-summary-bound-"));
     const ownerDir = join(globalPaths(dir).workflowRecordsDir, "o");
     mkdirSync(ownerDir, { recursive: true });
     const store = createWorkflowStore({ dir, owner: "o" });
@@ -382,7 +380,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("rejects a workflow body before writing when it exceeds the record byte budget", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-record-bound-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-record-bound-"));
     const store = createWorkflowStore({ dir, owner: "o" });
     const oversized = record("oversized-body", 1);
     oversized.workspace = "w".repeat(WORKFLOW_RECORD_MAX_BYTES + 1);
@@ -392,7 +390,7 @@ describe("WorkflowStore (file-backed)", () => {
   });
 
   it("backs up from a UTF-16 split so truncation never persists half a surrogate pair", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-surrogate-"));
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-surrogate-"));
     const store = createWorkflowStore({ dir, owner: "o" });
     const suffix = `\n${WORKFLOW_TRUNCATION_MARKER} task`;
     const payloadBytes = WORKFLOW_MAX_TASK_BYTES - Buffer.byteLength(suffix, "utf8");
@@ -414,8 +412,8 @@ describe("WorkflowStore (file-backed)", () => {
 
 describe("WorkflowsService", () => {
   it("passes catalog cancellation through to the file-store scan", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-list-cancel-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-list-cancel-global-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-list-cancel-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-list-cancel-global-"));
     const deps = buildDeps(ws, []);
     const workflows = createWorkflowsService({
       deps,
@@ -436,9 +434,9 @@ describe("WorkflowsService", () => {
   });
 
   it("reconciles crash-orphaned running records only from terminal root traces", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-reconcile-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-reconcile-global-"));
-    const storeDir = mkdtempSync(join(tmpdir(), "clarvis-wf-reconcile-store-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-reconcile-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-reconcile-global-"));
+    const storeDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-reconcile-store-"));
     const deps = buildDeps(ws, []);
     const store = createWorkflowStore({ dir: storeDir, owner: "kernel-test" });
     const fullReads: string[] = [];
@@ -663,8 +661,8 @@ describe("WorkflowsService", () => {
   });
 
   it("starts the manager while semantic title generation is still in flight", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-global-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-global-"));
     const deps = buildDeps(ws, [{ text: "All done." }]);
     const llm = deps.llm;
     const original = llm.call.bind(llm);
@@ -688,6 +686,7 @@ describe("WorkflowsService", () => {
       configStore: seededConfig(),
       globalConfigDir,
     });
+    trackOwnedResource(ws, () => kernel.close());
     const handle = await kernel.runs.start({
       messages: [{ role: "user", content: "manage the thing" }],
       agent: "manager",
@@ -928,8 +927,8 @@ describe("WorkflowsService", () => {
   });
 
   it("falls back to the manager profile without its workflow grant when default_spawn is absent", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-manager-fallback-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-manager-fallback-global-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-manager-fallback-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-manager-fallback-global-"));
     const configStore = seededConfig();
     configStore.writeAgent("workspace", "manager", {
       frontmatter: {
@@ -971,6 +970,7 @@ describe("WorkflowsService", () => {
       configStore,
       globalConfigDir,
     });
+    trackOwnedResource(ws, () => kernel.close());
 
     const handle = await kernel.runs.start({
       messages: [{ role: "user", content: "decompose this" }],
@@ -986,9 +986,9 @@ describe("WorkflowsService", () => {
   });
 
   it("creates a fresh auxiliary token ledger for every manager execution", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-per-run-budget-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-per-run-budget-global-"));
-    const storeDir = mkdtempSync(join(tmpdir(), "clarvis-wf-per-run-budget-store-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-per-run-budget-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-per-run-budget-global-"));
+    const storeDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-per-run-budget-store-"));
     const managerCycle: MockLLMScriptStep[] = [
       {
         toolCalls: [
@@ -1226,7 +1226,7 @@ describe("WorkflowsService", () => {
   it.each([false, true])(
     "separates workflow leader cache identities (prepared=%s)",
     async (prepared) => {
-      const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-cache-"));
+      const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-cache-"));
       const globalConfigDir = join(ws, "global");
       const deps = buildDeps(
         ws,
@@ -1419,9 +1419,9 @@ describe("WorkflowsService", () => {
   );
 
   it("raises the manager's live-children ceiling to what its leader concurrency needs", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-ceiling-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-ceiling-global-"));
-    const storeDir = mkdtempSync(join(tmpdir(), "clarvis-wf-ceiling-store-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-ceiling-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-ceiling-global-"));
+    const storeDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-ceiling-store-"));
     const deps = buildDeps(
       ws,
       [],
@@ -1458,9 +1458,9 @@ describe("WorkflowsService", () => {
   });
 
   it("flushes one coalesced terminal snapshot before done and closed settle", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-flush-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-flush-global-"));
-    const storeDir = mkdtempSync(join(tmpdir(), "clarvis-wf-flush-store-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-flush-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-flush-global-"));
+    const storeDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-flush-store-"));
     const deps = buildDeps(
       ws,
       [],
@@ -1649,8 +1649,8 @@ Say what was found.
 `;
 
   it("offers built-in workflows without materializing a workflow directory", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-"));
-    const storeDir = mkdtempSync(join(tmpdir(), "clarvis-wf-store-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-"));
+    const storeDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-store-"));
     const deps = buildDeps(ws, [{ text: "All done." }]);
     const calls: string[][] = [];
     const call = deps.llm.call.bind(deps.llm);
@@ -1678,8 +1678,8 @@ Say what was found.
   });
 
   it("reports a malformed workflow document without failing the run that found it", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-"));
-    const storeDir = mkdtempSync(join(tmpdir(), "clarvis-wf-store-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-"));
+    const storeDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-store-"));
     seedWorkflow(ws, "probe", GOOD, "Do the thing.");
     seedWorkflow(ws, "audit", "this is not a workflow document");
 
@@ -1749,8 +1749,8 @@ function memoryFactoryOverTree(root: string): {
 
 describe("workflow memory ownership", () => {
   it("gives memory only to the primary manager and enqueues exactly its one job", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-mem-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-mem-global-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-mem-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-mem-global-"));
     const memory = memoryFactoryOverTree(ws);
     const judgeRuns = new Set<string>();
     const deps = buildDeps(
@@ -1792,6 +1792,7 @@ describe("workflow memory ownership", () => {
       configStore: seededConfig(),
       globalConfigDir,
     });
+    trackOwnedResource(ws, () => kernel.close());
 
     const handle = await kernel.runs.start({
       messages: [{ role: "user", content: "decompose this" }],

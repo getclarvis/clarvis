@@ -46,6 +46,7 @@
     "dev:install": "./dev-install.sh",
     "clean": "tsc -b --clean && bun --workspaces clean",
     "test": "bun run test:tooling && bun --filter @clarvis/capability test && bun --filter @clarvis/supervision test && bun --filter @clarvis/llm test && bun --filter @clarvis/paths test && bun --filter @clarvis/trace test && bun --filter @clarvis/mcp-client test && bun --filter @clarvis/protocol test && bun --filter @clarvis/skills test && bun --filter @clarvis/memory test && bun --filter @clarvis/plan test && bun --filter @clarvis/goal test && bun --filter @clarvis/sandbox test && bun --filter @clarvis/execpolicy test && bun --filter @clarvis/judge test && bun --filter @clarvis/tools test && bun --filter @clarvis/hooks test && bun --filter @clarvis/loop test && bun --filter @clarvis/workflows test && bun --filter @clarvis/kernel test && bun --filter @clarvis/code test",
+    "test:cleanup": "bun run tooling/checks/test-temporary-audit.ts",
     "test:tooling": "bun run test:tooling:fast && bun test tooling/tests/architecture --timeout 60000 && bun run test:tooling:integration",
     "test:module-resolution": "bun test tooling/tests/integration/module-resolution.test.ts --timeout 60000",
     "test:coverage": "bun --workspaces --sequential --if-present test:coverage && bun run coverage:check",

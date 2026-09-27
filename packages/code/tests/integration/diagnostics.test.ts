@@ -2,20 +2,57 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDiagnosticSession } from "#src/adapters/diagnostic-session.ts";
+import { createDiagnosticSession as createRealDiagnosticSession } from "#src/adapters/diagnostic-session.ts";
 import { createComponentLoggers } from "@clarvis/kernel";
 import { diagnosticAsync, installDiagnosticSession } from "#src/core/diagnostic-events.ts";
 
-const made: string[] = [];
+const made: Array<{
+  directory: string;
+  sessions: Array<ReturnType<typeof createRealDiagnosticSession>>;
+}> = [];
 
 function tempDir(): string {
   const directory = mkdtempSync(join(tmpdir(), "clarvis-diagnostics-"));
-  made.push(directory);
+  made.push({ directory, sessions: [] });
   return directory;
 }
 
+function createDiagnosticSession(
+  options: NonNullable<Parameters<typeof createRealDiagnosticSession>[0]>,
+): ReturnType<typeof createRealDiagnosticSession> {
+  const session = createRealDiagnosticSession(options);
+  const owner = made.find(({ directory }) => directory === options.directory);
+  if (owner === undefined) {
+    session.close();
+    throw new Error(`diagnostic fixture has no owner: ${options.directory}`);
+  }
+  owner.sessions.push(session);
+  return session;
+}
+
 afterEach(() => {
-  for (const directory of made.splice(0)) rmSync(directory, { recursive: true, force: true });
+  const failures: unknown[] = [];
+  for (const { directory, sessions } of made.splice(0).reverse()) {
+    let pending = false;
+    for (const session of sessions.reverse()) {
+      try {
+        session.close();
+      } catch (error) {
+        pending = true;
+        failures.push(
+          new Error(`diagnostic session remained open under ${directory}`, { cause: error }),
+        );
+      }
+    }
+    if (!pending) {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch (error) {
+        failures.push(new Error(`diagnostic root removal failed: ${directory}`, { cause: error }));
+      }
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "diagnostic fixture cleanup failed");
 });
 
 function records(path: string): Array<Record<string, unknown>> {
@@ -102,7 +139,7 @@ test("diagnostics writes versioned JSONL, redacts content and adapts the kernel 
 });
 
 test("a kernel field nobody foresaw is carried, not silently dropped", () => {
-  const directory = mkdtempSync(join(tmpdir(), "clarvis-diagnostics-"));
+  const directory = tempDir();
   const session = createDiagnosticSession({ directory, pid: 42, now: () => Date.UTC(2026, 7, 12) });
   session.logger.warn(
     { a_field_no_allowlist_ever_had: "kept", tool: "shell", iteration: 7, nested: { depth: 1 } },
@@ -122,7 +159,7 @@ test("a kernel field nobody foresaw is carried, not silently dropped", () => {
 });
 
 test("a kernel line keeps the event name its payload declares", () => {
-  const directory = mkdtempSync(join(tmpdir(), "clarvis-diagnostics-"));
+  const directory = tempDir();
   const session = createDiagnosticSession({ directory, pid: 42, now: () => Date.UTC(2026, 7, 12) });
   session.logger.warn({ event: "mcp.connect.failed", mcp: "github" }, "server did not connect");
   session.logger.warn({ event: "NOT A VALID NAME" }, "falls back");
@@ -141,7 +178,7 @@ test("a kernel line keeps the event name its payload declares", () => {
 });
 
 test("a diagnostic record states the path of the file it is written to", () => {
-  const directory = mkdtempSync(join(tmpdir(), "clarvis-diagnostics-"));
+  const directory = tempDir();
   const session = createDiagnosticSession({ directory, pid: 42, now: () => Date.UTC(2026, 7, 12) });
   session.close();
 

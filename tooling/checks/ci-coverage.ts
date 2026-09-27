@@ -2,6 +2,7 @@
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { executeCoverageCommand, runCiCoverage, type CoverageEvent } from "../lib/ci-coverage.ts";
+import { runTestTemporaryAudit, type TemporaryAuditEvent } from "../lib/test-temporary-audit.ts";
 
 /** Own CLI signals and the Actions annotations; no product code or coverage policy lives here. */
 async function main(): Promise<void> {
@@ -34,9 +35,19 @@ async function main(): Promise<void> {
         `- ${event.package}, attempt ${event.attempt}: exit ${event.result.code}, ${event.durationMs} ms`,
       );
   };
+  const emitAudit = (event: TemporaryAuditEvent) => {
+    console.log(JSON.stringify({ event: "ci.temporary_audit", ...event }));
+    if (event.phase === "observation" && event.remaining?.length)
+      summary(`- ${event.command}: temporary residue: ${event.remaining.join(", ")}`);
+    if (event.error) summary(`- ${event.command}: ${event.phase}: ${event.error}`);
+  };
   try {
     const result = await runCiCoverage(resolve(import.meta.dir, "../.."), {
-      execute: executeCoverageCommand,
+      execute: (command) =>
+        runTestTemporaryAudit(command, `${command.cwd}: ${command.argv.join(" ")}`, {
+          execute: executeCoverageCommand,
+          emit: emitAudit,
+        }),
       now: Date.now,
       signal: controller.signal,
       env: process.env,
@@ -46,7 +57,7 @@ async function main(): Promise<void> {
     process.exitCode = result.code;
     summary(`Coverage supervisor: ${result.code === 0 ? "success" : `failure (${result.code})`}.`);
   } catch (error) {
-    if (!controller.signal.aborted) throw error;
+    if (!controller.signal.aborted || error !== controller.signal.reason) throw error;
     process.exitCode = cancelledExit;
     summary(`Coverage supervisor: cancelled (${cancelledExit}); active child settled.`);
   } finally {

@@ -55,17 +55,8 @@ describe("Goal formulation through the real file host", () => {
           name: "submit_result",
           arguments:
             reviews === 1
-              ? {
-                  decision: "definition",
-                  verdict: "revise_definition",
-                  summary: "A material exclusion was lost",
-                  guidance: "Preserve the requested exclusion",
-                }
-              : {
-                  decision: "definition",
-                  verdict: "accept_definition",
-                  summary: "The definition is faithful",
-                },
+              ? { verdict: "revise_definition", message: "Preserve the requested exclusion" }
+              : { verdict: "accept_definition", message: "The definition is faithful" },
         };
       }
       throw new Error("Unexpected work review in formulation fixture");
@@ -119,17 +110,8 @@ describe("Goal formulation through the real file host", () => {
         name: "submit_result",
         arguments:
           reviews === 1
-            ? {
-                decision: "definition",
-                verdict: "revise_definition",
-                summary: "Request one revision",
-                guidance: "Keep the requested objective",
-              }
-            : {
-                decision: "definition",
-                verdict: "accept_definition",
-                summary: "Definition is faithful",
-              },
+            ? { verdict: "revise_definition", message: "Keep the requested objective" }
+            : { verdict: "accept_definition", message: "Definition is faithful" },
       };
     });
 

@@ -4,7 +4,7 @@ import type {
   GoalStewardRunInput,
   GoalStewardRunResult,
 } from "./steward-types.ts";
-import { goalStewardResultSchema } from "./steward-types.ts";
+import { validateGoalStewardResult } from "./steward-types.ts";
 import { buildGoalStewardRequest } from "./steward-request.ts";
 
 /** Retain terminal usage on failures without exposing the model's payload in diagnostics. */
@@ -46,11 +46,15 @@ export async function runGoalSteward(
       usage,
       outcome.response.status === "error" ? outcome.response.error.code : outcome.response.status,
     );
-  const parsed = goalStewardResultSchema.safeParse(outcome.response.result);
-  if (!parsed.success) throw new GoalStewardRunFailure(outcome.executionId, usage);
+  let result: GoalStewardRunResult["result"];
+  try {
+    result = validateGoalStewardResult(outcome.response.result, input.mode);
+  } catch {
+    throw new GoalStewardRunFailure(outcome.executionId, usage, "invalid_output");
+  }
   return {
     execution_id: outcome.executionId,
-    result: parsed.data,
+    result,
     usage,
     elapsed_ms: Math.max(0, Math.round(performance.now() - started)),
   };

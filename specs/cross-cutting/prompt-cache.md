@@ -100,10 +100,10 @@ The Goal formulation service uses one byte-identical base prompt for auto and gu
 Both precedence rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace
 availability remain in the final volatile message.
 
-Goal Steward uses a fixed policy, tool-free catalog and one output schema for definition and
-completion review. Repository instructions and the selected main-agent prompt are
+Goal Steward uses a fixed policy and a tool-free catalog. Each host-selected review operation
+advertises its own verdict choices with optional commentary; completion rounds retain the same schema. Repository instructions and the selected main-agent prompt are
 absent from its private history; `AGENTS.md` and `CLARVIS.md` remain in the main-agent formulation and
-work prefixes. Independent fresh Steward executions therefore retain an identical fixed head without
+work prefixes. Independent fresh Steward executions for the same operation therefore retain an identical fixed head without
 duplicating a host-configuration message. The main-agent formulation instruction, creation
 confirmation and Steward questions are appended as new messages; they do not rewrite the system
 prompt, earlier messages, identity or advertised tools.
@@ -112,10 +112,10 @@ Each evaluation appends a delimited conversational user frame to its own persist
 and digests remain outside model frames. Compatible later rounds omit the Goal contract already
 present in the private prefix. The runtime fingerprint covers model
 execution metadata, catalog, schema, compaction policy and TTL; incompatibility starts a fresh base. No earlier
-message is rewritten. A rejected Steward submission appends its schema-correction nudge in the same
+message is rewritten. A rejected Steward submission appends its verdict-correction nudge in the same
 evaluation without replacing historical messages, the catalog or the cache key.
 Production: `buildGoalStewardRequest`, `createStewardExecutionRuntime` and `createStewardResultGate`.
-Test: `returns unfinished work to the same run and preserves the private serialized prefix` in
+Test: `returns $verdict to the same run with optional commentary ($message)` in
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts)
 and the no-repository-instructions continuation case compare actual SDK messages, tools and composed
 cache keys. This proves prefix serialization,

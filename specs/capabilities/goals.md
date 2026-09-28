@@ -379,20 +379,15 @@ iteration boundaries. Accepted operator steering invalidates an in-flight or reu
 decision through the existing semantic fences. Review-limit exhaustion requires explicit operator
 action.
 
-The fixed output schema accepts definition or completion assessments. Formulation and Steward
-output schemas declare an explicit `type: "object"` root with exclusive `oneOf` variants,
-without model-specific rewriting or relaxing local validation.
-Production: `goalFormulationOutputSchema` in [request.ts](../../packages/goal/src/agent/request.ts)
-and `goalStewardOutputSchema` in [steward-request.ts](../../packages/goal/src/agent/steward-request.ts).
-Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) and
-[steward.test.ts](../../packages/goal/tests/unit/steward.test.ts).
-
-Before activation, definition
-review compares the proposed definition with the operator
-request and verified bounded normative-source snapshots. `revise_definition` returns one specific
-correction to the selected main agent; `accept_definition` permits activation. At most three
-formulation/review attempts occur. Completion must cover the definition, objective and exactly the
-qualitative criterion IDs supplied by the host.
+The host selects definition or completion review; the model returns only `verdict` and optional
+`message`. Completion verdicts are `achieved`, `needs_work` and `needs_evidence`. Definition review
+uses `accept_definition` or `revise_definition`, with at most three formulation/review attempts.
+The verdict alone determines the semantic decision. The model evaluates the supplied definition,
+objective and criteria without returning per-criterion assessments or target/evidence identifiers.
+Production: `goalStewardResultSchema` and `validateGoalStewardResult` in
+[steward-types.ts](../../packages/goal/src/agent/steward-types.ts), `GOAL_STEWARD_PROMPT` in
+[steward-prompt.ts](../../packages/goal/src/agent/steward-prompt.ts).
+Test: `Goal Steward contract` in [steward.test.ts](../../packages/goal/tests/unit/steward.test.ts).
 
 Model-facing Goal tools discard unknown fields before calling the host, including nested candidate
 assessments, creation criteria and verification descriptors. An extra identity or budget field
@@ -404,26 +399,28 @@ Test: `discards extra Goal tool fields without accepting invalid known values` i
 `ignores foreign scope and budget fields on a valid model update` in
 `packages/goal/tests/unit/capability.test.ts`.
 
-Steward decisions and nested assessments accept unknown fields and discard them before semantic
-validation and settlement. The input JSON Schema permits these extras at `submit_result`; known
-fields, required values, verdict consistency and target references remain validated.
+Steward responses discard all fields except the verdict and message. Text commentary is trimmed
+and bounded to 4,096 characters; absent, blank or non-text commentary receives host-authored guidance
+for that verdict. The normalized message supplies the review summary and, for further work or
+clarification, its next step/question. Commentary never changes or invalidates the verdict.
+The object-shaped `submit_result` schema describes the operation's available verdicts with permissive
+property shapes so malformed or missing verdicts reach the private gate's bounded correction, rather
+than a separate generic schema-rejection loop.
 Production: `goalStewardResultSchema` in
-[steward-types.ts](../../packages/goal/src/agent/steward-types.ts) and `goalStewardOutputSchema` in
-[steward-request.ts](../../packages/goal/src/agent/steward-request.ts).
-Test: `discards extra fields while preserving known-field and semantic validation` in
-[steward.test.ts](../../packages/goal/tests/unit/steward.test.ts) and
-`reviews completion with extra fields without receiving repository instructions` in
-[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
+[steward-types.ts](../../packages/goal/src/agent/steward-types.ts), `goalStewardOutputSchema` in
+[steward-request.ts](../../packages/goal/src/agent/steward-request.ts), and `createStewardResultGate`
+in [steward-result-gate.ts](../../packages/kernel/src/goals/steward-result-gate.ts).
+Test: `normalizes optional commentary without rejecting a recognized verdict` in
+[steward.test.ts](../../packages/goal/tests/unit/steward.test.ts) and the incident-shaped achieved
+reviews in [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 
-Qualitative criterion IDs must match the host-supplied set. Evidence IDs on Steward assessments are
-optional and are not validated against a tool-result catalog. The private frame is a conversational
+The private frame is a conversational
 projection: persisted Goal contract, original operator request, later operator corrections, the
 work agent's explanatory completion report, optional proposed final text when it is not a duplicate,
 and any pending Steward question with the work agent's answer. It does not carry `evidence_manifest`,
 `evidence_details`, `command_evidence`, `delegation_evidence`, `workflow_history`, plan dumps,
 raw tool results, files, `AGENTS.md` or `CLARVIS.md`. The Steward evaluates evidence declared by
-the work agent; it is not an independent artifact audit. An achieved result requires all assessments
-satisfied on that report; `needs_work` returns an actionable correction to the same work run;
+the work agent; it is not an independent artifact audit. An achieved verdict accepts that report; `needs_work` returns an actionable correction to the same work run;
 `needs_evidence` asks one specific question, which the host persists and returns to the main run
 through the existing finalize-gate nudge so the work agent can verify or correct with its normal
 tools. Human-acceptance criteria still require actual human acceptance. Malformed, failed,
@@ -448,9 +445,10 @@ code with fixed operator-facing text for the cause. Production:
 The coordinator checks Goal/control/objective identity, cumulative operator trajectory, operator
 epoch, candidate and final attempt before effects. Plan context is bound for the host but is not
 sent in the Steward frame and does not fence a completion decision. The host's private result gate
-checks the qualitative targets before accepting `submit_result`. Its first invalid result
-appends one corrective nudge within that evaluation's existing token, time and iteration limits;
-a repeated invalid result fails closed. The persisted result is revalidated before settlement, so
+checks only that the verdict belongs to the host-selected operation before accepting `submit_result`.
+A missing, unknown or wrong-operation verdict gets one correction listing the accepted choices within
+the existing evaluation budget; a repeated invalid verdict ends with `invalid_output`. Transport
+errors remain distinct from invalid output. The persisted result is revalidated before settlement, so
 this recovery never bypasses the durable candidate fences. Missing operator request or an
 irreducible oversize frame fails closed rather than silently truncating criteria. Normative-source
 drift remains a deterministic host failure before semantic completion review.
@@ -474,8 +472,8 @@ or authority.
 Production: `prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts),
 `createStewardExecutionRuntime` in [steward-runtime.ts](../../packages/kernel/src/goals/steward-runtime.ts),
 and `buildGoalStewardRequest` in [steward-request.ts](../../packages/goal/src/agent/steward-request.ts).
-Test: `reviews completion with extra fields without receiving repository instructions`,
-`returns unfinished work to the same run and preserves the private serialized prefix`, and `completion review receives
+Test: `accepts the incident-shaped achieved reviews without repository instructions`,
+`returns $verdict to the same run with optional commentary ($message)`, and `completion review receives
 authenticated checkpoint history without repository instructions` in
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 
@@ -529,7 +527,7 @@ Test: `Goal Steward coordinator` in
 [goal-steward.test.ts](../../packages/kernel/tests/unit/goal-steward.test.ts), schema/request contracts in
 [steward.test.ts](../../packages/goal/tests/unit/steward.test.ts), conversational projection in
 [goal-steward-projection.test.ts](../../packages/kernel/tests/unit/goal-steward-projection.test.ts),
-and the native SDK journeys (including historical-read rejection, bounded in-run correction and repeated-invalid failure) in
+and the native SDK journeys (including auxiliary-field tolerance, bounded verdict correction and repeated-invalid failure) in
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 
 ### Completion validation

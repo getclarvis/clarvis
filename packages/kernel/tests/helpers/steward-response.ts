@@ -7,29 +7,11 @@ export function stewardResponse(
   const frame = JSON.parse(
     String(messages.findLast((message) => message.role === "user")?.content),
   ) as {
-    definition: { criteria?: Array<{ id: string; kind: string }> };
+    mode?: string;
   };
   const result = {
-    decision: "completion",
-    verdict: "achieved",
-    summary: "Fixture result observed",
-    assessments: [
-      ...["definition", "objective"].map((scope) => ({
-        scope,
-        verdict: "satisfied",
-        rationale: "Fixture result observed",
-        evidence_ids: [],
-      })),
-      ...(frame.definition.criteria ?? [])
-        .filter((criterion) => criterion.kind === "qualitative")
-        .map((criterion) => ({
-          scope: "criterion",
-          criterion_id: criterion.id,
-          verdict: "satisfied",
-          rationale: "Fixture criterion observed",
-          evidence_ids: [],
-        })),
-    ],
+    verdict: frame.mode === "definition" ? "accept_definition" : "achieved",
+    message: "Fixture result observed",
   };
   return {
     toolCalls: [{ id: "steward-result", name: "submit_result", arguments: result }],

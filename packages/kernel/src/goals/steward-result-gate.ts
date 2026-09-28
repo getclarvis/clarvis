@@ -1,7 +1,11 @@
+import type { GoalStewardMode } from "@clarvis/goal";
 import type { Capability, GateOutcome } from "@clarvis/capability";
 
 /** Validate the structured review protocol, allowing one bounded in-run correction. */
-export function createStewardResultGate(validate: (value: unknown) => Promise<void>): Capability {
+export function createStewardResultGate(
+  mode: GoalStewardMode,
+  validate: (value: unknown) => Promise<void>,
+): Capability {
   return {
     name: "goal-steward-result",
     required: true,
@@ -32,7 +36,7 @@ export function createStewardResultGate(validate: (value: unknown) => Promise<vo
                             nudged = true;
                             return {
                               kind: "nudge",
-                              note: "Review rejected: use the current frame's mode, criterion IDs and evidence IDs, then call submit_result again. If the supplied context is insufficient, return needs_evidence with the specific missing information.",
+                              note: `Review rejected: call submit_result with verdict set to exactly one of ${mode === "definition" ? "accept_definition, revise_definition" : "achieved, needs_work, needs_evidence"}. Optional message may explain your decision. No other fields are required.`,
                             };
                           }
                           return {
@@ -41,8 +45,8 @@ export function createStewardResultGate(validate: (value: unknown) => Promise<vo
                               status: "error",
                               partialText: context.state.lastAssistantText,
                               error: {
-                                code: "goal_steward_failed",
-                                message: "Goal Steward result validation failed",
+                                code: "invalid_output",
+                                message: "Goal Steward did not return a recognized verdict",
                               },
                             },
                           };

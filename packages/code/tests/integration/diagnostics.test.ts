@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { createDiagnosticSession as createRealDiagnosticSession } from "#src/adapters/diagnostic-session.ts";
 import { createComponentLoggers } from "@clarvis/kernel";
 import { diagnosticAsync, installDiagnosticSession } from "#src/core/diagnostic-events.ts";
+import { OPERATIONAL_EVENTS } from "#src/core/operational-event-contract.ts";
+import { emitOperationalEvent } from "#src/core/operational-diagnostics.ts";
 
 const made: Array<{
   directory: string;
@@ -136,6 +138,45 @@ test("diagnostics writes versioned JSONL, redacts content and adapts the kernel 
     },
     message: "backend warning",
   });
+});
+
+test("operational smoke events retain their JSONL envelope and payload", () => {
+  const directory = tempDir();
+  const session = createDiagnosticSession({
+    directory,
+    pid: 42,
+    now: () => Date.UTC(2026, 7, 12),
+  });
+  const uninstall = installDiagnosticSession(session);
+  try {
+    emitOperationalEvent({
+      event: OPERATIONAL_EVENTS.appPainted,
+      details: { elapsed_ms: 12, mode: "run", deferred_catalog: true },
+    });
+    emitOperationalEvent({
+      event: OPERATIONAL_EVENTS.markdownPreloadCompleted,
+      details: { markdown: true, markdownInline: true, duration_ms: 3 },
+    });
+  } finally {
+    uninstall();
+    session.close();
+  }
+  expect(records(session.path)).toEqual([
+    expect.objectContaining({ event: "diagnostics.start" }),
+    expect.objectContaining({
+      event: "app.boot.painted",
+      level: "info",
+      source: "code",
+      details: { elapsed_ms: 12, mode: "run", deferred_catalog: true },
+    }),
+    expect.objectContaining({
+      event: "markdown.preload.completed",
+      level: "debug",
+      source: "code",
+      details: { markdown: true, markdownInline: true, duration_ms: 3 },
+    }),
+    expect.objectContaining({ event: "diagnostics.stop" }),
+  ]);
 });
 
 test("a kernel field nobody foresaw is carried, not silently dropped", () => {

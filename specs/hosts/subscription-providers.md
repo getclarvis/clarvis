@@ -72,6 +72,24 @@ the Clarvis owner explicitly enables their use. This label deliberately does not
 A registration is not a secret, but no setting or workspace file may replace it. Tests inject
 synthetic transports and do not exercise live production accounts.
 
+`SubscriptionScheme` in `packages/protocol/src/provider-auth.ts` remains a type-only public
+contract. The complete, ordered runtime vocabulary belongs to the private
+`SUBSCRIPTION_SCHEMES` catalogue in `packages/kernel/src/subscriptions/schemes.ts`; its keys are
+checked against that union. Both `SubscriptionManager.list` and
+`createUnavailableProviderAuthService.list` traverse the same list, including schemes without an
+available registration. Registration availability remains a separate partial map. The strict V1
+credential schema builds optional account fields from the same list, so an empty or partial account
+set is valid while unknown keys and invalid account records are rejected. Production:
+`SubscriptionScheme` in `packages/protocol/src/provider-auth.ts`, `SUBSCRIPTION_SCHEMES` in
+`packages/kernel/src/subscriptions/schemes.ts`, `SubscriptionManager.list` in
+`packages/kernel/src/subscriptions/manager.ts`, `createUnavailableProviderAuthService` in
+`packages/kernel/src/subscriptions/unavailable.ts`, `subscriptionRegistration` in
+`packages/kernel/src/subscriptions/registrations.ts`, and `subscriptionFileSchema` in
+`packages/kernel/src/subscriptions/store.ts`. Test:
+`production subscription availability` and `SubscriptionManager coexistence` in
+`packages/kernel/tests/unit/subscription-manager.test.ts`, and `subscription credential store` in
+`packages/kernel/tests/integration/subscription-store.test.ts`.
+
 Production invariant: only a project-approved, provider-approved, or Clarvis-owned record can be
 returned as a usable registration; an unapproved reference still fails closed.
 Production: `SubscriptionSchemeRegistration.authorization.owner` and `subscriptionRegistration` in

@@ -1,10 +1,10 @@
 const DEFAULT_ASYNC_SLOW_MS = 10_000;
 
-export type DiagnosticLevel = "debug" | "info" | "warn" | "error";
 export type DiagnosticDetails = Readonly<Record<string, unknown>>;
 
 /** Every {@link DiagnosticLevel}, least to most severe, so a filter can compare ranks. */
-export const DIAGNOSTIC_LEVELS: readonly DiagnosticLevel[] = ["debug", "info", "warn", "error"];
+export const DIAGNOSTIC_LEVELS = ["debug", "info", "warn", "error"] as const;
+export type DiagnosticLevel = (typeof DIAGNOSTIC_LEVELS)[number];
 
 /** The level a session records at when nothing narrower is asked for. */
 export const DEFAULT_DIAGNOSTIC_LEVEL: DiagnosticLevel = "debug";

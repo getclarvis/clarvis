@@ -87,6 +87,8 @@ import {
   activeDiagnosticLogger,
   installDiagnosticSession,
 } from "./core/diagnostic-events.ts";
+import { OPERATIONAL_EVENTS } from "./core/operational-event-contract.ts";
+import { emitOperationalEvent } from "./core/operational-diagnostics.ts";
 import { createDiagnosticSession } from "./adapters/diagnostic-session.ts";
 import { createDebugSessionController } from "./adapters/debug-session.ts";
 import type { ProfileInfo } from "./adapters/run-types.ts";
@@ -498,11 +500,10 @@ async function runApp(
   platform.onShutdown((reason) => {
     diagnosticEvent("app.shutdown", { reason }, "info");
   });
-  diagnosticEvent(
-    "app.boot.shell-painted",
-    { elapsed_ms: bootShell.shellElapsedMs, mode: mode.kind },
-    "info",
-  );
+  emitOperationalEvent({
+    event: OPERATIONAL_EVENTS.shellPainted,
+    details: { elapsed_ms: bootShell.shellElapsedMs, mode: mode.kind },
+  });
   const preloadMarkdown = async (): Promise<void> => {
     const startedAt = performance.now();
     try {
@@ -512,15 +513,14 @@ async function runApp(
         treeSitter.preloadParser("markdown"),
         treeSitter.preloadParser("markdown_inline"),
       ]);
-      diagnosticEvent(
-        "markdown.preload.completed",
-        {
+      emitOperationalEvent({
+        event: OPERATIONAL_EVENTS.markdownPreloadCompleted,
+        details: {
           markdown,
           markdownInline,
           duration_ms: Math.round(performance.now() - startedAt),
         },
-        "debug",
-      );
+      });
     } catch (error) {
       diagnosticEvent(
         "markdown.preload.failed",
@@ -842,7 +842,10 @@ async function runApp(
   function ensureModelsCatalog(): Promise<void> {
     if (modelsCatalog() !== null) return Promise.resolve();
     if (catalogLoad !== null) return catalogLoad;
-    diagnosticEvent("catalog.load.started", { trigger: "catalog_surface" }, "info");
+    emitOperationalEvent({
+      event: OPERATIONAL_EVENTS.catalogLoadStarted,
+      details: { trigger: "catalog_surface" },
+    });
     const flight = diagnosticAsync("catalog.load", async () => {
       const loaded = createModelsCatalog(await runClient.models.get());
       if (loaded.providers().length === 0)
@@ -1452,7 +1455,10 @@ async function runApp(
   };
   shell.afterPaint?.(() => {
     if (!code.updateCheckEnabled()) {
-      diagnosticEvent("update.check.skipped", { reason: "disabled" }, "debug");
+      emitOperationalEvent({
+        event: OPERATIONAL_EVENTS.updateCheckSkipped,
+        details: { reason: "disabled" },
+      });
       return;
     }
     const controller = new AbortController();
@@ -1475,23 +1481,25 @@ async function runApp(
           if (closed) return;
           if (result.kind === "available") {
             setAvailableUpdate({ version: result.version, tagName: result.tagName });
-            diagnosticEvent(
-              "update.available",
-              {
+            emitOperationalEvent({
+              event: OPERATIONAL_EVENTS.updateAvailable,
+              details: {
                 current_version: productVersion(),
                 available_version: result.version,
                 source: result.source,
               },
-              "info",
-            );
+            });
           } else if (result.kind === "failed") {
             diagnosticEvent("update.check.failed", { reason: result.reason }, "warn");
+          } else if (result.kind === "skipped") {
+            emitOperationalEvent({
+              event: OPERATIONAL_EVENTS.updateCheckSkipped,
+              details: { reason: result.reason },
+            });
           } else {
             diagnosticEvent(
-              result.kind === "skipped" ? "update.check.skipped" : "update.check.completed",
-              result.kind === "skipped"
-                ? { reason: result.reason }
-                : { current_version: productVersion(), source: result.source },
+              "update.check.completed",
+              { current_version: productVersion(), source: result.source },
               "debug",
             );
           }
@@ -1702,15 +1710,14 @@ async function runApp(
   });
   releaseBootRendererLifecycle();
   diagnosticEvent("app.render.mounted", { mode: mode.kind }, "info");
-  diagnosticEvent(
-    "app.boot.painted",
-    {
+  emitOperationalEvent({
+    event: OPERATIONAL_EVENTS.appPainted,
+    details: {
       elapsed_ms: Math.round(process.uptime() * 1000),
       mode: mode.kind,
       deferred_catalog: modelsCatalog() === null,
     },
-    "info",
-  );
+  });
   appPainted = true;
   for (const task of afterPaintTasks.splice(0)) queueMicrotask(task);
   const markdownPreload = preloadMarkdown();

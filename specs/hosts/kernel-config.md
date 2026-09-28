@@ -919,6 +919,7 @@ Each entry: **rule** — production anchor — test anchor.
 | --- | --- | --- |
 | Settings patch fails the schema | `packages/kernel/src/config/config-service.ts` | `invalid_request` with `firstIssue(...)` as message and all Zod issues as `details`; nothing written |
 | Revision mismatch on write or repair | `packages/kernel/src/config/config-service.ts` | `conflict`, `details = {scope, expectedRevision, actualRevision}` |
+| Execution-rule lease busy or source revision changed before save | `writeExecutionRules` in `packages/kernel/src/execution/execpolicy-loader.ts` and `mapExecutionRuleWriteError` in `packages/kernel/src/config/execution-rule-errors.ts` | Private `ExecutionRuleWriteError` reasons `busy` and `revision_changed` become public `conflict` without inspecting message or name; other thrown values retain their identity |
 | Repair applied to a source that became valid | `packages/kernel/src/config/config-service.ts` | `conflict` thrown from *inside* the CAS callback ⇒ the write is abandoned |
 | Ill-formed agent name | `packages/kernel/src/config/config-service.ts` | `invalid_request`; store never called |
 | Cross-scope name collision | `packages/kernel/src/config/config-service.ts` | `conflict` with `{name, scope, conflictingScope}` |
@@ -939,6 +940,20 @@ Each entry: **rule** — production anchor — test anchor.
 | Recording the carried approval fails after an operator write | `packages/kernel/src/config/file-config-store.ts` | **swallowed** — the write already landed |
 | Authorized target revision mismatch or concurrent executable-surface drift | `packages/kernel/src/config/file-config-store.ts` | write result remains, carried approval is withheld |
 | A `SettingsRevisionConflictError` or `ConfigResourceLimitError` escaping uncaught | `toKernelError` (`packages/kernel/src/core/errors.ts`) | name containing `Conflict` ⇒ `conflict`; `ConfigResourceLimitError` matches neither branch ⇒ `internal`, and `details` is dropped |
+
+The execution-rule mapping runs inside `ConfigService.updateExecutionRules`, before the general
+`toKernelError` boundary. The normalizer still preserves existing `KernelException` values and an
+own `continuation_unavailable` code, maps names containing `Validation` or `Conflict`, and otherwise
+falls back to `internal`; its name heuristics do not classify execution-rule write causes.
+Production: `ExecutionRuleWriteError` in
+`packages/kernel/src/execution/execpolicy-errors.ts`, `mapExecutionRuleWriteError` in
+`packages/kernel/src/config/execution-rule-errors.ts`, `createConfigService` in
+`packages/kernel/src/config/config-service.ts`, and `toKernelError` in
+`packages/kernel/src/core/errors.ts`. Test:
+`packages/kernel/tests/unit/execution-rule-errors.test.ts` (`mapExecutionRuleWriteError`),
+`packages/kernel/tests/unit/errors.test.ts` (`toKernelError`),
+`packages/kernel/tests/integration/execpolicy-loader.test.ts` (`rejects a stale rule revision without overwriting another writer`),
+and `packages/kernel/tests/integration/execution-rules-config.test.ts` (`rule check is read-only and a stale revision cannot replace another operator edit`).
 
 There are no retries anywhere in this subsystem except the settings-lock acquisition loop, which
 retries every 5 ms up to 2 s (`packages/kernel/src/config/file-config-store.ts`) using a blocking

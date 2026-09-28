@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import type { SubscriptionAccountRecord, SubscriptionFileV1 } from "./types.ts";
 import { SubscriptionError } from "./redaction.ts";
+import { SUBSCRIPTION_SCHEMES } from "./schemes.ts";
 
 const MAX_SUBSCRIPTIONS_FILE_BYTES = 1024 * 1024;
 const TOKEN_MAX_CHARS = 256 * 1024;
@@ -29,15 +30,16 @@ const accountSchema = z
   })
   .strict();
 
-const subscriptionFileSchema = z
+function accountShape(): Record<SubscriptionScheme, z.ZodOptional<typeof accountSchema>> {
+  const shape = {} as Record<SubscriptionScheme, z.ZodOptional<typeof accountSchema>>;
+  for (const scheme of SUBSCRIPTION_SCHEMES) shape[scheme] = accountSchema.optional();
+  return shape;
+}
+
+const subscriptionFileSchema: z.ZodType<SubscriptionFileV1> = z
   .object({
     version: z.literal(1),
-    accounts: z
-      .object({
-        "openai-codex": accountSchema.optional(),
-        "xai-grok": accountSchema.optional(),
-      })
-      .strict(),
+    accounts: z.object(accountShape()).strict(),
   })
   .strict();
 

@@ -34,6 +34,11 @@ import {
   assertLazySurfaceArtifact,
 } from "./contract.ts";
 import { APP_READY_MARKER } from "./markers.ts";
+import { selectDiagnosticEvent, type DiagnosticSelection } from "./diagnostic-reader.ts";
+import {
+  OPERATIONAL_EVENTS,
+  type OperationalEventName,
+} from "#src/core/operational-event-contract.ts";
 import { RELEASE_REPOSITORY, releaseTarget } from "#src/update-contract.ts";
 import {
   CLARVIS_DOCS_PUBLISHER_FILE,
@@ -56,29 +61,6 @@ const REQUIRED_ASSETS: { path: string; reader: string }[] = [
   { path: join(packageRoot, "dist/models-dev.json"), reader: "kernel model-catalog.ts" },
 ];
 
-/** The `details` of the `app.boot.painted` record the smoke run asserts on. */
-interface BootPaintedDetails {
-  elapsed_ms?: unknown;
-  deferred_catalog?: unknown;
-}
-
-interface BootShellPaintedDetails {
-  elapsed_ms?: unknown;
-}
-
-interface MarkdownPreloadDetails {
-  markdown?: unknown;
-  markdownInline?: unknown;
-}
-
-interface UpdateCheckSkippedDetails {
-  reason?: unknown;
-}
-
-interface UpdateAvailableDetails {
-  available_version?: unknown;
-}
-
 /** Every `code-debug-*.jsonl` written anywhere beneath `root`. */
 function diagnosticLogsUnder(root: string): string[] {
   const found: string[] = [];
@@ -95,25 +77,24 @@ function diagnosticLogsUnder(root: string): string[] {
 }
 
 /**
- * Read one event's details out of the run's diagnostic log.
+ * Read one validated event out of the run's diagnostic logs, newest file first.
  *
  * @param home - the throwaway HOME the run wrote its Clarvis state into.
- * @returns the record's details, or `null` when no log or no such record exists.
+ * @returns found, absent, or pending evidence; invalid completed records throw.
  */
-async function readDiagnosticDetails<T>(home: string, event: string): Promise<T | null> {
+async function readDiagnosticEvent<Name extends OperationalEventName>(
+  home: string,
+  event: Name,
+): Promise<Exclude<DiagnosticSelection<Name>, { kind: "invalid" }>> {
   for (const log of diagnosticLogsUnder(home).reverse()) {
-    const lines = (await readFile(log, "utf8")).split("\n").filter(Boolean);
-    for (const line of lines) {
-      let record: { event?: unknown; details?: unknown };
-      try {
-        record = JSON.parse(line) as typeof record;
-      } catch {
-        continue;
-      }
-      if (record.event === event) return (record.details ?? {}) as T;
-    }
+    const selection = selectDiagnosticEvent(await readFile(log, "utf8"), log, event);
+    if (selection.kind === "invalid")
+      throw new Error(
+        `invalid diagnostic evidence: file=${selection.file} event=${selection.event} field=${selection.field}`,
+      );
+    if (selection.kind !== "absent") return selection;
   }
-  return null;
+  return { kind: "absent" };
 }
 
 async function main(): Promise<void> {
@@ -152,11 +133,11 @@ async function main(): Promise<void> {
   }
   const fixture = await createSmokeFixture("clarvis-artifact-smoke-");
   let result: Awaited<ReturnType<typeof bootAndObserve>>;
-  let painted: BootPaintedDetails | null;
-  let shellPainted: BootShellPaintedDetails | null;
-  let markdown: MarkdownPreloadDetails | null;
-  let catalogLoad: Record<string, unknown> | null;
-  let updateCheck: UpdateCheckSkippedDetails | null;
+  let painted: DiagnosticSelection<typeof OPERATIONAL_EVENTS.appPainted>;
+  let shellPainted: DiagnosticSelection<typeof OPERATIONAL_EVENTS.shellPainted>;
+  let markdown: DiagnosticSelection<typeof OPERATIONAL_EVENTS.markdownPreloadCompleted>;
+  let catalogLoad: DiagnosticSelection<typeof OPERATIONAL_EVENTS.catalogLoadStarted>;
+  let updateCheck: DiagnosticSelection<typeof OPERATIONAL_EVENTS.updateCheckSkipped>;
   try {
     if (existsSync(fixture.paths.modelsCacheFile)) {
       throw new Error("fixture is not a fresh install: it has a models cache");
@@ -168,15 +149,29 @@ async function main(): Promise<void> {
       context: fixture,
       markers: [{ name: "ready", text: APP_READY_MARKER }],
       afterMarkersReady: async () => {
-        const bootPainted = await readDiagnosticDetails<BootPaintedDetails>(
+        const bootPainted = await readDiagnosticEvent(
           fixture.global,
-          "app.boot.painted",
+          OPERATIONAL_EVENTS.appPainted,
         );
-        const preload = await readDiagnosticDetails<MarkdownPreloadDetails>(
+        const preload = await readDiagnosticEvent(
           fixture.global,
-          "markdown.preload.completed",
+          OPERATIONAL_EVENTS.markdownPreloadCompleted,
         );
-        return bootPainted !== null && preload !== null;
+        const catalog = await readDiagnosticEvent(
+          fixture.global,
+          OPERATIONAL_EVENTS.catalogLoadStarted,
+        );
+        if (catalog.kind === "found") throw new Error("smoke FAILED: first paint loaded catalog");
+        const skipped = await readDiagnosticEvent(
+          fixture.global,
+          OPERATIONAL_EVENTS.updateCheckSkipped,
+        );
+        return (
+          bootPainted.kind === "found" &&
+          preload.kind === "found" &&
+          catalog.kind === "absent" &&
+          skipped.kind === "found"
+        );
       },
       timeoutMs: TIMEOUT_MS,
       pollMs: 100,
@@ -192,56 +187,51 @@ async function main(): Promise<void> {
       throw new Error(`artifact_smoke_${result.outcome}`);
     }
 
-    painted = await readDiagnosticDetails<BootPaintedDetails>(fixture.global, "app.boot.painted");
-    shellPainted = await readDiagnosticDetails<BootShellPaintedDetails>(
+    painted = await readDiagnosticEvent(fixture.global, OPERATIONAL_EVENTS.appPainted);
+    shellPainted = await readDiagnosticEvent(fixture.global, OPERATIONAL_EVENTS.shellPainted);
+    markdown = await readDiagnosticEvent(
       fixture.global,
-      "app.boot.shell-painted",
+      OPERATIONAL_EVENTS.markdownPreloadCompleted,
     );
-    markdown = await readDiagnosticDetails<MarkdownPreloadDetails>(
-      fixture.global,
-      "markdown.preload.completed",
-    );
-    catalogLoad = await readDiagnosticDetails<Record<string, unknown>>(
-      fixture.global,
-      "catalog.load.started",
-    );
-    updateCheck = await readDiagnosticDetails<UpdateCheckSkippedDetails>(
-      fixture.global,
-      "update.check.skipped",
-    );
+    catalogLoad = await readDiagnosticEvent(fixture.global, OPERATIONAL_EVENTS.catalogLoadStarted);
+    updateCheck = await readDiagnosticEvent(fixture.global, OPERATIONAL_EVENTS.updateCheckSkipped);
   } finally {
     await fixture.cleanup();
   }
-  if (painted === null) {
+  if (painted.kind !== "found") {
     process.stderr.write(
       `smoke FAILED: the artifact painted but wrote no app.boot.painted record\n` +
         `--debug is the only diagnostic channel a bundled clarvis has\n`,
     );
     process.exit(1);
   }
-  if (shellPainted === null) {
+  if (shellPainted.kind !== "found") {
     process.stderr.write(
       `smoke FAILED: the artifact painted but wrote no app.boot.shell-painted record\n`,
     );
     process.exit(1);
   }
-  if (markdown?.markdown !== true || markdown.markdownInline !== true) {
+  if (
+    markdown.kind !== "found" ||
+    markdown.details.markdown !== true ||
+    markdown.details.markdownInline !== true
+  ) {
     process.stderr.write(
       `smoke FAILED: OpenTUI Markdown parsers did not preload from their package assets\n`,
     );
     process.exit(1);
   }
-  if (painted.deferred_catalog !== true || catalogLoad !== null) {
+  if (painted.details.deferred_catalog !== true || catalogLoad.kind !== "absent") {
     process.stderr.write(
       `smoke FAILED: first paint loaded the models.dev catalog ` +
-        `(deferred_catalog=${String(painted.deferred_catalog)}, catalog_load=${String(catalogLoad !== null)})\n`,
+        `(deferred_catalog=${String(painted.details.deferred_catalog)}, catalog_load=${String(catalogLoad.kind)})\n`,
     );
     process.exit(1);
   }
-  if (updateCheck?.reason !== "unmanaged") {
+  if (updateCheck.kind !== "found" || updateCheck.details.reason !== "unmanaged") {
     process.stderr.write(
       `smoke FAILED: unmanaged artifact did not skip the automatic release request ` +
-        `(reason=${String(updateCheck?.reason)})\n`,
+        `(reason=${updateCheck.kind === "found" ? updateCheck.details.reason : updateCheck.kind})\n`,
     );
     process.exit(1);
   }
@@ -305,11 +295,13 @@ async function main(): Promise<void> {
         { name: "update-header", text: `↑ v${product.version}` },
       ],
       afterMarkersReady: async () => {
-        const available = await readDiagnosticDetails<UpdateAvailableDetails>(
+        const available = await readDiagnosticEvent(
           managed.global,
-          "update.available",
+          OPERATIONAL_EVENTS.updateAvailable,
         );
-        return available?.available_version === availableVersion;
+        return (
+          available.kind === "found" && available.details.available_version === availableVersion
+        );
       },
       timeoutMs: TIMEOUT_MS,
       pollMs: 100,
@@ -335,9 +327,9 @@ async function main(): Promise<void> {
 
   process.stdout.write(
     `smoke ok - artifact and required diagnostics settled in ${result.elapsed.toFixed(0)}ms ` +
-      `(startup shell paint: ${String(shellPainted.elapsed_ms)}ms, ` +
-      `complete app paint: ${String(painted.elapsed_ms)}ms, ` +
-      `deferred_catalog=${String(painted.deferred_catalog)}, ` +
+      `(startup shell paint: ${String(shellPainted.details.elapsed_ms)}ms, ` +
+      `complete app paint: ${String(painted.details.elapsed_ms)}ms, ` +
+      `deferred_catalog=${String(painted.details.deferred_catalog)}, ` +
       `managed update state: ${updateNoticeMs.toFixed(0)}ms)\n`,
   );
 }

@@ -1457,7 +1457,10 @@ the host's short temporary roots, and a host where none of them can hold an addr
 the socket root after the children settle. The
 fixture lifecycle terminates registered children before removing its roots. It asserts the shipped snapshot
 exists for a later Providers open, and proves first paint emits no `catalog.load.started` while
-`deferred_catalog` remains true.
+`deferred_catalog` remains true. The smoke accepts boot, Markdown and update diagnostics only after
+their required payload fields validate; a malformed completed JSONL line or invalid known event
+fails with its file, event and field. An unfinished final line stays pending, so it cannot establish
+catalog absence or readiness.
 
 The smoke harness uses disposable environment and filesystem state. `script(1)` and tmux both use the fixture environment; tmux receives the fixture's
 reserved socket through `-S` and every capture and `kill-server` command names that same endpoint.

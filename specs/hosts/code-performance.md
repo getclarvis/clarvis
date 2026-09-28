@@ -132,8 +132,9 @@ another cwd, or a direct `dist/index.js --version` comparison against the launch
 `--version` does not support a startup conclusion.
 
 The artifact smoke's outer elapsed duration is not a sixth startup marker. It includes the PTY's
-100 ms polling cadence and waits for the complete-app marker plus the required
-`app.boot.painted` and Markdown-preload diagnostics. Its success line therefore labels that value as
+100 ms polling cadence and waits for the complete-app marker plus validated
+`app.boot.painted`, Markdown-preload and update-skip diagnostics, and a complete catalogue-absence
+observation. Its success line therefore labels that value as
 artifact-and-diagnostic settlement and reports the process-relative startup-shell and complete-app
 paint diagnostics separately. Only the repeated benchmark above supports a performance comparison
 (`packages/code/tooling/artifact/smoke.ts`, `main`).

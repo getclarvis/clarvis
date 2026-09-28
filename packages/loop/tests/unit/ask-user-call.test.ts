@@ -80,8 +80,11 @@ describe("handleAskUserCall", () => {
   it("returns the user's answer on accept and records the outcome with the answer", async () => {
     const trace = createTrace();
     const res = await handleAskUserCall({
-      call: call({ arguments: { question: "name?" } }),
-      askUser: async () => ({ action: "accept", answer: "Ada" }),
+      call: call({ arguments: { question: "name?", extra: true } }),
+      askUser: async (args) => {
+        expect(args).toEqual({ question: "name?" });
+        return { action: "accept", answer: "Ada" };
+      },
       trace,
       agent: "subagent",
       subagentInstanceId: "w1",

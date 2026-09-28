@@ -6,7 +6,7 @@ import { goalCreationInputSchema } from "./model-input.ts";
 export const GET_GOAL = "get_goal";
 export const UPDATE_GOAL = "update_goal";
 export const CREATE_GOAL = "create_goal";
-export const getGoalInputSchema = z.object({}).strict();
+export const getGoalInputSchema = z.object({});
 
 /** Stable names, schemas and order; goal revisions, permissions and balances never alter the catalog. */
 export function buildGoalTools(): NamespacedTool[] {

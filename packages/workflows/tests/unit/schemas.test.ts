@@ -37,9 +37,12 @@ describe("the shipped leader-result schemas", () => {
     expect(JSON.parse(JSON.stringify(schema))).toEqual(schema);
   });
 
-  test.each(entries)("'%s' closes the object so a leader cannot pad it", (_name, schema) => {
-    expect(schema.additionalProperties).toBe(false);
-  });
+  test.each(entries)(
+    "'%s' accepts extra fields for normalization after validation",
+    (_name, schema) => {
+      expect(schema.additionalProperties).toBe(true);
+    },
+  );
 
   test.each(entries)("'%s' requires only fields it actually declares", (_name, schema) => {
     const properties = propertiesOf(schema);
@@ -64,4 +67,24 @@ describe("the shipped leader-result schemas", () => {
       }
     }
   });
+});
+
+test("normalizes built-in results recursively while preserving custom schemas", async () => {
+  const { normalizeWorkflowResult } = await import("#src/result-normalization.ts");
+  const schema = structuredClone(WORKFLOW_RESULT_SCHEMAS.discovery!);
+  const value = {
+    scope: "Review",
+    evidence: [{ path: "file", observation: "Read", extra: true }],
+    work_items: [],
+    unknowns: [],
+    extra: true,
+  };
+  expect(normalizeWorkflowResult(value, schema)).toEqual({
+    scope: "Review",
+    evidence: [{ path: "file", observation: "Read" }],
+    work_items: [],
+    unknowns: [],
+  });
+  expect(value).toHaveProperty("extra", true);
+  expect(normalizeWorkflowResult(value, { type: "object" })).toBe(value);
 });

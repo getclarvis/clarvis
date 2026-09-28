@@ -91,6 +91,10 @@ The durable vocabulary and replay contract are owned by
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.
 
+`ask_user` ignores extra argument fields and passes only the validated question and options to the
+human interaction port. Schemas supplied for custom results or external tools keep their declared
+additional-property rules.
+
 ## Contract
 
 `buildExecuteRunDeps` composes the host-attested `clarvis-docs` provider separately from ordinary skill

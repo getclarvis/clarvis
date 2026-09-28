@@ -28,6 +28,9 @@ trace implementation.
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.
 
+Memory tool arguments tolerate extra fields and discard them before execution. Known-field validation,
+path boundaries and owner-only document markers still apply.
+
 ## Contract
 
 The package contract is split by responsibility: the wiki and store in

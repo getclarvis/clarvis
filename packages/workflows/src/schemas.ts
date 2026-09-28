@@ -39,7 +39,7 @@ export type WorkflowResultSchema = Record<string, unknown>;
  */
 export const DISCOVERY_SCHEMA: WorkflowResultSchema = {
   type: "object",
-  additionalProperties: false,
+  additionalProperties: true,
   properties: {
     scope: {
       type: "string",
@@ -52,7 +52,7 @@ export const DISCOVERY_SCHEMA: WorkflowResultSchema = {
       description: "Observations that ground the decomposition below.",
       items: {
         type: "object",
-        additionalProperties: false,
+        additionalProperties: true,
         properties: {
           path: { type: "string", maxLength: WORKFLOW_LIMITS.pathChars },
           observation: { type: "string", maxLength: WORKFLOW_LIMITS.textChars },
@@ -66,7 +66,7 @@ export const DISCOVERY_SCHEMA: WorkflowResultSchema = {
       description: "The independent units the manager can hand to separate leaders.",
       items: {
         type: "object",
-        additionalProperties: false,
+        additionalProperties: true,
         properties: {
           id: { type: "string", maxLength: WORKFLOW_LIMITS.identifierChars },
           title: {
@@ -118,14 +118,14 @@ export const DISCOVERY_SCHEMA: WorkflowResultSchema = {
  */
 export const FINDINGS_SCHEMA: WorkflowResultSchema = {
   type: "object",
-  additionalProperties: false,
+  additionalProperties: true,
   properties: {
     findings: {
       type: "array",
       maxItems: WORKFLOW_LIMITS.resultItems,
       items: {
         type: "object",
-        additionalProperties: false,
+        additionalProperties: true,
         properties: {
           id: { type: "string", maxLength: WORKFLOW_LIMITS.identifierChars },
           title: {
@@ -188,7 +188,7 @@ export const FINDINGS_SCHEMA: WorkflowResultSchema = {
  */
 export const VERDICT_SCHEMA: WorkflowResultSchema = {
   type: "object",
-  additionalProperties: false,
+  additionalProperties: true,
   properties: {
     finding_id: {
       type: "string",

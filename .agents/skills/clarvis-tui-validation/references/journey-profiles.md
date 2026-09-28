@@ -53,6 +53,14 @@ Cross-platform, physical-terminal, exhaustive races/security and performance soa
 entire-app profile unless explicitly requested in a narrower scope. A deterministic MCP/SSH
 fixture proves its controlled boundary; it is not a real external-service pass.
 
+For controlled-provider variants of Goal (`CMD-29`), Memory (`CAP-07`, `CAP-08`), skill
+(`EXT-01`–`EXT-09`) and workflow journeys, include an otherwise valid model response with
+extra fields. The operation should complete normally; extra identity, budget or permission fields
+must not change authority. For workflow titles and `ask_user`, extra commentary must not consume
+a correction or prevent the question from reaching the operator. Invalid known fields still fail.
+The corresponding package regression tests establish parser and handler behavior; a PTY journey
+establishes only the selected visible interaction.
+
 ## Evidence and stopping
 
 Group compatible journeys around one fixture and build. Keep separate assertions even when one

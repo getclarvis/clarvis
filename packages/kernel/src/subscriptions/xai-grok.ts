@@ -23,7 +23,7 @@ const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 const PRODUCT_USER_AGENT = `clarvis/${VERSION}`;
 
 /** Grok Build compatibility revision used by the xAI subscription proxy's version gate. */
-const XAI_GROK_CLIENT_VERSION = "1.0.6";
+const XAI_GROK_CLIENT_VERSION = "1.0.41";
 
 function stringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;

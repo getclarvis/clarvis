@@ -14,6 +14,7 @@ import type {
 import { levelEnabled } from "@clarvis/capability";
 import { createFairShareOutputBudget, type WorkflowReservation } from "./ledger.ts";
 import { faultFields, workflowLogger } from "./log.ts";
+import { normalizeWorkflowResult } from "./result-normalization.ts";
 import type { LeaderResult, LeaderSpec, WorkflowCtx } from "./types.ts";
 
 /** A zeroed {@link Usage} used when a leader never produced a response (e.g. the
@@ -131,7 +132,12 @@ export async function runLeader(
         error: { code: response.error.code, message: response.error.message },
       };
     }
-    return { runId, status: response.status, result: response.result, usage: response.usage };
+    return {
+      runId,
+      status: response.status,
+      result: normalizeWorkflowResult(response.result, spec.expectSchema),
+      usage: response.usage,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error(

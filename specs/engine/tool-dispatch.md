@@ -247,12 +247,19 @@ branch, which always emits one.
 
 The validator is exported from the engine's curated entry (`@clarvis/loop`, `packages/loop/src/lib.ts`)
 for the one host routine that rules on a tool call outside the loop: `@clarvis/kernel`'s
-`generateWorkflowTitle` checks a provider's whole `set_title` argument object against the schema it
-advertised — `additionalProperties: false` included — instead of reading only the field it wants and
-accepting the rest. Production: `createToolArgValidator` in
-`packages/loop/src/runtime/tools/tool-arg-validator.ts`. Test:
-`packages/kernel/tests/unit/workflow-title.test.ts` ("corrects an undeclared extra argument once, then
-accepts the valid call").
+`generateWorkflowTitle` validates the known `set_title` fields and ignores unknown fields.
+Only the validated title is returned. Production: `classifyTitleResponse` in
+`packages/kernel/src/workflows/workflow-title.ts`. Test:
+`accepts a valid title with extra fields on the first call` in
+`packages/kernel/tests/unit/workflow-title.test.ts`.
+
+The native `ask_user` tool also ignores unknown fields; its handler passes only validated question
+and options to the human interaction port. Required question and option types remain enforced.
+Production: `askUserTool` and `handleAskUserCall` in
+`packages/loop/src/runtime/tools/ask-user-tool.ts` and
+`packages/loop/src/runtime/tools/ask-user-call.ts`. Test:
+`returns the user's answer on accept and records the outcome with the answer` in
+`packages/loop/tests/unit/ask-user-call.test.ts`.
 
 ### 3.5 Argument-validation fail-open reasons (`FailOpenReason`, `packages/loop/src/runtime/tools/tool-arg-validator.ts`)
 

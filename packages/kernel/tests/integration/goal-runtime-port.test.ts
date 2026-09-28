@@ -823,11 +823,28 @@ describe("durable host goal runtime port", () => {
     );
   });
 
-  it("refuses caller-selected authority and oversized evidence without publishing model state", async () => {
+  it("ignores caller-selected authority while recording progress for the bound Goal", async () => {
+    const f = await fixture();
+    const { port } = await f.runtime();
+    const before = (await port.read()).goal;
+    const proposed = {
+      summary: "Observed progress",
+      evidence_ids: [],
+      goal_id: "foreign",
+      execution_id: "foreign",
+      session_id: "foreign",
+    };
+    expect(await port.progress(proposed)).toEqual({ kind: "ok", value: undefined });
+    const after = (await port.read()).goal;
+    expect(after.goal_id).toBe(before.goal_id);
+    expect(after.runs[0]!.execution_id).toBe(before.runs[0]!.execution_id);
+    expect(after.runs[0]!.progress).toEqual({ summary: "Observed progress", evidence: [] });
+    await expect(f.repository.read("foreign")).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("refuses oversized evidence without publishing model state", async () => {
     const f = await fixture();
     const { port, evidence } = await f.runtime();
-    const forged = { summary: "Foreign authority", evidence_ids: [], goal_id: "foreign" };
-    await expect(port.progress(forged)).rejects.toMatchObject({ code: "invalid_request" });
     evidence.observe(tool({ result: "x".repeat(1024 * 1024 + 1) }));
     expect(await port.read()).toMatchObject({
       evidence: [],

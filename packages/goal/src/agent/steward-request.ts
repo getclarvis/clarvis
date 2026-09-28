@@ -9,7 +9,7 @@ import {
 
 export const GOAL_STEWARD_INSTANCE = "goal-steward";
 export const goalStewardOutputSchema: Record<string, unknown> = {
-  ...z.toJSONSchema(goalStewardResultSchema, { target: "draft-7" }),
+  ...z.toJSONSchema(goalStewardResultSchema, { target: "draft-7", io: "input" }),
   type: "object",
 };
 

@@ -4,7 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 describe("Goal Steward through the native host and SDK", () => {
-  it("reviews completion without receiving repository instructions", async () => {
+  it("reviews completion with extra fields without receiving repository instructions", async () => {
     const f = await createGoalFileHostFixture({ plansMode: "off" });
     try {
       await writeFile(join(f.root, "global", "AGENTS.md"), "Global fallback: verify results.");
@@ -62,11 +62,14 @@ describe("Goal Steward through the native host and SDK", () => {
             decision: "completion",
             verdict: "achieved",
             summary: "Answer provided",
+            guidance: "Extra commentary must not reject an otherwise valid completion",
+            execution_id: "untrusted-extra-field",
             assessments: ["definition", "objective"].map((scope) => ({
               scope,
               verdict: "satisfied",
               rationale: "Answer observed",
               evidence_ids: [],
+              extra: { ignored: true },
             })),
           },
         };

@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAgentTools } from "#src/index.ts";
+import { createAgentTools, type AgentTools } from "#src/index.ts";
 
 const roots: string[] = [];
+const instances: AgentTools[] = [];
 
-afterEach(() => {
+afterEach(async () => {
+  for (const tools of instances.splice(0)) await tools.close();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -16,6 +18,7 @@ describe("host coding tools", () => {
     const outside = mkdtempSync(join(tmpdir(), "clarvis-open-target-"));
     roots.push(root, outside);
     const tools = createAgentTools({ workspaceRoot: root });
+    instances.push(tools);
     const target = join(outside, "nested", "file.txt");
     const written = await tools.callTool("write_file", { path: target, content: "open needle" });
     expect(written.isError).toBe(false);

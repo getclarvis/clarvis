@@ -16,6 +16,10 @@ plus `yaml` + `zod`.
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.
 
+Built-in discovery, findings and verdict results accept extra fields and discard them recursively
+before delivery to the manager or scheduler. Known fields remain validated. Custom result schemas
+retain their own validation and payload.
+
 ## Contract
 
 Manager-to-leader execution, waves, rounds, limits, and the shared ledger are specified in

@@ -110,6 +110,21 @@ describe("generateWorkflowTitle", () => {
     expect(call.timeoutMs).toBeLessThanOrEqual(WORKFLOW_TITLE_TIMEOUT_MS);
   });
 
+  it("accepts a valid title with extra fields on the first call", async () => {
+    const fake = scriptedProvider([
+      {
+        toolCalls: [
+          { id: "t", name: "set_title", arguments: { title: "Título válido", extra: true } },
+        ],
+        usage: ZERO_USAGE,
+      },
+    ]);
+    expect(await generateWorkflowTitle({ request: request(), llm: fake.llm })).toBe(
+      "Título válido",
+    );
+    expect(fake.calls).toHaveLength(1);
+  });
+
   it.each([
     ["plain prose", { text: "Implementar títulos curtos", usage: ZERO_USAGE }],
     [
@@ -130,19 +145,6 @@ describe("generateWorkflowTitle", () => {
     [
       "undecodable arguments",
       { toolCalls: [{ id: "t", name: "set_title", arguments: "{" }], usage: ZERO_USAGE },
-    ],
-    [
-      "an undeclared extra argument",
-      {
-        toolCalls: [
-          {
-            id: "t",
-            name: "set_title",
-            arguments: { title: "Título válido", unexpected: true },
-          },
-        ],
-        usage: ZERO_USAGE,
-      },
     ],
     [
       "a missing title",

@@ -265,19 +265,19 @@ describe("goal capability through real loop, plan and SDK", () => {
     expect(f.wire[0]!.tools.map((tool) => tool.function.name)).toEqual(
       expect.arrayContaining(["get_goal", "update_goal", "create_plan", "submit_result"]),
     );
-    expect(
-      f.wire[0]!.tools.find((tool) => tool.function.name === "update_goal")!.function.parameters,
-    ).toMatchObject({
+    const updateParameters = f.wire[0]!.tools.find((tool) => tool.function.name === "update_goal")!
+      .function.parameters;
+    expect(JSON.stringify(updateParameters)).not.toContain('"additionalProperties":false');
+    expect(updateParameters).toMatchObject({
       type: "object",
       required: ["update"],
-      additionalProperties: false,
       properties: {
         update: {
           anyOf: [
-            { properties: { action: { const: "progress" } }, additionalProperties: false },
-            { properties: { action: { const: "checkpoint" } }, additionalProperties: false },
-            { properties: { action: { const: "candidate" } }, additionalProperties: false },
-            { properties: { action: { const: "blocked" } }, additionalProperties: false },
+            { properties: { action: { const: "progress" } } },
+            { properties: { action: { const: "checkpoint" } } },
+            { properties: { action: { const: "candidate" } } },
+            { properties: { action: { const: "blocked" } } },
           ],
         },
       },

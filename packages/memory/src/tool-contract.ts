@@ -28,7 +28,7 @@ export const MEMORY_TOOL_CONTRACTS = {
           .optional()
           .describe("Restrict to documents whose path starts with this prefix (e.g. `infra/`)."),
       })
-      .strict(),
+      .strip(),
   },
   read_memory: {
     name: "read_memory",
@@ -42,7 +42,7 @@ export const MEMORY_TOOL_CONTRACTS = {
           .max(5)
           .describe("Document paths, e.g. `infra/bun/MEMORY.md`."),
       })
-      .strict(),
+      .strip(),
   },
   grep_memories: {
     name: "grep_memories",
@@ -63,7 +63,7 @@ export const MEMORY_TOOL_CONTRACTS = {
           ),
         limit: z.number().int().min(1).max(50).default(20).describe("Maximum matches to return."),
       })
-      .strict(),
+      .strip(),
   },
   query_memories: {
     name: "query_memories",
@@ -82,7 +82,7 @@ export const MEMORY_TOOL_CONTRACTS = {
           .optional()
           .describe("Restrict to these document kinds."),
       })
-      .strict(),
+      .strip(),
   },
   write_memory: {
     name: "write_memory",
@@ -104,7 +104,7 @@ export const MEMORY_TOOL_CONTRACTS = {
           .max(MEMORY_STORAGE_LIMITS.documentBytes)
           .describe("Full markdown with frontmatter."),
       })
-      .strict(),
+      .strip(),
   },
   edit_memory: {
     name: "edit_memory",
@@ -127,7 +127,7 @@ export const MEMORY_TOOL_CONTRACTS = {
           .max(MEMORY_STORAGE_LIMITS.documentBytes)
           .describe("Replacement text; empty to delete the substring."),
       })
-      .strict(),
+      .strip(),
   },
   delete_memory: {
     name: "delete_memory",
@@ -136,7 +136,7 @@ export const MEMORY_TOOL_CONTRACTS = {
       .object({
         path: memoryLeafPathSchema.describe("The `<topic>/<subtopic>/MEMORY.md` to delete."),
       })
-      .strict(),
+      .strip(),
   },
 } as const satisfies Record<string, MemoryToolContract>;
 
@@ -147,5 +147,5 @@ export function memoryToolParameters(name: MemoryToolName): Record<string, unkno
   const { $schema: _document, ...rest } = z.toJSONSchema(MEMORY_TOOL_CONTRACTS[name].schema, {
     io: "input",
   }) as Record<string, unknown>;
-  return { ...rest, additionalProperties: false };
+  return rest;
 }

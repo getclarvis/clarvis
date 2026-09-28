@@ -234,7 +234,7 @@ previous durable prefix.
 
 Every subscription HTTP request that carries a Clarvis user agent uses `clarvis/<root product
 version>`. ChatGPT entitled-catalog discovery separately uses the adapter-owned Codex compatibility
-revision `0.153.2` as `client_version`: the service treats this query as a minimum-client feature
+revision `0.158.0` as `client_version`: the service treats this query as a minimum-client feature
 gate independently of the Clarvis product version. Visible API-supported models are projected with their published reasoning
 levels; unrelated provider metadata does not suppress them or cross the protocol boundary. Production: `VERSION`,
 `PRODUCT_USER_AGENT`, and `OPENAI_CODEX_CLIENT_VERSION` in
@@ -242,7 +242,7 @@ levels; unrelated provider metadata does not suppress them or cross the protocol
 `packages/kernel/src/subscriptions/xai-grok.ts`.
 
 The Grok subscription proxy has its own version gate. The XAI adapter keeps the current reviewed
-Grok Build compatibility revision (`1.0.6`) in `XAI_GROK_CLIENT_VERSION` and sends it on both the
+Grok Build compatibility revision (`1.0.41`) in `XAI_GROK_CLIENT_VERSION` and sends it on both the
 authenticated `/v1/models` catalog and `/v1/responses` inference paths. It does not substitute the
 Clarvis product version for that header. Responses-backed Grok catalog rows always carry
 `tool_calling`. `vision` follows published image-input modalities (`input_modalities`, `modalities`,

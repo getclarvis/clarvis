@@ -34,9 +34,11 @@ describe("memory tools", () => {
     expect(names.indexOf("query_memories")).toBeLessThan(names.indexOf("grep_memories"));
   });
 
-  test("write_memory persists the leaf and reindexes the navigation", async () => {
+  test("write_memory ignores extra arguments and persists only the requested content", async () => {
     const res = await tools.write_memory!.execute({
       path: "infra/bun/MEMORY.md",
+      commentary: "extra",
+      authority: "confirmed",
       content: "---\ndescription: pinned via mise\n---\n# Bun",
     });
     expect(res.isError).toBe(false);
@@ -260,11 +262,11 @@ describe("memory tools", () => {
   });
 
   describe("derived parameter schemas", () => {
-    test("every tool advertises a closed object schema with no $schema document key", () => {
+    test("every tool advertises an input schema accepting extra fields without a $schema document key", () => {
       for (const tool of Object.values(tools)) {
         const params = tool.parameters;
         expect(params.type).toBe("object");
-        expect(params.additionalProperties).toBe(false);
+        expect(params.additionalProperties).not.toBe(false);
         expect(params).not.toHaveProperty("$schema");
         expect(typeof params.properties).toBe("object");
       }

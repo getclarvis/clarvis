@@ -161,7 +161,8 @@ The root also exports `enumerateResources`, `readBoundedBytes`, `readBoundedText
 whole-resource read remains capped at 256 KiB and 50 000 decoded characters. A chunked read admits a
 complete regular file of at most 8 MiB, but returns one UTF-8 page of at most 256 KiB and 50 000
 characters; its continuation cursor is a byte offset and never splits a UTF-8 sequence or surrogate
-pair. `load_skill` has the closed shape `{ name }` and only loads the body. Bundled files use the
+pair. Extra argument fields are ignored; known fields and resource boundaries remain validated.
+`load_skill` consumes `{ name }` and only loads the body. Bundled files use the
 separate `read_skill_resource` shape `{ name, resource, offset }`; every field is required, the first
 page uses byte offset zero. The resource path is resolved from the selected skill directory;
 absolute and parent-relative paths are accepted. The resource reader validates every chunk returned by a provider and fails closed on a

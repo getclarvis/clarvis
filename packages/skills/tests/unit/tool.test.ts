@@ -22,11 +22,11 @@ describe("loadSkillTool definition", () => {
       properties: Record<string, unknown>;
     };
     expect(schema.required).toEqual(["name"]);
-    expect(schema.additionalProperties).toBe(false);
+    expect(schema.additionalProperties).toBe(true);
     expect(Object.keys(schema.properties)).toEqual(["name"]);
   });
 
-  it("uses a separate strict tool for resource pages", () => {
+  it("uses a separate resource tool with validated known fields", () => {
     expect(loadSkillTool.description).toContain("accepts only `name`");
     expect(loadSkillTool.description).toContain("clearly matches");
     expect(loadSkillTool.description).not.toContain("only when the task calls for that skill");
@@ -37,7 +37,7 @@ describe("loadSkillTool definition", () => {
       properties: Record<string, { pattern?: string }>;
     };
     expect(schema.required).toEqual(["name", "resource", "offset"]);
-    expect(schema.additionalProperties).toBe(false);
+    expect(schema.additionalProperties).toBe(true);
     expect(Object.keys(schema.properties)).toEqual(["name", "resource", "offset"]);
     expect(schema.properties.resource?.pattern).toBeUndefined();
   });

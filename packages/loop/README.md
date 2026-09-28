@@ -64,6 +64,11 @@ The engine calls models through the `LLMProvider` port and applies policy for tr
 and MCP calls. Provider transport, trace persistence, and MCP connections live in `@clarvis/llm`,
 `@clarvis/trace`, and `@clarvis/mcp-client` respectively.
 
+Oversized tool responses may be preserved in a generic spill file. Its marker
+says “complete tool response”: it preserves one response, including any
+upstream truncation, rather than promising a complete command log. Shell
+responses identify their separate run-owned stdout/stderr logs.
+
 A run-scoped tool-interrupt registry listens for operator requests and aborts only the matching
 child controller for an interruptible builtin `shell`. The loop then records an operator
 interruption, returns that fact to the model, and continues. Run cancellation still wins when both
@@ -90,6 +95,10 @@ The durable vocabulary and replay contract are owned by
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.
+
+`ask_user` ignores extra argument fields and passes only the validated question and options to the
+human interaction port. Schemas supplied for custom results or external tools keep their declared
+additional-property rules.
 
 ## Contract
 

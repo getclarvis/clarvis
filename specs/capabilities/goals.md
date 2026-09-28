@@ -68,11 +68,10 @@ execution agent rather than formulation. Production: `goalAgentPrompt` in
 [prompt.ts](../../packages/goal/src/agent/prompt.ts). Test: the fixed prompt assertions in
 [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts).
 
-The strict structured result is either ready or insufficient. Ready output contains objective,
-qualitative/human criteria, constraints, exclusions, assumptions and normative source paths. Unknown
-fields, empty strings, duplicate normalized semantics and bounds violations are rejected. The model
-cannot supply host criteria, IDs, revisions, limits, digests, execution identities, provider settings
-or authority. `formulationCriteria` normalizes descriptions and assigns ordered `criterion-NN` IDs.
+The structured result is either ready or insufficient. Ready output contains objective,
+qualitative/human criteria, constraints, exclusions, assumptions and normative source paths. Unknown fields are discarded at the result and criterion levels. Empty strings, duplicate normalized
+semantics and bounds violations are rejected. Host criteria remain invalid; supplied IDs, revisions,
+limits, digests, execution identities, provider settings and authority are discarded. `formulationCriteria` normalizes descriptions and assigns ordered `criterion-NN` IDs.
 Invalid output fails the operation without partial creation or fallback to the seed.
 Human criteria apply only when an explicit human decision is indispensable to the currently
 requested result. Permission boundaries for future or excluded work remain constraints/exclusions;
@@ -394,6 +393,28 @@ request and verified bounded normative-source snapshots. `revise_definition` ret
 correction to the selected main agent; `accept_definition` permits activation. At most three
 formulation/review attempts occur. Completion must cover the definition, objective and exactly the
 qualitative criterion IDs supplied by the host.
+
+Model-facing Goal tools discard unknown fields before calling the host, including nested candidate
+assessments, creation criteria and verification descriptors. An extra identity or budget field
+cannot change the host binding or allowance. Transport requests and persisted state retain their
+strict schemas. Production: `goalModelToolInputSchema`, `goalCreationInputSchema` and
+`getGoalInputSchema` in `packages/goal/src/model-input.ts` and `packages/goal/src/tools.ts`.
+Test: `discards extra Goal tool fields without accepting invalid known values` in
+`packages/goal/tests/unit/tool-schema.test.ts` and
+`ignores foreign scope and budget fields on a valid model update` in
+`packages/goal/tests/unit/capability.test.ts`.
+
+Steward decisions and nested assessments accept unknown fields and discard them before semantic
+validation and settlement. The input JSON Schema permits these extras at `submit_result`; known
+fields, required values, verdict consistency and target references remain validated.
+Production: `goalStewardResultSchema` in
+[steward-types.ts](../../packages/goal/src/agent/steward-types.ts) and `goalStewardOutputSchema` in
+[steward-request.ts](../../packages/goal/src/agent/steward-request.ts).
+Test: `discards extra fields while preserving known-field and semantic validation` in
+[steward.test.ts](../../packages/goal/tests/unit/steward.test.ts) and
+`reviews completion with extra fields without receiving repository instructions` in
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
+
 Qualitative criterion IDs must match the host-supplied set. Evidence IDs on Steward assessments are
 optional and are not validated against a tool-result catalog. The private frame is a conversational
 projection: persisted Goal contract, original operator request, later operator corrections, the
@@ -453,8 +474,8 @@ or authority.
 Production: `prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts),
 `createStewardExecutionRuntime` in [steward-runtime.ts](../../packages/kernel/src/goals/steward-runtime.ts),
 and `buildGoalStewardRequest` in [steward-request.ts](../../packages/goal/src/agent/steward-request.ts).
-Test: `reviews completion without receiving repository instructions`, `returns unfinished work to
-the same run and preserves the private serialized prefix`, and `completion review receives
+Test: `reviews completion with extra fields without receiving repository instructions`,
+`returns unfinished work to the same run and preserves the private serialized prefix`, and `completion review receives
 authenticated checkpoint history without repository instructions` in
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 

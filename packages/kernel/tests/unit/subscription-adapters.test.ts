@@ -306,7 +306,7 @@ describe("subscription transport authority", () => {
     expect(request?.headers.get("x-grok-user-id")).toBe("account-safe");
     expect(request?.headers.get("x-grok-model-override")).toBe("grok-code");
     expect(request?.headers.get("x-xai-token-auth")).toBe("xai-grok-cli");
-    expect(request?.headers.get("x-grok-client-version")).toBe("1.0.6");
+    expect(request?.headers.get("x-grok-client-version")).toBe("1.0.41");
     expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
     expect(request?.headers.get("x-grok-conv-id")).toMatch(/^[a-f0-9]{64}$/);
   });
@@ -376,7 +376,7 @@ describe("subscription transport authority", () => {
         },
       ],
     });
-    expect(request?.url).toContain("client_version=0.153.2");
+    expect(request?.url).toContain("client_version=0.158.0");
     expect(request?.url).not.toContain(encodeURIComponent(VERSION));
     expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
   });
@@ -416,7 +416,7 @@ describe("subscription transport authority", () => {
       ],
     });
     expect(request?.url).toBe("https://cli-chat-proxy.grok.com/v1/models");
-    expect(request?.headers.get("x-grok-client-version")).toBe("1.0.6");
+    expect(request?.headers.get("x-grok-client-version")).toBe("1.0.41");
     expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
   });
 

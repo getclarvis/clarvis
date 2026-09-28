@@ -778,3 +778,27 @@ describe("a leader's display title", () => {
     expect(t.registry.list()).toEqual([]);
   });
 });
+
+test("discards extra fields from built-in leader results before handing them to the manager", async () => {
+  const { DISCOVERY_SCHEMA } = await import("#src/schemas.ts");
+  const { createToolArgValidator } = await import("@clarvis/loop");
+  const value = {
+    scope: "Review",
+    evidence: [{ path: "file", observation: "Read", extra: true }],
+    work_items: [],
+    unknowns: [],
+    extra: true,
+  };
+  const runDeps = workflowRunDeps(() => Promise.resolve(completed(value, 1)));
+  const ctx = makeCtx({ runDeps, assemble: leaderAssembler });
+  const schema = structuredClone(DISCOVERY_SCHEMA);
+  expect(createToolArgValidator().validate(schema, value)).toBeNull();
+  expect(createToolArgValidator().validate(schema, { ...value, scope: 42 })).not.toBeNull();
+  const result = await runLeader({ title: "Review", prompt: "Inspect", expectSchema: schema }, ctx);
+  expect(result.result).toEqual({
+    scope: "Review",
+    evidence: [{ path: "file", observation: "Read" }],
+    work_items: [],
+    unknowns: [],
+  });
+});

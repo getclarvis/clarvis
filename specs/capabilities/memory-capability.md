@@ -33,13 +33,20 @@ health, reindex, and job listing/retry over the protocol wire.
 
 ## 2. Surface
 
+Unknown Memory tool arguments are discarded before execution. The input JSON Schema permits extras,
+while the Zod parser retains only declared fields. Required values, paths and owner-only document
+markers remain validated. Production: `MEMORY_TOOL_CONTRACTS`, `memoryToolParameters` and
+`createMemoryTools` in `packages/memory/src/tool-contract.ts` and `packages/memory/src/tools.ts`.
+Test: `write_memory ignores extra arguments and persists only the requested content` and
+`owner-only authority markers` in `packages/memory/tests/component/tools.test.ts`.
+
 ### 2.1 The seven model-facing tools
 
 Declared once, canonically, in `MEMORY_TOOL_CONTRACTS` (`packages/memory/src/tool-contract.ts`)
 and built as executable bodies by `createMemoryTools` (`packages/memory/src/tools.ts`, returned
 list order at packages/memory/src/tools.ts):
 
-| Tool | Schema (all `.strict()`) | Required | Effect |
+| Tool | Schema (unknown keys discarded) | Required | Effect |
 | --- | --- | --- | --- |
 | `list_memories` | `{ prefix?: string }` | none | read |
 | `query_memories` | `{ query: string; limit?: number(1-20, default 5); prefix?: string; kinds?: ("profile"\|"topic"\|"memory")[] }` | `query` | read |
@@ -51,10 +58,10 @@ list order at packages/memory/src/tools.ts):
 
 Source: packages/memory/src/tool-contract.ts. `memoryToolParameters(name)` (packages/memory/src/tool-contract.ts) derives the
 advertised JSON Schema from the same zod schema that validates at execution, stripping `$schema`
-and closing `additionalProperties: false` (also duplicated in `jsonSchemaOf`, packages/memory/src/tools.ts — the
-same derivation, once per module). Confirmed by
-`packages/memory/tests/component/tools.test.ts`: every tool's `parameters` is a closed
-object schema with the exact zod-required fields as `required`, and that a
+in input mode so extras reach the normalizing parser (also used by `jsonSchemaOf` in
+packages/memory/src/tools.ts). Confirmed by
+`packages/memory/tests/component/tools.test.ts`: every tool's `parameters` is an input
+object schema accepting extras with the exact zod-required fields as `required`, and that a
 schema-inexpressible refinement (`delete_memory` on `PROFILE.md`) still fails at execute time with
 `Invalid arguments`.
 

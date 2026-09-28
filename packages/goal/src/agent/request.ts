@@ -40,14 +40,14 @@ const ready = z
       .max(GOAL_GUIDED_SEED_MAX_CHARS)
       .transform((value) => value.replace(/\s+/gu, " ")),
     criteria: z
-      .array(z.object({ description: text, kind: z.enum(["qualitative", "human"]) }).strict())
+      .array(z.object({ description: text, kind: z.enum(["qualitative", "human"]) }).strip())
       .max(32),
     constraints: semanticList,
     exclusions: semanticList,
     assumptions: semanticList,
     normative_source_paths: z.array(z.string().trim().min(1).max(4096)).max(16),
   })
-  .strict()
+  .strip()
   .superRefine((value, ctx) => {
     for (const key of [
       "constraints",
@@ -70,7 +70,7 @@ const ready = z
 
 const insufficient = z
   .object({ status: z.literal("insufficient_context"), question: text, reason: text })
-  .strict();
+  .strip();
 
 export const goalFormulationResultSchema = z.discriminatedUnion("status", [ready, insufficient]);
 
@@ -145,7 +145,7 @@ export const goalFormulationOutputSchema = {
   oneOf: [
     {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       required: [
         "status",
         "objective",
@@ -163,7 +163,7 @@ export const goalFormulationOutputSchema = {
           maxItems: 32,
           items: {
             type: "object",
-            additionalProperties: false,
+            additionalProperties: true,
             required: ["description", "kind"],
             properties: {
               description: { type: "string", minLength: 1, maxLength: 4096 },
@@ -179,7 +179,7 @@ export const goalFormulationOutputSchema = {
     },
     {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       required: ["status", "question", "reason"],
       properties: {
         status: { const: "insufficient_context" },

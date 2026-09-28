@@ -13,20 +13,20 @@ const evidenceIds = z.array(goalEvidenceRefSchema.shape.id).max(8).default([]);
 export const goalModelAssessmentSchema = goalAssessmentSchema
   .omit({ evidence: true })
   .extend({ evidence_ids: evidenceIds })
-  .strict();
+  .strip();
 
-export const goalProgressInputSchema = z.object({ summary, evidence_ids: evidenceIds }).strict();
+export const goalProgressInputSchema = z.object({ summary, evidence_ids: evidenceIds }).strip();
 export const goalCheckpointInputSchema = goalProgressInputSchema.extend({ next_step: summary });
 export const goalCandidateInputSchema = z
   .object({ summary, assessments: z.array(goalModelAssessmentSchema).min(1).max(32) })
-  .strict();
+  .strip();
 
 /** User-only controls and caller-selected identities are absent from the model vocabulary. */
 export const goalModelUpdateSchema = z.discriminatedUnion("action", [
   goalProgressInputSchema.extend({ action: z.literal("progress") }),
   goalCheckpointInputSchema.extend({ action: z.literal("checkpoint") }),
   goalCandidateInputSchema.extend({ action: z.literal("candidate") }),
-  z.object({ action: z.literal("blocked"), reason: summary }).strict(),
+  z.object({ action: z.literal("blocked"), reason: summary }).strip(),
 ]);
 
 /**
@@ -36,21 +36,33 @@ export const goalModelUpdateSchema = z.discriminatedUnion("action", [
  */
 export const goalModelToolInputSchema = z
   .object({ update: z.union(goalModelUpdateSchema.options) })
-  .strict();
+  .strip();
 
 export type GoalProgressInput = z.infer<typeof goalProgressInputSchema>;
 export type GoalCheckpointInput = z.infer<typeof goalCheckpointInputSchema>;
 export type GoalCandidateInput = z.infer<typeof goalCandidateInputSchema>;
 
+const verification = goalCriterionSchema.shape.verification.unwrap();
+const goalModelCriterionSchema = goalCriterionSchema
+  .safeExtend({
+    verification: z
+      .discriminatedUnion("kind", [
+        verification.options[0].strip(),
+        verification.options[1].strip(),
+      ])
+      .optional(),
+  })
+  .strip();
+
 /** Main-agent proposal used by the host-bound create_goal tool. */
 export const goalCreationInputSchema = z
   .object({
     objective: z.string().trim().min(1).max(16384),
-    criteria: z.array(goalCriterionSchema).max(32).default([]),
+    criteria: z.array(goalModelCriterionSchema).max(32).default([]),
     constraints: z.array(z.string().trim().min(1).max(4096)).max(16).default([]),
     exclusions: z.array(z.string().trim().min(1).max(4096)).max(16).default([]),
     assumptions: z.array(z.string().trim().min(1).max(4096)).max(16).default([]),
   })
-  .strict();
+  .strip();
 
 export type GoalCreationInput = z.infer<typeof goalCreationInputSchema>;

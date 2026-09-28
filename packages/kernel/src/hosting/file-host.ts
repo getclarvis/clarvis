@@ -575,6 +575,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             reviewDefinition: async (input) => {
               const runtime = kernel.goalStewardRuntime(input.token_limit, "5m", owner);
               return runtime.run({
+                mode: "definition",
                 execution_id: generateExecutionId(),
                 session_id: input.session_id,
                 projection: JSON.stringify({
@@ -594,7 +595,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
                 budget: runtime.budget,
                 prompt_cache_ttl: runtime.promptCacheTtl,
                 async validateResult(value) {
-                  validateGoalStewardResult(value, "definition", []);
+                  validateGoalStewardResult(value, "definition");
                 },
               });
             },

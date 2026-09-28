@@ -75,6 +75,7 @@ export function createStewardExecutionRuntime(options: {
     deps: { ...options.deps, capabilities: [] },
   };
   const canonical = buildGoalStewardRequest(runtime, {
+    mode: "completion",
     execution_id: "identity",
     session_id: "identity",
     projection: "frame",
@@ -105,7 +106,9 @@ export function createStewardExecutionRuntime(options: {
     async run(input) {
       const tracker = createGoalUsageTracker();
       const trace: TraceEvent[] = [];
-      const gate = createStewardResultGate((value) => input.validateResult(value, trace));
+      const gate = createStewardResultGate(input.mode, (value) =>
+        input.validateResult(value, trace),
+      );
       try {
         const result = await runGoalSteward(
           {

@@ -513,7 +513,10 @@ export function createGoalService(options: {
             signal: authority.signal,
             token_limit: reviewTokenLimit,
           });
-          if (reviewed.result.decision !== "definition")
+          if (
+            reviewed.result.verdict !== "accept_definition" &&
+            reviewed.result.verdict !== "revise_definition"
+          )
             throw new Error("Goal Steward returned another review mode");
           accumulatedUsage = appendUsage(accumulatedUsage, reviewed.usage);
           accumulatedAccounting.push(...(reviewed.accounting ?? []));
@@ -528,7 +531,7 @@ export function createGoalService(options: {
             if (remaining < 0) throw new Error("Goal formulation token allowance exhausted");
             break;
           }
-          revisionGuidance = reviewed.result.guidance;
+          revisionGuidance = reviewed.result.message;
           previousDefinition = analyzed.result;
           if (attempt === 2) throw new Error("Goal definition revision limit reached");
         }

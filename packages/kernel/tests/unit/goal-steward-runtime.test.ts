@@ -42,17 +42,7 @@ it("excludes Judge and workspace tools while retaining only its result gate", as
         executionId: "steward",
         response: {
           status: "completed",
-          result: {
-            decision: "completion",
-            verdict: "achieved",
-            summary: "Work is complete",
-            assessments: ["definition", "objective"].map((scope) => ({
-              scope,
-              verdict: "satisfied",
-              rationale: "Host evidence is sufficient",
-              evidence_ids: [],
-            })),
-          },
+          result: { verdict: "achieved", message: "Work is complete" },
           usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
         },
       };
@@ -61,6 +51,7 @@ it("excludes Judge and workspace tools while retaining only its result gate", as
   expect(
     (
       await runtime.run({
+        mode: "completion",
         execution_id: "steward",
         session_id: "session",
         projection: "frame",
@@ -68,8 +59,8 @@ it("excludes Judge and workspace tools while retaining only its result gate", as
         prompt_cache_ttl: "1h",
         validateResult: async () => undefined,
       })
-    ).result.decision,
-  ).toBe("completion");
+    ).result.verdict,
+  ).toBe("achieved");
   expect(executions).toBe(1);
 });
 
@@ -116,7 +107,7 @@ for (const rejected of [false, true]) {
     const validation = Promise.withResolvers<void>();
     const entered = Promise.withResolvers<void>();
     let cancelled: AgentResult | null = null;
-    const capability = createStewardResultGate(async () => {
+    const capability = createStewardResultGate("completion", async () => {
       entered.resolve();
       await validation.promise;
     });
@@ -135,7 +126,7 @@ for (const rejected of [false, true]) {
 }
 
 it("nudges once then fails closed when Steward result validation keeps rejecting", async () => {
-  const capability = createStewardResultGate(async () => {
+  const capability = createStewardResultGate("completion", async () => {
     throw new Error("bad review");
   });
   const run = await capability.forRun({} as RunCapabilityContext);
@@ -151,8 +142,8 @@ it("nudges once then fails closed when Steward result validation keeps rejecting
       status: "error",
       partialText: "partial",
       error: {
-        code: "goal_steward_failed",
-        message: "Goal Steward result validation failed",
+        code: "invalid_output",
+        message: "Goal Steward did not return a recognized verdict",
       },
     },
   });

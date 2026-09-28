@@ -6,21 +6,10 @@ import {
   validateGoalStewardResult,
 } from "#src/index.ts";
 
-const assessment = (
-  scope: "definition" | "objective" | "criterion",
-  verdict: "satisfied" | "unsatisfied" | "inconclusive" = "satisfied",
-  criterion_id?: string,
-) => ({
-  scope,
-  verdict,
-  ...(criterion_id === undefined ? {} : { criterion_id }),
-  rationale: "Observed the requested output",
-  evidence_ids: [],
-});
-
 describe("Goal Steward contract", () => {
   it("keeps profile, schema, catalog and affinity fixed while appending a new frame", () => {
     const input = {
+      mode: "completion" as const,
       execution_id: "first",
       session_id: "conversation",
       projection: "initial definition",
@@ -47,7 +36,7 @@ describe("Goal Steward contract", () => {
     });
     expect(first.profiles).toEqual(next.profiles);
     expect(first.output_schema).toEqual(next.output_schema);
-    expect(first.output_schema).toMatchObject({ type: "object", oneOf: expect.any(Array) });
+    expect(first.output_schema).toMatchObject({ type: "object" });
     expect(first.profiles[0]).toMatchObject({
       name: "goal-steward",
       tools: [],
@@ -68,148 +57,77 @@ describe("Goal Steward contract", () => {
     });
     expect(fresh.messages).toEqual([{ role: "user", content: "different goal" }]);
     expect(fresh.profiles).toEqual(first.profiles);
+    const definition = buildGoalStewardRequest(runtime, { ...input, mode: "definition" });
+    expect(JSON.stringify(definition.output_schema)).toContain(
+      "accept_definition, revise_definition",
+    );
+    expect(JSON.stringify(first.output_schema)).toContain("achieved, needs_work, needs_evidence");
+    expect(definition.profiles).toEqual(first.profiles);
+
     expect(fresh.output_schema).toEqual(first.output_schema);
   });
 
-  it("discards extra fields while preserving known-field and semantic validation", () => {
-    const complete = {
-      decision: "completion" as const,
-      verdict: "achieved" as const,
-      summary: "Delivered",
-      assessments: [assessment("definition"), assessment("objective")],
-    };
-    const withExtras = {
-      ...complete,
-      guidance: "Unneeded completion commentary",
-      execution_id: "untrusted",
-      assessments: complete.assessments.map((item) => ({ ...item, extra: { ignored: true } })),
-    };
-    expect(validateGoalStewardResult(withExtras, "completion", [])).toEqual(complete);
-    expect(
-      validateGoalStewardResult(
-        { decision: "definition", verdict: "accept_definition", summary: "Aligned", extra: true },
-        "definition",
-        [],
-      ),
-    ).toEqual({ decision: "definition", verdict: "accept_definition", summary: "Aligned" });
-    for (const change of [{ verdict: "complete" }, { summary: 42 }, { assessments: [] }]) {
-      expect(goalStewardResultSchema.safeParse({ ...withExtras, ...change }).success).toBe(false);
+  it("accepts the verdict regardless of auxiliary fields or contradictory assessments", () => {
+    for (const verdict of ["achieved", "needs_work", "needs_evidence"] as const) {
+      expect(
+        validateGoalStewardResult(
+          {
+            verdict,
+            message: "Review commentary",
+            decision: "definition",
+            summary: 42,
+            next_step: null,
+            execution_id: "foreign",
+            assessments: [
+              { scope: "definition", criterion_id: "definition", verdict: "unsatisfied" },
+              { scope: "objective", criterion_id: "objective", verdict: "inconclusive" },
+            ],
+          },
+          "completion",
+        ),
+      ).toEqual({ verdict, message: "Review commentary" });
     }
   });
 
-  it("rejects unsupported decisions, inconsistent verdicts and invented target references", () => {
-    expect(
-      goalStewardResultSchema.safeParse({
-        decision: "steer",
-        summary: "Focus",
-        guidance: "Finish",
-        execution_id: "fake",
-      }).success,
-    ).toBe(false);
-    const complete = {
-      decision: "completion" as const,
-      verdict: "achieved",
-      summary: "Entregue",
-      assessments: [
-        assessment("definition"),
-        assessment("objective"),
-        assessment("criterion", "satisfied", "c1"),
-      ],
-    };
-    expect(validateGoalStewardResult(complete, "completion", ["c1"]).decision).toBe("completion");
-    expect(() => validateGoalStewardResult(complete, "completion", ["c2"])).toThrow();
-    expect(
-      goalStewardResultSchema.safeParse({
-        ...complete,
-        assessments: [assessment("definition"), assessment("objective", "unsatisfied")],
-      }).success,
-    ).toBe(false);
-    expect(
-      goalStewardResultSchema.safeParse({
-        ...complete,
-        assessments: [assessment("definition"), assessment("definition")],
-      }).success,
-    ).toBe(false);
-    expect(() =>
-      validateGoalStewardResult({ decision: "aligned", summary: "On track" }, "completion", []),
-    ).toThrow();
+  it("normalizes optional commentary without rejecting a recognized verdict", () => {
+    for (const verdict of [
+      "achieved",
+      "needs_work",
+      "needs_evidence",
+      "accept_definition",
+      "revise_definition",
+    ] as const) {
+      const mode = verdict.endsWith("definition") ? "definition" : "completion";
+      const fallback = validateGoalStewardResult({ verdict }, mode);
+      expect(fallback.message.length).toBeGreaterThan(0);
+      for (const message of [undefined, null, 42, {}, [], "", "  "])
+        expect(validateGoalStewardResult({ verdict, message }, mode)).toEqual(fallback);
+      expect(
+        validateGoalStewardResult({ verdict, message: "  Explain the result  " }, mode).message,
+      ).toBe("Explain the result");
+      expect(validateGoalStewardResult({ verdict, message: "a".repeat(5000) }, mode).message).toBe(
+        "a".repeat(4096),
+      );
+    }
   });
-});
 
-it.each([
-  {
-    label: "Entrega observada / observed delivery",
-    verdict: "achieved",
-    objective: "satisfied",
-    criterion: "satisfied",
-    next: undefined,
-  },
-  {
-    label: "Promessa sem entrega / promise without delivery",
-    verdict: "needs_work",
-    objective: "unsatisfied",
-    criterion: "satisfied",
-    next: "Entregue o resultado / deliver the result",
-  },
-  {
-    label: "Pedido composto incompleto / partial compound request",
-    verdict: "needs_work",
-    objective: "unsatisfied",
-    criterion: "unsatisfied",
-    next: "Conclua a segunda parte / finish the second part",
-  },
-  {
-    label: "Restrição violada / violated constraint",
-    verdict: "needs_work",
-    objective: "satisfied",
-    criterion: "unsatisfied",
-    next: "Respeite a restrição / satisfy the constraint",
-  },
-  {
-    label: "Exclusão invadida / excluded work",
-    verdict: "needs_work",
-    objective: "satisfied",
-    criterion: "unsatisfied",
-    next: "Retorne ao escopo / return to scope",
-  },
-  {
-    label: "Plan incompleto / incomplete Plan",
-    verdict: "needs_work",
-    objective: "unsatisfied",
-    criterion: "satisfied",
-    next: "Finalize a tarefa necessária / finish the necessary task",
-  },
-  {
-    label: "Artifact alterado / changed artifact",
-    verdict: "needs_evidence",
-    objective: "inconclusive",
-    criterion: "satisfied",
-    next: "Provide current artifact evidence",
-  },
-  {
-    label: "Ambiguidade / ambiguity",
-    verdict: "needs_evidence",
-    objective: "inconclusive",
-    criterion: "inconclusive",
-    next: "Clarify the ambiguous evidence",
-  },
-])("keeps bilingual assessment consistency: $label", (scenario) => {
-  const result = {
-    decision: "completion" as const,
-    verdict: scenario.verdict,
-    summary: scenario.label,
-    assessments: [
-      assessment("definition"),
-      assessment("objective", scenario.objective),
-      assessment("criterion", scenario.criterion, "requested"),
-    ],
-    ...(scenario.next === undefined ? {} : { next_step: scenario.next }),
-  };
-  expect(validateGoalStewardResult(result, "completion", ["requested"])).toEqual(result);
-  if (scenario.verdict !== "achieved")
-    expect(goalStewardResultSchema.safeParse({ ...result, verdict: "achieved" }).success).toBe(
-      false,
-    );
+  it("rejects only missing, unrecognized or wrong-operation verdicts", () => {
+    for (const value of [
+      null,
+      [],
+      {},
+      { verdict: "complete" },
+      { verdict: 1 },
+      { verdict: ["achieved"] },
+    ])
+      expect(() => validateGoalStewardResult(value, "completion")).toThrow();
+    for (const verdict of ["accept_definition", "revise_definition"])
+      expect(() => validateGoalStewardResult({ verdict }, "completion")).toThrow();
+    expect(() => validateGoalStewardResult({ verdict: "achieved" }, "definition")).toThrow();
+    expect(
+      goalStewardResultSchema.parse({ verdict: "accept_definition", message: "Aligned" }),
+    ).toEqual({ verdict: "accept_definition", message: "Aligned" });
+  });
 });
 
 describe("Steward settlement", () => {
@@ -242,6 +160,7 @@ describe("Steward settlement", () => {
       objective_revision: 1,
     };
     const input = {
+      mode: "completion" as const,
       binding,
       executionId: "review",
       usage: { kind: "complete" as const, input: 100, output: 10, cached: 60 },
@@ -307,6 +226,7 @@ describe("Steward settlement", () => {
   it("retains measured usage on invalid and failed isolated runs", async () => {
     const { runGoalSteward } = await import("#src/index.ts");
     const input = {
+      mode: "completion" as const,
       execution_id: "review",
       session_id: "session",
       projection: "frame",
@@ -340,10 +260,8 @@ describe("Steward settlement", () => {
                       status === "invalid"
                         ? {}
                         : {
-                            decision: "completion",
                             verdict: "achieved",
-                            summary: "Aligned",
-                            assessments: [assessment("definition"), assessment("objective")],
+                            message: "Aligned",
                           },
                   }),
             usage: {
@@ -375,6 +293,7 @@ describe("Steward settlement", () => {
       else
         await expect(runGoalSteward(runtime, input)).rejects.toMatchObject({
           execution_id: "review",
+          ...(status === "invalid" ? { code: "invalid_output" } : {}),
           usage: { input: 100, cached: 60 },
         });
     }

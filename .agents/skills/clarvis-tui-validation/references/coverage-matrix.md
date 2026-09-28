@@ -96,7 +96,7 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `CMD-26` | `/loop` duration/cron, list, pause/resume/cancel and live-session lifetime                                                                                                             |
 | `CMD-27` | `/background`, list and targeted cancellation; local host exit only after receipt; SSH handoff refusal                                                                                 |
 | `CMD-28` | `/attach <execution-id>` and explicit control takeover in discovery                                                                                                                    |
-| `CMD-29` | `/goal` semantic formulation with persistent read/search/thinking activity, inspection, literal creation, reviewed edit/replacement, pause/resume/cancel/clear and host-started stages |
+| `CMD-29` | `/goal` semantic formulation with persistent read/search/thinking activity, inspection, literal creation, reviewed edit/replacement, pause/resume/cancel/clear, host-started stages and verdict-driven Steward review with optional commentary |
 
 ### Execution approval commands
 

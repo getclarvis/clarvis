@@ -155,17 +155,7 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
 describe("Goal Steward coordinator", () => {
   it("reviews only completion and retains independently charged usage", async () => {
     const f = fixture();
-    f.settle.resolve({
-      decision: "completion",
-      verdict: "achieved",
-      summary: "Delivered",
-      assessments: ["definition", "objective"].map((scope) => ({
-        scope: scope as "definition" | "objective",
-        verdict: "satisfied",
-        rationale: "Answer observed",
-        evidence_ids: [],
-      })),
-    });
+    f.settle.resolve({ verdict: "achieved", message: "Delivered" });
     expect((await f.coordinator.reviewCompletion({ mode: "text", text: "The answer" })).kind).toBe(
       "achieved",
     );
@@ -186,17 +176,7 @@ describe("Goal Steward coordinator", () => {
       message: "Changed direction",
       iteration_ref: 1,
     } as TraceEvent);
-    f.settle.resolve({
-      decision: "completion",
-      verdict: "achieved",
-      summary: "Old",
-      assessments: ["definition", "objective"].map((scope) => ({
-        scope: scope as "definition" | "objective",
-        verdict: "satisfied",
-        rationale: "Old direction",
-        evidence_ids: [],
-      })),
-    });
+    f.settle.resolve({ verdict: "achieved", message: "Old" });
     expect((await pending).kind).toBe("interrupted");
     await f.coordinator.closeCoordinator();
     expect(f.charged()).toBe(1);
@@ -205,17 +185,7 @@ describe("Goal Steward coordinator", () => {
 
   it("requires exact semantic targets and reuses a fenced completion without another model call", async () => {
     const f = fixture();
-    f.settle.resolve({
-      decision: "completion",
-      verdict: "achieved",
-      summary: "Delivered",
-      assessments: ["definition", "objective"].map((scope) => ({
-        scope: scope as "definition" | "objective",
-        verdict: "satisfied",
-        rationale: "Answer observed",
-        evidence_ids: [],
-      })),
-    });
+    f.settle.resolve({ verdict: "achieved", message: "Delivered" });
     const attempt = { mode: "text" as const, text: "The answer" };
     expect((await f.coordinator.reviewCompletion(attempt)).kind).toBe("achieved");
     expect((await f.coordinator.reviewCompletion(attempt)).kind).toBe("achieved");
@@ -230,18 +200,7 @@ describe("Goal Steward coordinator", () => {
     const pending = f.coordinator.reviewCompletion({ mode: "text", text: "The answer" });
     await f.admitted.promise;
     f.setPlanRevision("edited");
-    f.settle.resolve({
-      decision: "completion",
-      verdict: "needs_work",
-      summary: "Review",
-      next_step: "Finish the current plan",
-      assessments: ["definition", "objective"].map((scope) => ({
-        scope: scope as "definition" | "objective",
-        verdict: "unsatisfied",
-        rationale: "Plan changed",
-        evidence_ids: [],
-      })),
-    });
+    f.settle.resolve({ verdict: "needs_work", message: "Finish the current plan" });
     expect((await pending).kind).toBe("needs_work");
     await f.coordinator.closeCoordinator();
     expect(f.charged()).toBe(1);
@@ -249,17 +208,7 @@ describe("Goal Steward coordinator", () => {
 
   it("fails closed on unknown auxiliary usage and retains it outside the work allowance", async () => {
     const f = fixture({ usage: { kind: "unknown" } });
-    f.settle.resolve({
-      decision: "completion",
-      verdict: "achieved",
-      summary: "Claimed",
-      assessments: ["definition", "objective"].map((scope) => ({
-        scope: scope as "definition" | "objective",
-        verdict: "satisfied",
-        rationale: "Claimed",
-        evidence_ids: [],
-      })),
-    });
+    f.settle.resolve({ verdict: "achieved", message: "Claimed" });
     expect((await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).kind).toBe(
       "interrupted",
     );
@@ -290,17 +239,7 @@ describe("Goal Steward recovery", () => {
   it("retires an orphaned reservation once and never replays a write", async () => {
     const f = fixture();
     f.state().current!.steward.pending_execution_id = "crashed-steward";
-    f.settle.resolve({
-      decision: "completion",
-      verdict: "achieved",
-      summary: "Recovered completion review",
-      assessments: ["definition", "objective"].map((scope) => ({
-        scope: scope as "definition" | "objective",
-        verdict: "satisfied",
-        rationale: "Answer observed",
-        evidence_ids: [],
-      })),
-    });
+    f.settle.resolve({ verdict: "achieved", message: "Recovered completion review" });
     expect((await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).kind).toBe(
       "achieved",
     );
@@ -317,17 +256,7 @@ for (const maxReviews of [1, 2]) {
   it(`admits the last bounded completion review (${maxReviews})`, async () => {
     const f = fixture({ maxReviews });
     f.state().current!.runs[0]!.steward_review_count = maxReviews - 1;
-    f.settle.resolve({
-      decision: "completion",
-      verdict: "achieved",
-      summary: "Delivered",
-      assessments: ["definition", "objective"].map((scope) => ({
-        scope: scope as "definition" | "objective",
-        verdict: "satisfied",
-        rationale: "Observed",
-        evidence_ids: [],
-      })),
-    });
+    f.settle.resolve({ verdict: "achieved", message: "Delivered" });
     expect((await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).kind).toBe(
       "achieved",
     );
@@ -339,18 +268,7 @@ for (const maxReviews of [1, 2]) {
 }
 it("returns a semantic evidence request without classifying it as a runtime failure", async () => {
   const f = fixture();
-  f.settle.resolve({
-    decision: "completion",
-    verdict: "needs_evidence",
-    next_step: "Provide the missing evidence",
-    summary: "Evidence unavailable",
-    assessments: ["definition", "objective"].map((scope) => ({
-      scope: scope as "definition" | "objective",
-      verdict: "inconclusive",
-      rationale: "Missing evidence",
-      evidence_ids: [],
-    })),
-  });
+  f.settle.resolve({ verdict: "needs_evidence", message: "Provide the missing evidence" });
   expect(await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).toMatchObject({
     kind: "needs_evidence",
     next_step: "Provide the missing evidence",

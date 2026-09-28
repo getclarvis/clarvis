@@ -8,6 +8,7 @@ import {
   type ExecutionRule,
 } from "@clarvis/execpolicy";
 import { acquireLocalLease, globalPaths, workspacePaths, writeFileAtomic } from "@clarvis/paths";
+import { ExecutionRuleWriteError } from "./execpolicy-errors.ts";
 
 /** A load error never becomes an empty, apparently valid file layer. */
 export type ExecutionRuleLoadResult =
@@ -106,11 +107,11 @@ export async function writeExecutionRules(options: {
       : globalPaths(options.globalDir).executionRulesFile;
   await mkdir(dirname(file), { recursive: true });
   const lease = await acquireLocalLease(`${file}.lock`, { staleMs: 30_000, waitMs: 5_000 });
-  if (!lease) throw new Error("execution rules are busy");
+  if (!lease) throw new ExecutionRuleWriteError("busy", "execution rules are busy");
   try {
     const current = await readExecutionRulesRevision(file);
     if (current !== options.expectedRevision)
-      throw new Error("execution rules changed before save");
+      throw new ExecutionRuleWriteError("revision_changed", "execution rules changed before save");
     const bytes = `${JSON.stringify(document, null, 2)}\n`;
     await lease.assertOwned();
     if (options.validateBeforeCommit?.() === false)

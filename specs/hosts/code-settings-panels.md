@@ -911,7 +911,7 @@ each variant to a `Notice`:
 | `validation_failed` | `issue` | `cannot save — <issue.message>` | `error` |
 | `key_save_failed` | `envVar`, `error` | `key save failed for <envVar>: <errorText>` | `error` |
 | `source_save_failed` | `envVar`, `error` | `source save failed for <envVar>: <errorText>` | `error` |
-| `saved` | `scope`, `reconnecting` | `saved <scope> providers` (+ ` — reconnecting backend` when `reconnecting`) | `"success"` |
+| `saved` | `scope: Scope`, `reconnecting` | `saved <scope> providers` (+ ` — reconnecting backend` when `reconnecting`) | `"success"` |
 
 Only the three named carry a tone; the rest default. `ProvidersPanel` funnels every event through it
 into `deps.notify` (the controller `emit` in `ProvidersPanel`). Every variant's message text is pinned, plus an

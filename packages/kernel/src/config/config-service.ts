@@ -29,6 +29,7 @@ import {
   writeExecutionRules,
 } from "../execution/execpolicy-loader.ts";
 import { kernelError } from "../core/errors.ts";
+import { mapExecutionRuleWriteError } from "./execution-rule-errors.ts";
 import { resolveIsolationSettings } from "./isolation-settings.ts";
 import { compareAgentDisplayOrder } from "./agent-resolution.ts";
 import {
@@ -510,10 +511,7 @@ export function createConfigService(
           operatorAction: true,
         });
       } catch (error) {
-        const message = String(error);
-        if (message.includes("changed before save") || message.includes("are busy"))
-          throw kernelError("conflict", message);
-        throw error;
+        throw mapExecutionRuleWriteError(error);
       }
       return executionRules();
     },

@@ -12,6 +12,7 @@ import { DeviceAttemptManager } from "./attempts.ts";
 import { createOpenAICodexAdapter } from "./openai-codex.ts";
 import { subscriptionRegistration } from "./registrations.ts";
 import { SubscriptionError } from "./redaction.ts";
+import { SUBSCRIPTION_SCHEMES } from "./schemes.ts";
 import { createFileSubscriptionStore, type SubscriptionStore } from "./store.ts";
 import type {
   SubscriptionAccountRecord,
@@ -22,7 +23,6 @@ import type {
 import { createXaiGrokAdapter } from "./xai-grok.ts";
 import { SubscriptionHttpError, SubscriptionTransportError } from "./http.ts";
 
-const SCHEMES: readonly SubscriptionScheme[] = ["openai-codex", "xai-grok"];
 const REFRESH_SKEW_MS = 120_000;
 
 export interface SubscriptionManagerOptions {
@@ -65,7 +65,9 @@ export class SubscriptionManager implements ProviderAuthService {
     this.store = options.store ?? createFileSubscriptionStore();
     this.registrations =
       options.registrations ??
-      Object.fromEntries(SCHEMES.map((scheme) => [scheme, subscriptionRegistration(scheme)]));
+      Object.fromEntries(
+        SUBSCRIPTION_SCHEMES.map((scheme) => [scheme, subscriptionRegistration(scheme)]),
+      );
     this.adapters = new Map(
       (options.adapters ?? [createOpenAICodexAdapter(), createXaiGrokAdapter()]).map((adapter) => [
         adapter.scheme,
@@ -83,7 +85,7 @@ export class SubscriptionManager implements ProviderAuthService {
 
   async list(): Promise<SubscriptionAccountStatus[]> {
     const snapshot = await this.store.read();
-    return SCHEMES.map((scheme) => {
+    return SUBSCRIPTION_SCHEMES.map((scheme) => {
       const available = this.registrationAndAdapter(scheme) !== undefined;
       if (!available) {
         return {

@@ -625,6 +625,28 @@ terminal result."
 | 7   | replace the startup root with `<App>`; an unsent draft or a submission that had no runnable Agent Profile becomes exact `initialDraft`; release bootstrap key/exit ownership only after mount; emit mounted/painted diagnostics                                             | `BootShell.mount`; `AppProps.initialDraft`; `releaseBootRendererLifecycle`                                                                                                                                                                          |
 | 8   | after `app.boot.painted`, release Markdown warm-up and the optional managed-install release check; resume/continue restore saved content after parser warm-up                                                                                                               | `runApp`                                                                                                                                                                                                                                            |
 
+The six smoke-consumed diagnostics are `app.boot.shell-painted`, `app.boot.painted`,
+`catalog.load.started`, `markdown.preload.completed`, `update.check.skipped` and
+`update.available`. `OPERATIONAL_EVENTS` relates each serialized name to its payload, and
+`emitOperationalEvent` preserves each event's existing level through the ordinary diagnostic
+session. The smoke reader checks required fields and types, including finite nonnegative durations,
+without rejecting enrichment fields. A known event with invalid details or a completed malformed
+JSONL line fails with file, event and field; an unfinished final line remains pending until it
+completes or the existing timeout expires. Only validated paint and Markdown records prove
+readiness, and only complete absence of `catalog.load.started` proves deferred loading. Logs are
+still selected newest first, without combining runs. Production: `OPERATIONAL_EVENTS`,
+`OPERATIONAL_PAYLOAD_GUARDS` and `invalidOperationalField` in
+`packages/code/src/core/operational-event-contract.ts`, `emitOperationalEvent` in
+`packages/code/src/core/operational-diagnostics.ts`, `selectDiagnosticEvent` in
+`packages/code/tooling/artifact/diagnostic-reader.ts`, and `main` in
+`packages/code/tooling/artifact/smoke.ts`. Test:
+`packages/code/tests/unit/operational-events.test.ts`,
+`packages/code/tests/unit/diagnostic-reader.test.ts`,
+`operational smoke events retain their JSONL envelope and payload` in
+`packages/code/tests/integration/diagnostics.test.ts`, and
+`keeps the automatic update check behind the post-paint task gate` in
+`packages/code/tests/architecture/architecture-boundary.test.ts`.
+
 `StartupComposer` is not a decorative progress placeholder. In `run` mode it owns a real focused
 OpenTUI input, records content outside Solid/renderable ownership, and accepts Enter once. Its
 `Queue a task…` marker is distinct from the complete app's `◆ Clarvis` and `New task…` markers.

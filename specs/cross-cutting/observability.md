@@ -45,6 +45,21 @@ contract package on purpose (`packages/loop/src/logger.ts`: "Returns pino's own 
 `Logger` port, because a host configures it... The port is what a capability *declares*; this is the
 one module that knows which library backs it").
 
+Code's diagnostic channel remains open to additional event names and detail fields. Its private
+smoke evidence is a narrower set: `OPERATIONAL_EVENTS` binds six names to payload types,
+`emitOperationalEvent` writes them through the existing session, and
+`selectDiagnosticEvent` validates completed JSONL before the artifact smoke uses a record or
+asserts an event is absent. The contract module is pure; the writer and file access stay in their
+separate owners. Production: `diagnosticEvent` in
+`packages/code/src/core/diagnostic-events.ts`, `OPERATIONAL_EVENTS` and
+`OPERATIONAL_PAYLOAD_GUARDS` in `packages/code/src/core/operational-event-contract.ts`,
+`emitOperationalEvent` in `packages/code/src/core/operational-diagnostics.ts`, and
+`selectDiagnosticEvent` in `packages/code/tooling/artifact/diagnostic-reader.ts`. Test:
+`packages/code/tests/unit/operational-events.test.ts`,
+`packages/code/tests/unit/diagnostic-reader.test.ts`, and
+`operational smoke events retain their JSONL envelope and payload` in
+`packages/code/tests/integration/diagnostics.test.ts`.
+
 The subsystem solves three distinct problems with one mechanism:
 
 - **A structural contract a package can log against without adopting a backend.** `Logger` has four

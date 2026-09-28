@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
 import { loadExecutionRules, writeExecutionRules } from "#src/execution/execpolicy-loader.ts";
+import { ExecutionRuleWriteError } from "#src/execution/execpolicy-errors.ts";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -128,15 +129,15 @@ describe("execution rule loader", () => {
       expectedRevision: null,
     });
     const file = globalPaths(dirs.globalDir).executionRulesFile;
-    await expect(
-      writeExecutionRules({
-        ...dirs,
-        operatorAction: true,
-        workspaceTrusted: false,
-        document: JSON.parse(doc("stale")),
-        expectedRevision: null,
-      }),
-    ).rejects.toThrow("changed before save");
+    const staleWrite = writeExecutionRules({
+      ...dirs,
+      operatorAction: true,
+      workspaceTrusted: false,
+      document: JSON.parse(doc("stale")),
+      expectedRevision: null,
+    });
+    await expect(staleWrite).rejects.toBeInstanceOf(ExecutionRuleWriteError);
+    await expect(staleWrite).rejects.toMatchObject({ reason: "revision_changed" });
     expect(await readFile(file, "utf8")).toContain("first");
     await writeExecutionRules({
       ...dirs,

@@ -62,6 +62,32 @@ describe("subscription credential store", () => {
     expect(await readFile(store.path(), "utf8")).toBe(before);
   });
 
+  it("accepts both known accounts and rejects unknown or invalid accounts", async () => {
+    const dir = await root();
+    const store = createFileSubscriptionStore({ dir });
+    const accounts = {
+      "openai-codex": { access_token: "oa", refresh_token: "oa-r", expires_at: 1 },
+      "xai-grok": { access_token: "xai", refresh_token: "xai-r", expires_at: 2 },
+    };
+    await writeFile(store.path(), JSON.stringify({ version: 1, accounts }), { mode: 0o600 });
+    expect(await store.read()).toEqual({ ok: true, value: { version: 1, accounts } });
+
+    await writeFile(
+      store.path(),
+      JSON.stringify({ version: 1, accounts: { ...accounts, unknown: accounts["xai-grok"] } }),
+    );
+    expect(await store.read()).toEqual({ ok: false, diagnostic: "malformed" });
+
+    await writeFile(
+      store.path(),
+      JSON.stringify({
+        version: 1,
+        accounts: { ...accounts, "xai-grok": { ...accounts["xai-grok"], refresh_token: "" } },
+      }),
+    );
+    expect(await store.read()).toEqual({ ok: false, diagnostic: "malformed" });
+  });
+
   it("bounds reads and refuses a credential-file symlink", async () => {
     const oversizedRoot = await root();
     const oversized = createFileSubscriptionStore({ dir: oversizedRoot });

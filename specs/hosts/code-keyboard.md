@@ -223,7 +223,7 @@ Ownership and timing are specified in [loop-scheduling.md](loop-scheduling.md).
 | `InteractionEffects` | callbacks (`cancelRun`, `dismissTopOverlay`, `scrollTranscript`, …) the built-in commands dispatch into | `packages/code/src/keys/interaction.ts` |
 | `Interaction` | the handle: `keymap`, `renderer`, `pushOverlayContext`/`popOverlayContext`, `setModalContext`, `keyboardEnvironment`, `keyboardEnvironmentId`, `configureKeyboard`, `dispose` | `packages/code/src/keys/interaction.ts` |
 | `DEFAULT_BINDING_CANDIDATES` | 16 commands → candidate lists | `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`) |
-| `DEFAULT_WHEN` | 11 commands → `"overlay==none"`; `plan.open` → `"overlay in (none, plan)"` | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`) |
+| `DEFAULT_WHEN` | Overlay-gated commands share private `WHEN_NO_OVERLAY`; `plan.open` retains `"overlay in (none, plan)"` | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`) |
 | `buildVitalBindings(defaults, defaultWhen)` | expands a command→key(s) table into bindings, stamping `modal:"none"` unless in `MODAL_LIVE_COMMANDS` | `packages/code/src/keys/interaction.ts` |
 | `resolvedVitalBindings(platformName, environment, overrides?)` | resolves every vital command's key(s) for one environment | `packages/code/src/keys/interaction.ts` |
 | `createInteraction(renderer, platform, effects, initialKeyboardConfig?)` | builds and wires the whole keymap, returns `Interaction` | `packages/code/src/keys/interaction.ts`, `createInteraction` |

@@ -1,4 +1,5 @@
 import { glyph } from "#src/theme/glyphs.ts";
+import type { Scope } from "@clarvis/protocol";
 import { errorText } from "#src/adapters/errors.ts";
 import type { FieldIssue } from "#src/adapters/settings.ts";
 import type { KeySource } from "#src/adapters/provider-secrets.ts";
@@ -12,7 +13,7 @@ export type ProvidersEvent =
   | { type: "validation_failed"; issue: FieldIssue }
   | { type: "key_save_failed"; envVar: string; error: unknown }
   | { type: "source_save_failed"; envVar: string; error: unknown }
-  | { type: "saved"; scope: string; reconnecting: boolean };
+  | { type: "saved"; scope: Scope; reconnecting: boolean };
 
 /**
  * Presents a Providers controller event for the terminal notification surface.

@@ -273,7 +273,20 @@ describe("SubscriptionManager coexistence", () => {
 
   it("keeps the unavailable service and diagnostic projection closed", async () => {
     const unavailable = createUnavailableProviderAuthService();
-    expect(await unavailable.list()).toHaveLength(2);
+    expect(await unavailable.list()).toEqual([
+      {
+        scheme: "openai-codex",
+        state: "unavailable",
+        authorization_available: false,
+        diagnostic: "not_authorized",
+      },
+      {
+        scheme: "xai-grok",
+        state: "unavailable",
+        authorization_available: false,
+        diagnostic: "not_authorized",
+      },
+    ]);
     await expect(unavailable.startDevice("openai-codex")).rejects.toMatchObject({
       code: "subscription_unavailable",
     });

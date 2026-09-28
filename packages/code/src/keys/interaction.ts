@@ -134,26 +134,28 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   ],
 };
 
+const WHEN_NO_OVERLAY = "overlay==none";
+
 /** `when` clauses gating commands that must not fire while an overlay is open. */
 export const DEFAULT_WHEN: Record<string, string> = {
-  "focus.next": "overlay==none",
-  "agent.picker": "overlay==none",
-  "activity.toggle": "overlay==none",
-  "memory.picker": "overlay==none",
-  "isolation.picker": "overlay==none",
-  "approval.picker": "overlay==none",
+  "focus.next": WHEN_NO_OVERLAY,
+  "agent.picker": WHEN_NO_OVERLAY,
+  "activity.toggle": WHEN_NO_OVERLAY,
+  "memory.picker": WHEN_NO_OVERLAY,
+  "isolation.picker": WHEN_NO_OVERLAY,
+  "approval.picker": WHEN_NO_OVERLAY,
   "plan.open": "overlay in (none, plan)",
-  "goal.toggle": "overlay==none",
-  "workflow.current": "overlay==none",
-  "transcript.diff": "overlay==none",
-  "transcript.scrollPageUp": "overlay==none",
-  "transcript.scrollPageDown": "overlay==none",
-  "transcript.followTail": "overlay==none",
-  "transcript.scrollLineUp": "overlay==none",
-  "transcript.scrollLineDown": "overlay==none",
-  "transcript.toggleCollapse": "overlay==none",
-  "transcript.focusPrev": "overlay==none",
-  "transcript.focusNext": "overlay==none",
+  "goal.toggle": WHEN_NO_OVERLAY,
+  "workflow.current": WHEN_NO_OVERLAY,
+  "transcript.diff": WHEN_NO_OVERLAY,
+  "transcript.scrollPageUp": WHEN_NO_OVERLAY,
+  "transcript.scrollPageDown": WHEN_NO_OVERLAY,
+  "transcript.followTail": WHEN_NO_OVERLAY,
+  "transcript.scrollLineUp": WHEN_NO_OVERLAY,
+  "transcript.scrollLineDown": WHEN_NO_OVERLAY,
+  "transcript.toggleCollapse": WHEN_NO_OVERLAY,
+  "transcript.focusPrev": WHEN_NO_OVERLAY,
+  "transcript.focusNext": WHEN_NO_OVERLAY,
 };
 
 /**

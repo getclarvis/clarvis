@@ -103,6 +103,34 @@ Test: `limits engine execution to the capabilities that own it` in
 - A **public entrypoint** is an owned thematic surface in a package export map. It is not permission
   to re-export another package merely to shorten an import.
 
+Closed string vocabularies use one owner appropriate to their boundary:
+
+| Use | Representation |
+| --- | --- |
+| Closed union used only statically | Literal type or discriminated union in the contract owner |
+| Local set enumerated at runtime | `as const` tuple with its type derived from the tuple |
+| Public type that must have no runtime value | Private catalogue in the executing package, with complete keys checked by `satisfies Record<PublicType, true>` |
+| One action per variant | Table checked with `satisfies Record<Variant, Action>` |
+| Repeated condition within one module | Private constant named for its meaning |
+| External data | Schema or guard at the boundary |
+| Open extensions and IDs | Open type and appropriate structural validation |
+| Human-facing text | Local presentation text; decisions use structured fields |
+
+These are ownership choices, not a requirement to turn typed comparisons into enums or centralize
+all strings. The Kernel's subscription catalogue is complete independently of available
+registrations; Code derives its diagnostic levels and keyboard context keys from runtime tuples.
+Production: `SubscriptionScheme` in `packages/protocol/src/provider-auth.ts`,
+`SUBSCRIPTION_SCHEMES` in `packages/kernel/src/subscriptions/schemes.ts`,
+`subscriptionFileSchema` in `packages/kernel/src/subscriptions/store.ts`,
+`DIAGNOSTIC_LEVELS` in `packages/code/src/core/diagnostic-events.ts`, `CONTEXT_KEYS` in
+`packages/code/src/keys/when-dsl.ts`, and `WHEN_NO_OVERLAY` in
+`packages/code/src/keys/interaction.ts`. Test: `production subscription availability` in
+`packages/kernel/tests/unit/subscription-manager.test.ts`, `subscription credential store` in
+`packages/kernel/tests/integration/subscription-store.test.ts`,
+`isDiagnosticLevel admits exactly the four recorded levels` in
+`packages/code/tests/integration/debug-session.test.ts`, `packages/code/tests/unit/when-dsl.test.ts`,
+and `packages/code/tests/integration/interaction.test.ts`.
+
 ### 2.3 Package versus subpath
 
 Use a subpath when the surface has the same owner, lifecycle, release unit and dependency direction

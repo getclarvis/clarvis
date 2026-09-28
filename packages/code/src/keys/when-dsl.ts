@@ -4,10 +4,10 @@ import type { BindingFieldContext } from "@opentui/keymap";
 
 type OpenTuiKeymap = Keymap<Renderable, KeyEvent>;
 
-/** The keymap data keys a binding's `when` clause may reference. */
-export type ContextKey = "overlay" | "autocomplete";
+const CONTEXT_KEYS = ["overlay", "autocomplete"] as const;
 
-const CONTEXT_KEYS: readonly ContextKey[] = ["overlay", "autocomplete"];
+/** The keymap data keys a binding's `when` clause may reference. */
+export type ContextKey = (typeof CONTEXT_KEYS)[number];
 
 /** A parsed `when` expression: a truthy check, equality, or a bounded value set. */
 export type Clause =

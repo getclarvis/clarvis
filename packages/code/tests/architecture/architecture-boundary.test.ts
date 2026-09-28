@@ -93,7 +93,7 @@ describe("code's internal architecture", () => {
     const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
     const schedule = source.indexOf("shell.afterPaint?.(() => {");
     const dynamicImport = source.indexOf('await import("./update/check.ts")', schedule);
-    const painted = source.indexOf('"app.boot.painted"', dynamicImport);
+    const painted = source.indexOf("event: OPERATIONAL_EVENTS.appPainted", dynamicImport);
     const release = source.indexOf("for (const task of afterPaintTasks.splice(0))", painted);
     expect(schedule).toBeGreaterThanOrEqual(0);
     expect(dynamicImport).toBeGreaterThan(schedule);

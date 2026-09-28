@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createAgentTools } from "#src/index.ts";
 import { configurationRoots } from "@clarvis/paths";
-import { makeWorkspace, cleanup, write, resultText } from "../../helpers/fixtures.ts";
+import { makeWorkspace, makeConfig, cleanup, write, resultText } from "../../helpers/fixtures.ts";
 import { expectedToolNames } from "../../helpers/tool-surface.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,13 +15,19 @@ describe("createAgentTools (library API)", () => {
   afterEach(() => cleanup(root));
 
   it("lists the canonical public surface and exposes the resolved config", () => {
-    const t = createAgentTools({ workspaceRoot: root });
+    const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+    });
     expect(t.config.workspaceRoot).toBe(root);
     expect(t.listTools().map(({ name }) => name)).toEqual(expectedToolNames({ readOnly: false }));
   });
 
   it("round-trips read_file / shell", async () => {
-    const t = createAgentTools({ workspaceRoot: root });
+    const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+    });
     write(root, "a.txt", "alpha\nbeta\n");
 
     const r = await t.callTool("read_file", { path: "a.txt" });
@@ -34,7 +40,10 @@ describe("createAgentTools (library API)", () => {
   });
 
   it("rejects home shorthand before creating a literal workspace directory", async () => {
-    const t = createAgentTools({ workspaceRoot: root });
+    const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+    });
     const result = await t.callTool("write_file", { path: "~/probe.txt", content: "probe" });
     expect(JSON.parse(resultText(result.content))).toMatchObject({ error: "invalid_input" });
     expect(existsSync(join(root, "~"))).toBe(false);
@@ -43,7 +52,10 @@ describe("createAgentTools (library API)", () => {
   it("reads and writes configuration paths with host permissions", async () => {
     const roots = configurationRoots({ workspaceRoot: root });
     const target = join(roots.workspace_clarvis, "agents/helper.md");
-    const tools = createAgentTools({ workspaceRoot: root });
+    const tools = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+    });
     const written = await tools.callTool("write_file", { path: target, content: "open" });
     expect(written.isError).toBe(false);
     expect(readFileSync(target, "utf8")).toBe("open");
@@ -53,6 +65,7 @@ describe("createAgentTools (library API)", () => {
     const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-run-owned-")));
     try {
       const t = createAgentTools({
+        sessionManager: makeConfig(root).sessionManager,
         workspaceRoot: root,
         temporaryRoots: [temporaryRoot],
       });
@@ -77,6 +90,7 @@ describe("createAgentTools (library API)", () => {
     try {
       write(packageRoot, "helper.txt", "packaged");
       const t = createAgentTools({
+        sessionManager: makeConfig(root).sessionManager,
         workspaceRoot: root,
       });
       const ran = await t.callTool("shell", {
@@ -101,6 +115,7 @@ describe("createAgentTools (library API)", () => {
     const packageRoot = join(root, ".agents", "skills", "demo");
     mkdirSync(packageRoot, { recursive: true });
     const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
       workspaceRoot: root,
     });
 
@@ -115,7 +130,11 @@ describe("createAgentTools (library API)", () => {
   });
 
   it("read-only mode hides mutating tools and blocks writes", async () => {
-    const t = createAgentTools({ workspaceRoot: root, readOnly: true });
+    const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+      readOnly: true,
+    });
     expect(t.listTools().map(({ name }) => name)).toEqual(expectedToolNames({ readOnly: true }));
 
     const w = await t.callTool("write_file", { path: "x.txt", content: "nope" });
@@ -124,20 +143,29 @@ describe("createAgentTools (library API)", () => {
   });
 
   it("returns a not_found tool error for an unknown tool", async () => {
-    const t = createAgentTools({ workspaceRoot: root });
+    const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+    });
     const r = await t.callTool("does_not_exist", {});
     expect(r.isError).toBe(true);
     expect(JSON.parse(resultText(r.content))).toMatchObject({ error: "not_found" });
   });
 
   it("defaults callTool args to an empty object", async () => {
-    const t = createAgentTools({ workspaceRoot: root });
+    const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+    });
     const r = await t.callTool("list_dir");
     expect(r.isError).toBe(false);
   });
 
   it("does not mutate the caller's args object with schema defaults", async () => {
-    const t = createAgentTools({ workspaceRoot: root });
+    const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+    });
     write(root, "a.txt", "alpha\n");
     const args = { path: "a.txt", offset: 1 };
     const r = await t.callTool("read_file", args);
@@ -146,7 +174,10 @@ describe("createAgentTools (library API)", () => {
   });
 
   it("accepts a frozen args object (defaults injected into a copy)", async () => {
-    const t = createAgentTools({ workspaceRoot: root });
+    const t = createAgentTools({
+      sessionManager: makeConfig(root).sessionManager,
+      workspaceRoot: root,
+    });
     write(root, "a.txt", "alpha\n");
     const r = await t.callTool("read_file", Object.freeze({ path: "a.txt" }));
     expect(r.isError).toBe(false);

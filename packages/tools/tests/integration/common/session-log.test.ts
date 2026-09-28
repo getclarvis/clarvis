@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createSessionLog } from "#src/lib/session-log.ts";
 import { NOOP_TOOLS_LOGGER } from "#src/lib/log.ts";
 import { callTool, cleanup, makeConfig, makeWorkspace } from "../../helpers/fixtures.ts";
@@ -24,6 +24,7 @@ test("session logs are plain text, private, capped at a UTF-8 boundary and remov
     log.dispose();
   }
   expect(existsSync(log.stdoutPath)).toBe(false);
+  expect(existsSync(dirname(log.stdoutPath))).toBe(false);
 });
 
 test("a failed noisy command keeps its first diagnostic and final tail without rerunning", async () => {

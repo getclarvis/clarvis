@@ -1,6 +1,6 @@
-import { closeSync, openSync, readSync, writeSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, readSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { allocateShortTemporaryRoot } from "@clarvis/paths";
+import { tmpdir } from "node:os";
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
 import type { OutputSlice } from "./session-window.ts";
@@ -84,26 +84,30 @@ export function createSessionLog(
   logger: RuntimeConfig["logger"],
   capacity = LOG_CAPACITY,
 ): SessionLog {
-  const root = allocateShortTemporaryRoot({ label: "shell-session-log", logger });
+  const root = mkdtempSync(join(tmpdir(), "clarvis-shell-log-"));
+  logger.debug(
+    { event: "tools.session_log_allocated", path: root },
+    "private shell logs allocated",
+  );
   const descriptors = new Set<number>();
   const dispose = () => {
     for (const fd of descriptors) {
       closeSync(fd);
       descriptors.delete(fd);
     }
-    root.remove();
+    rmSync(root, { recursive: true, force: true });
   };
   try {
     const stream = (name: string) => {
-      const fd = openSync(join(root.path, name), "wx+", 0o600);
+      const fd = openSync(join(root, name), "wx+", 0o600);
       descriptors.add(fd);
       return new FileLogStream(fd, capacity);
     };
     return {
       stdout: stream("stdout.log"),
       stderr: stream("stderr.log"),
-      stdoutPath: join(root.path, "stdout.log"),
-      stderrPath: join(root.path, "stderr.log"),
+      stdoutPath: join(root, "stdout.log"),
+      stderrPath: join(root, "stderr.log"),
       dispose,
     };
   } catch (error) {

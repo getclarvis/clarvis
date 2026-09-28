@@ -356,18 +356,19 @@ describe("built-in tools adapter integrations", () => {
         { text: "done" },
       ],
     });
+    let allowCleanup = false;
+    const sessionManager = new (class extends ExecutionSessionManager {
+      override async close(): Promise<boolean> {
+        return allowCleanup ? super.close() : false;
+      }
+    })();
     harness = await makeHarness({
       llm,
       mcpFactory: mockMCPFactory({}),
       workspaceRoot: root,
       capabilities: [
         createAgentToolsCapability({
-          createSessionManager: () =>
-            new (class extends ExecutionSessionManager {
-              override async close(): Promise<boolean> {
-                return false;
-              }
-            })(),
+          createSessionManager: () => sessionManager,
         }),
       ],
       env: { CLARVIS_AGENT_TOOLS_ENABLED: "true", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
@@ -381,6 +382,8 @@ describe("built-in tools adapter integrations", () => {
       expect(isAlive(pid)).toBe(true);
       expect(existsSync(scratch)).toBe(true);
     } finally {
+      allowCleanup = true;
+      expect(await sessionManager.close()).toBe(true);
       if (retained) {
         if (isAlive(retained.pid)) killTree(retained.pid, "SIGKILL");
         await releaseRetainedScratch(retained.scratch, retained.pid);

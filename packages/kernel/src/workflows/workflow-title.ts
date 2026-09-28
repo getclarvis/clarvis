@@ -32,7 +32,7 @@ const SET_TITLE_TOOL: NamespacedTool = {
   description: "Return the short human-facing title for this workflow task.",
   inputSchema: {
     type: "object",
-    additionalProperties: false,
+    additionalProperties: true,
     required: ["title"],
     properties: {
       title: { type: "string", minLength: 1, maxLength: TASK_TITLE_MAX },
@@ -65,13 +65,8 @@ const SET_TITLE_MAX_ATTEMPTS = 2;
  *
  * @remarks Built on first use because a standalone Kernel installs its bundled
  *   Ajv modules after imports are evaluated. {@link SET_TITLE_TOOL}'s schema is a
- *   module constant, so the rule is compiled once rather than per title. It checks the whole
- *   argument object — `additionalProperties: false` included — which is what makes a
- *   payload the tool never declared a protocol violation instead of a title with
- *   company. The validator fails open for tool *dispatch*, where a broken
- *   third-party schema must not block work; the schema here is this file's own and
- *   static, so its compile cannot vary per call, and a test pins that a payload the
- *   schema refuses is refused here too.
+ *   module constant, so the rule is compiled once rather than per title. Unknown
+ *   properties are ignored; only the validated title reaches the caller.
  */
 let titleArgumentValidator: ReturnType<typeof createToolArgValidator> | undefined;
 

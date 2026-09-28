@@ -789,18 +789,7 @@ describe("host-bound goal capability", () => {
 
   it.each([
     { action: "resume" },
-    { action: "progress", summary: "done", session_id: "foreign" },
-    { action: "progress", summary: "done", max_net_tokens: 999999 },
-    { action: "progress", summary: "done", next_step: "not a progress field" },
     { action: "checkpoint", summary: "done", next_step: "" },
-    {
-      action: "checkpoint",
-      summary: "Implementation inspected",
-      next_step: "Verify in the next stage",
-      evidence_ids: [],
-      assessments: [{ criterion_id: "objective", kind: "qualitative", justification: "Pending" }],
-      reason: "Stage boundary",
-    },
     {
       action: "checkpoint",
       summary: "done",
@@ -822,6 +811,32 @@ describe("host-bound goal capability", () => {
       text: expect.stringContaining("error"),
     });
     expect(f.calls).toEqual([]);
+  });
+
+  it("ignores foreign scope and budget fields on a valid model update", async () => {
+    const f = fixture();
+    const before = structuredClone(f.state().current!);
+    const { handlers } = await f.attach();
+    await handlers![0]!.handle(
+      {
+        id: "update",
+        name: "update_goal",
+        arguments: {
+          session_id: "foreign",
+          update: {
+            action: "progress",
+            summary: "done",
+            session_id: "foreign",
+            max_net_tokens: 999999,
+            next_step: "extra",
+          },
+        },
+      },
+      1,
+    );
+    expect(f.calls).toEqual(["progress"]);
+    expect(f.state().current!.session_id).toBe(before.session_id);
+    expect(f.state().current!.limits).toEqual(before.limits);
   });
 
   it("refreshes external state at iteration entry without a goal tool call", async () => {

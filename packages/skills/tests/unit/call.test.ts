@@ -56,7 +56,7 @@ describe("handleLoadSkillCall", () => {
     expect(trace.entries().some((e) => e.kind === "tool_call_started")).toBe(false);
   });
 
-  it("rejects unknown argument keys via the declared schema", () => {
+  it("ignores extra fields in skill loading", () => {
     const res = handleLoadSkillCall({
       call: call({ arguments: { name: "alpha", extra: 1 } }),
       skills: fakeSkills(),
@@ -65,8 +65,8 @@ describe("handleLoadSkillCall", () => {
       iteration: 1,
       validateArgs,
     });
-    expect(res.error).toBe(true);
-    expect(res.text).toContain("InputValidationError");
+    expect(res.error).toBe(false);
+    expect(res.text).not.toContain("InputValidationError");
   });
 
   it("defaults absent call arguments to an empty object", () => {
@@ -218,7 +218,7 @@ describe("handleLoadSkillCall", () => {
     expect(res.text).not.toContain("Package execution root:");
   });
 
-  it("rejects every resource-shaped argument on the name-only load operation", () => {
+  it("ignores resource-shaped extras on the name-only load operation", () => {
     for (const arguments_ of [
       { name: "alpha", resource: "/dev/null? no resource omitted actually." },
       { name: "alpha", resource: "alpha/SKILL.md", offset: 0 },
@@ -232,8 +232,8 @@ describe("handleLoadSkillCall", () => {
         iteration: 1,
         validateArgs,
       });
-      expect(res.error).toBe(true);
-      expect(res.text).toContain("InputValidationError");
+      expect(res.error).toBe(false);
+      expect(res.text).toContain("alpha");
     }
   });
 
@@ -265,19 +265,24 @@ describe("handleLoadSkillCall", () => {
     expect(res.text).toContain("InputValidationError");
   });
 
-  it("rejects undeclared resource-operation arguments", () => {
+  it("ignores extra fields in resource reads", () => {
     const res = handleReadSkillResourceCall({
       call: resourceCall({
         arguments: { name: "alpha", resource: "notes.md", offset: 0, extra: true },
       }),
-      skills: fakeSkills(),
+      skills: fakeSkills({
+        readResource: (name, resource) => {
+          expect([name, resource]).toEqual(["alpha", "notes.md"]);
+          return "Resource content";
+        },
+      }),
       trace: makeTrace(),
       agent: "subagent",
       iteration: 1,
       validateArgs,
     });
-    expect(res.error).toBe(true);
-    expect(res.text).toContain("InputValidationError");
+    expect(res.error).toBe(false);
+    expect(res.text).toContain("Resource content");
   });
 
   it("rejects a resource offset past the end", () => {

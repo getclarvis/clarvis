@@ -291,6 +291,9 @@ through `createStewardExecutionRuntime`. It fences semantic output
 and returns internal corrections or a final verdict to the Goal capability. A private result gate
 validates the Steward's decision shape and semantic targets before accepting its output, allowing one
 corrective nudge within the same evaluation budget; a second invalid result fails closed.
+Workflow title generation also ignores extra response fields and returns only the validated title.
+Unknown fields in Steward decisions and assessments are discarded before semantic validation;
+extra commentary alone does not reject an otherwise valid review.
 Observations reserve evaluation slots for completion, and prior observation failures do not
 reclassify later inconclusive verdicts. Its private frame is the conversational projection in
 `buildStewardConversationFrame`: Goal contract, original operator request, later corrections, the
@@ -414,7 +417,7 @@ refresh, revocation, entitled catalogs, and token-opaque physical request author
 owner explicitly enables both public-client references for the local product; that is a Clarvis
 product decision, not provider endorsement. Synthetic registrations exercise transport behavior in
 tests. Provider `user-agent` identity uses the root-owned Clarvis product version. ChatGPT and Grok
-separately send adapter-owned compatibility revisions (`0.153.2` and `1.0.6`, respectively) in the
+separately send adapter-owned compatibility revisions (`0.158.0` and `1.0.41`, respectively) in the
 catalog version fields their services gate; those values are not the Clarvis product version.
 Responses-backed Grok entitled-catalog rows tag `tool_calling` and tag `vision` only when the
 payload declares image input or `supports_vision: true`. The

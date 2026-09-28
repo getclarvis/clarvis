@@ -161,9 +161,10 @@ catalog again. A lost binding, unreadable control, storage fault or state confli
 still ends the stage with host attention, because the host cannot present it as a rejected argument.
 
 `update_goal` takes one `update` object whose action selects progress, checkpoint, candidate or
-blocked fields. The advertised nested alternatives and runtime parser share one schema; fields for
-another action remain invalid. Optional evidence IDs retain their empty default. This keeps provider
-structured output from requiring unrelated action fields and producing calls the runtime rejects.
+blocked fields. The advertised nested alternatives and runtime parser share one schema; fields
+outside the selected action are discarded. Optional evidence IDs retain their empty default. Known
+fields still enforce their types, bounds and semantic rules. The model cannot change scope or budgets
+through discarded fields. Creation criteria and their verification objects also discard extras.
 
 The goal gate disables fast acceptance and revalidates completion before an ordinary final result.
 Its host-owned Goal Steward then reviews semantic sufficiency with a separate tool-free execution.
@@ -173,7 +174,10 @@ concrete correction to the same run; failure or inconclusive review prevents com
 owns the fixed schema, request policy, settings, review state and idempotent usage reducer; the Kernel
 owns the bounded completion call, evidence projection, fencing and durable settlement.
 Formulation and Steward output schemas declare an explicit object root and retain their exclusive
-variants; the same schema is sent to every model without provider-specific rewriting.
+variants for local validation. The LLM adapter projects root variants into an object for providers.
+Steward responses accept and discard unknown fields at the decision and assessment levels; known
+fields and semantic targets still require valid values. The input JSON Schema permits those extras
+so they reach the normalizing parser instead of failing at `submit_result`.
 `goals.agent.steward` selects the optional model and finite allowance independently of the work budget.
 Private `continue_from` history preserves compatible prompt prefixes across evaluations and checkpoints.
 The Steward never receives repository instructions such as `AGENTS.md` or `CLARVIS.md` and has no

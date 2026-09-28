@@ -71,7 +71,33 @@ describe("Goal Steward contract", () => {
     expect(fresh.output_schema).toEqual(first.output_schema);
   });
 
-  it("rejects authority fields, inconsistent verdicts and invented target references", () => {
+  it("discards extra fields while preserving known-field and semantic validation", () => {
+    const complete = {
+      decision: "completion" as const,
+      verdict: "achieved" as const,
+      summary: "Delivered",
+      assessments: [assessment("definition"), assessment("objective")],
+    };
+    const withExtras = {
+      ...complete,
+      guidance: "Unneeded completion commentary",
+      execution_id: "untrusted",
+      assessments: complete.assessments.map((item) => ({ ...item, extra: { ignored: true } })),
+    };
+    expect(validateGoalStewardResult(withExtras, "completion", [])).toEqual(complete);
+    expect(
+      validateGoalStewardResult(
+        { decision: "definition", verdict: "accept_definition", summary: "Aligned", extra: true },
+        "definition",
+        [],
+      ),
+    ).toEqual({ decision: "definition", verdict: "accept_definition", summary: "Aligned" });
+    for (const change of [{ verdict: "complete" }, { summary: 42 }, { assessments: [] }]) {
+      expect(goalStewardResultSchema.safeParse({ ...withExtras, ...change }).success).toBe(false);
+    }
+  });
+
+  it("rejects unsupported decisions, inconsistent verdicts and invented target references", () => {
     expect(
       goalStewardResultSchema.safeParse({
         decision: "steer",

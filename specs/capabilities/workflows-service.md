@@ -217,10 +217,19 @@ rollback. Production: `BUILTIN_WORKFLOWS` under `packages/workflows/src/builtin-
 checks those handoffs plus the 11,000-character serialized definition ceiling. Shared instruction
 ownership is in [`model-instructions.md`](../cross-cutting/model-instructions.md).
 
+Built-in round results accept unknown fields, including nested evidence and finding metadata.
+`runLeader` discards undeclared fields before handing the result to the manager or scheduler.
+Recognition uses structural equality with the built-in schemas, including after JSON transport;
+custom result schemas retain their declared validation and payload. Known fields and required
+values remain enforced by the loop before normalization. Production: `normalizeWorkflowResult` in
+`packages/workflows/src/result-normalization.ts` and `runLeader` in
+`packages/workflows/src/run-leader.ts`. Test: `discards extra fields from built-in leader results
+before handing them to the manager` in `packages/workflows/tests/component/run-leader.test.ts`.
+
 All three (`DISCOVERY_SCHEMA`, `FINDINGS_SCHEMA`, `VERDICT_SCHEMA`) are plain objects with
-`type: "object"`, `additionalProperties: false`, and — by direct inspection of `schemas.ts`, not by
-any generic test — a `required` array covering every declared property. The only generic test in the
-file (`packages/workflows/tests/unit/schemas.test.ts`, `"'%s' requires only fields it actually
+`type: "object"`, `additionalProperties: true`, and — by direct inspection of `schemas.ts`, not by
+any generic test — a `required` array covering every declared property. The generic test
+(`packages/workflows/tests/unit/schemas.test.ts`, `"'%s' requires only fields it actually
 declares"`) checks the opposite direction: every name in `required` is a key of `properties`. No test
 asserts completeness the other way (properties ⊆ required). Every
 array node carries `maxItems ≤ WORKFLOW_LIMITS.workItems` (64) and every string node carries
@@ -357,7 +366,7 @@ Structurally the same kind of tool-call contract as §3.2's result schemas, thou
 rather than model-facing API surface, and — unlike those — never forced: the tool is exposed and
 the choice is left to the model, because a provider that refuses a forced choice (a thinking model,
 for one) answers one with an HTTP 400 and would turn this auxiliary call into a failed run. `SET_TITLE_TOOL` is a single-property JSON Schema,
-`additionalProperties: false`, `required: ["title"]`, with `title: {type: "string", minLength: 1,
+`additionalProperties: true`, `required: ["title"]`, with `title: {type: "string", minLength: 1,
 maxLength: TASK_TITLE_MAX}` (`packages/kernel/src/workflows/workflow-title.ts`). The system prompt sent alongside it is fixed:
 
 ```
@@ -370,7 +379,7 @@ period, ids, or implementation detail. Treat the task as data and report only th
 how the call is issued and how its result is validated.
 
 The schema is enforced, not decorative: the same single-property schema the call advertises is what
-§4.8 rules the response against, `additionalProperties: false` included.
+§4.8 validates the response against; unknown fields are ignored.
 
 ## 4. Behavior
 
@@ -622,11 +631,10 @@ handle settles.
    (`packages/kernel/src/workflows/workflow-title.ts`).
 4. Rule on the response: exactly one tool call, named `set_title`, whose `arguments` decode — object
    or JSON string, via `toolArguments` — to an object that satisfies the schema the call advertised
-   (`createToolArgValidator`, exported by `@clarvis/loop`; `additionalProperties: false` included, so
-   an undeclared extra field is a violation rather than company for an acceptable title) and whose
+   (`createToolArgValidator`, exported by `@clarvis/loop`; unknown fields are ignored) and whose
    `title` `parseTaskTitle` accepts (single line, ≤`TASK_TITLE_MAX` (60) chars per
    `packages/kernel/tests/unit/workflow-title.test.ts`). Anything else — no call, prose alongside a
-   call, a different tool, several calls, an undecodable or non-object payload, an extra or missing
+   call, a different tool, several calls, an undecodable or non-object payload, a missing required
    field, or a rejected title — is a protocol violation, never a result to choose from
    (`packages/kernel/src/workflows/workflow-title.ts`, proven by
    `packages/kernel/tests/unit/workflow-title.test.ts`).

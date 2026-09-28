@@ -232,8 +232,14 @@ describe("Goal semantic agent", () => {
     ).toThrow("revision changed");
   });
 
-  it("accepts ready and insufficient output and rejects untrusted or duplicated fields", () => {
-    expect(goalFormulationResultSchema.parse(ready)).toEqual({
+  it("discards extra formulation fields and rejects invalid or duplicated known values", () => {
+    expect(
+      goalFormulationResultSchema.parse({
+        ...ready,
+        revision: 1,
+        criteria: ready.criteria.map((item) => ({ ...item, extra: true })),
+      }),
+    ).toEqual({
       ...ready,
       criteria: [{ ...ready.criteria[0]!, description: "Os testes passam" }, ready.criteria[1]!],
     });
@@ -245,7 +251,6 @@ describe("Goal semantic agent", () => {
       }),
     ).toMatchObject({ status: "insufficient_context" });
     for (const invalid of [
-      { ...ready, revision: 1 },
       { ...ready, criteria: [{ description: "x", kind: "host" }] },
       { ...ready, constraints: ["same"], assumptions: [" SAME "] },
       { ...ready, objective: " " },

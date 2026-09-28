@@ -13,7 +13,6 @@ const assessment = z
     rationale: text,
     evidence_ids: z.array(z.string().min(1).max(256)).max(32).refine(unique),
   })
-  .strict()
   .refine((value) => (value.scope === "criterion") === (value.criterion_id !== undefined));
 
 /** One fixed wire schema preserves the tool catalog across definition and completion review. */
@@ -25,7 +24,6 @@ export const goalStewardResultSchema = z.discriminatedUnion("decision", [
       summary: text,
       guidance: text.optional(),
     })
-    .strict()
     .refine((value) => (value.verdict === "revise_definition") === (value.guidance !== undefined), {
       message: "A definition revision requires specific guidance",
     }),
@@ -37,7 +35,6 @@ export const goalStewardResultSchema = z.discriminatedUnion("decision", [
       assessments: z.array(assessment).min(2).max(34),
       next_step: text.optional(),
     })
-    .strict()
     .superRefine((value, ctx) => {
       const verdicts = value.assessments.map((item) => item.verdict);
       const expected = verdicts.includes("unsatisfied")

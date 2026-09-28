@@ -138,12 +138,12 @@ Capability metadata is derived from the tool descriptor rather than spelled twic
 
 ```
 load_skill:
-  { type: "object", additionalProperties: false,
+  { type: "object", additionalProperties: true,
     properties: { name: { type: "string", minLength: 1 } },
     required: ["name"] }
 
 read_skill_resource:
-  { type: "object", additionalProperties: false,
+  { type: "object", additionalProperties: true,
     properties: { name: { type: "string", minLength: 1 },
                   resource: { type: "string", minLength: 1, maxLength: 4096,
                                },
@@ -151,17 +151,14 @@ read_skill_resource:
     required: ["name", "resource", "offset"] }
 ```
 
-The operations are separate so each provider-facing schema is structurally closed and every
-declared property is required. `load_skill` cannot receive `resource`, `offset`, aliases or
-sentinels; a call such as `{name, resource: "/dev/null? no resource omitted actually."}` is rejected
-as an additional property before a provider or host bridge is touched. `read_skill_resource`
+The operations have separate required fields. Unknown fields are ignored, including resource-shaped
+extras on `load_skill`; it always loads only the body by name. `read_skill_resource`
 requires a resource path and an explicit byte offset: zero for the first page, then
 the preceding result's cursor. The path resolves from the selected skill directory and may
 be absolute or parent-relative. Production:
 `loadSkillTool` and `readSkillResourceTool` in `packages/skills/src/tool.ts`, with
 `handleLoadSkillCall` and `handleReadSkillResourceCall` in `packages/skills/src/call.ts`. Test:
-`packages/skills/tests/unit/tool.test.ts`, `packages/skills/tests/unit/call.test.ts` ("rejects every
-resource-shaped argument on the name-only load operation"), and
+`packages/skills/tests/unit/tool.test.ts`, `packages/skills/tests/unit/call.test.ts` ("ignores resource-shaped extras on the name-only load operation"), and
 `packages/skills/tests/integration/call-resource.test.ts`.
 
 ### 2.5 Settings / plugin-manifest key (owned by the engine, not this package)
@@ -978,14 +975,15 @@ to this document.
     contribution. Production: `createSkillsRunCapability` in
     `packages/skills/src/capability.ts`. Test: "wires the unadvertised strict skill handlers" in
     `packages/skills/tests/component/capability.test.ts`.
-32. **Each skill operation validates against its own declared closed schema and refuses to run when
+32. **Each skill operation validates against its own declared schema and refuses to run when
     the host wires no validator.** Production: `handleLoadSkillCall` and
     `handleReadSkillResourceCall` in `packages/skills/src/call.ts`. Test:
     `packages/skills/tests/unit/call.test.ts` and `packages/skills/tests/unit/tool.test.ts`.
-33. **`load_skill` accepts only `{name}`; every `resource`, `offset`, alias, sentinel or unknown
-    field is rejected before body/provider access.** Production: `loadSkillTool` and
-    `handleLoadSkillCall`. Test: "rejects every resource-shaped argument on the name-only load
-    operation" in `packages/skills/tests/unit/call.test.ts`.
+33. **`load_skill` consumes only `name`; extra fields never select a resource operation.**
+    Resource reads similarly ignore undeclared fields while enforcing resource and offset validity.
+    Production: `loadSkillTool`, `readSkillResourceTool`, `handleLoadSkillCall` and
+    `handleReadSkillResourceCall`. Test: "ignores resource-shaped extras on the name-only load
+    operation" and "ignores extra fields in resource reads" in `packages/skills/tests/unit/call.test.ts`.
 34. **A resource request for an unknown skill is rejected before any read.**
     Production: `handleReadSkillResourceCall` in `packages/skills/src/call.ts`. Test: "rejects a
     resource lookup before reading when the skill is unknown" in

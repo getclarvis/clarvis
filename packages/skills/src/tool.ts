@@ -52,7 +52,7 @@ export const loadSkillTool: NamespacedTool = {
     "`read_skill_resource` for a bundled file.",
   inputSchema: {
     type: "object",
-    additionalProperties: false,
+    additionalProperties: true,
     properties: {
       name: {
         type: "string",
@@ -65,7 +65,7 @@ export const loadSkillTool: NamespacedTool = {
 };
 
 /**
- * The closed resource-reading companion to {@link loadSkillTool}.
+ * The resource-reading companion to {@link loadSkillTool}.
  *
  * @remarks Every property is required so strict-schema providers cannot
  *   materialize a placeholder for an omitted operation argument. The first
@@ -82,7 +82,7 @@ export const readSkillResourceTool: NamespacedTool = {
     "resource and copy the returned next offset.",
   inputSchema: {
     type: "object",
-    additionalProperties: false,
+    additionalProperties: true,
     properties: {
       name: {
         type: "string",

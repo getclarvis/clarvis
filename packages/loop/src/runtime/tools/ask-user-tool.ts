@@ -72,7 +72,7 @@ export const askUserTool: NamespacedTool = {
     "user's answer, or a note that they declined, dismissed or left the question unanswered.",
   inputSchema: {
     type: "object",
-    additionalProperties: false,
+    additionalProperties: true,
     properties: {
       question: {
         type: "string",

@@ -27,6 +27,8 @@ describe("Goal formulation through the real file host", () => {
           name: "submit_result",
           arguments: {
             status: "ready",
+            commentary: "Extra formulation metadata",
+            execution_id: "untrusted-extra",
             objective: frame.includes("Preserve the requested exclusion")
               ? "Implement the request without publishing"
               : "Implement the request",

@@ -58,7 +58,7 @@ function fail(text: string): MemoryToolResult {
  *
  * @param schema - the tool's argument schema.
  * @returns a bare JSON Schema object: `$schema` stripped (hosts want the schema
- *   itself, not a document) and the object closed to unknown properties.
+ *   itself, not a document); unknown properties are discarded by the parser.
  * @remarks Deriving rather than hand-writing removes a drift point that no test
  *   could have caught — the advertised shape and the enforced shape are now the
  *   same declaration. Refinements are intentionally absent from the output:
@@ -71,7 +71,7 @@ function jsonSchemaOf(schema: z.ZodType): Record<string, unknown> {
     string,
     unknown
   >;
-  return { ...rest, additionalProperties: false };
+  return rest;
 }
 
 /**

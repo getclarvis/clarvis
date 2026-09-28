@@ -8,6 +8,9 @@ import {
 } from "#src/lib/execution-session.ts";
 import { resolveConfig } from "#src/config.ts";
 import { manualClock } from "../helpers/manual-clock.ts";
+import { SessionWindow } from "#src/lib/session-window.ts";
+import type { SessionLog } from "#src/lib/session-log.ts";
+import { shellSession } from "#src/tools/shell-session.ts";
 import { createShell } from "#src/tools/shell.ts";
 
 function fakeChild(pid: number) {
@@ -22,7 +25,7 @@ function fakeChild(pid: number) {
   return child;
 }
 
-function rig() {
+function rig(log?: SessionLog) {
   const time = manualClock();
   const running = new Set<number>();
   const stops: Array<{ pid: number; deadline: number }> = [];
@@ -35,7 +38,11 @@ function rig() {
       return confirms;
     },
   };
-  const manager = new ExecutionSessionManager(undefined, { clock: time.clock, ownership });
+  const manager = new ExecutionSessionManager(undefined, {
+    clock: time.clock,
+    ownership,
+    ...(log ? { createLog: () => log } : {}),
+  });
   const config = resolveConfig({ workspaceRoot: process.cwd(), sessionManager: manager });
   let nextPid = 100;
   const launch = async (over: Record<string, unknown> = {}) => {
@@ -214,4 +221,168 @@ test("shell yield uses the same manager clock and retains the owned session", as
   expect(JSON.parse(output as string)).toMatchObject({ running: true });
   expect(r.manager.listSessions(r.config.sessionAgent)).toHaveLength(1);
   expect(await r.manager.close()).toBe(true);
+});
+
+test("keep_alive requires explicit yield and rejects permission deltas before spawn", async () => {
+  const r = rig();
+  const controlled = controlledShell(r);
+  await expect(
+    controlled.shell.handler({ command: "fake", keep_alive: true }, r.config),
+  ).rejects.toMatchObject({ code: "invalid_input" });
+  await expect(
+    controlled.shell.handler(
+      {
+        command: "fake",
+        keep_alive: true,
+        yield_time_ms: 0,
+        execution_permissions: { mode: "with_additional_permissions", network: "enabled" },
+      },
+      r.config,
+    ),
+  ).rejects.toMatchObject({ code: "invalid_input" });
+  expect(r.running.size).toBe(0);
+});
+
+test("keep_alive rejects a Host launch without spawning a command", async () => {
+  const r = rig();
+  const controlled = controlledShell(r);
+  await expect(
+    controlled.shell.handler({ command: "fake", keep_alive: true, yield_time_ms: 0 }, r.config),
+  ).rejects.toMatchObject({ code: "sandbox_unavailable" });
+  expect(r.running.size).toBe(0);
+});
+
+for (const readyWhen of ["", " ", "\t \r\n"]) {
+  test(`blank readiness ${JSON.stringify(readyWhen)} preserves the requested yield`, async () => {
+    const r = rig();
+    const controlled = controlledShell(r);
+    let resolved = false;
+    const pending = controlled.shell
+      .handler({ command: "fake", yield_time_ms: 1000, ready_when: readyWhen }, r.config)
+      .then((value) => {
+        resolved = true;
+        return value;
+      });
+    await controlled.spawned;
+    controlled.child().emit("spawn");
+    await r.advance(0);
+    controlled.child().stdout.write("ordinary output");
+    await r.advance(999);
+    expect(resolved).toBe(false);
+    await r.advance(1);
+    expect(JSON.parse((await pending) as string)).toMatchObject({ running: true, ready: false });
+    await r.manager.close();
+  });
+}
+
+test("poll batches continuous and already pending output until its wait expires", async () => {
+  const r = rig();
+  const { child, session } = await r.launch();
+  child.stdout.write("first\n");
+  let resolved = false;
+  const pending = shellSession
+    .handler({ action: "poll", session_id: session.id }, r.config)
+    .then((value) => {
+      resolved = true;
+      return value;
+    });
+  for (let i = 0; i < 9; i++) {
+    child.stdout.write("progress\n");
+    await r.advance(1000);
+    expect(resolved).toBe(false);
+  }
+  await r.advance(1000);
+  expect(JSON.parse((await pending) as string).stdout).toBe("first\n" + "progress\n".repeat(9));
+  expect(r.pending()).toBe(0);
+  await r.manager.close();
+});
+
+test("poll completion and cancellation wake promptly and remove timers", async () => {
+  const r = rig();
+  const { child, session } = await r.launch();
+  const controller = new AbortController();
+  const cancelled = session.waitForChange(undefined, 30000, controller.signal);
+  controller.abort();
+  await cancelled;
+  expect(r.pending()).toBe(0);
+  const completed = session.waitForChange(undefined, 30000);
+  child.exitCode = 7;
+  r.running.delete(child.pid);
+  child.emit("close", 7, null);
+  await completed;
+  expect(r.pending()).toBe(0);
+  expect(
+    JSON.parse(
+      (await shellSession.handler(
+        { action: "status", session_id: session.id },
+        r.config,
+      )) as string,
+    ),
+  ).toMatchObject({ running: false, exit_code: 7 });
+  await r.manager.close();
+});
+
+test("nonblank readiness preserves significant spaces and can yield before the timer", async () => {
+  const r = rig();
+  const controlled = controlledShell(r);
+  let resolved = false;
+  const pending = controlled.shell
+    .handler({ command: "fake", yield_time_ms: 1000, ready_when: " READY " }, r.config)
+    .then((value) => {
+      resolved = true;
+      return value;
+    });
+  await controlled.spawned;
+  controlled.child().emit("spawn");
+  await r.advance(0);
+  controlled.child().stdout.write("READY");
+  await r.advance(100);
+  expect(resolved).toBe(false);
+  controlled.child().stdout.write(" READY ");
+  expect(JSON.parse((await pending) as string).ready).toBe(true);
+  await r.manager.close();
+});
+
+test("failed log capture keeps recent output and unconfirmed cleanup retains the archive", async () => {
+  let disposed = false;
+  const log: SessionLog = {
+    stdout: {
+      totalBytes: 0,
+      push: () => {
+        throw new Error("disk full");
+      },
+      read: () => {
+        throw new Error("unavailable");
+      },
+    },
+    stderr: new SessionWindow(1024),
+    stdoutPath: "test-stdout",
+    stderrPath: "test-stderr",
+    dispose: () => {
+      disposed = true;
+    },
+  };
+  const r = rig(log);
+  const { child, session } = await r.launch({ retainOutput: true });
+  child.stdout.write("recoverable tail");
+  expect(session.readStreams(undefined, 100).stdout.text).toBe("recoverable tail");
+  expect(session.outputInfo().log_truncated).toBe(true);
+  r.setConfirmation(false);
+  expect(await r.manager.close()).toBe(false);
+  expect(disposed).toBe(false);
+  r.setConfirmation(true);
+  expect(await r.manager.close()).toBe(true);
+  expect(disposed).toBe(true);
+});
+
+test("shell yield clears its wait when asynchronous launch fails", async () => {
+  const r = rig();
+  const controlled = controlledShell(r);
+  const pending = controlled.shell.handler({ command: "fake", yield_time_ms: 1000 }, r.config);
+  await controlled.spawned;
+  await r.advance(0);
+  controlled.child().emit("error", new Error("spawn failed"));
+  await expect(pending).rejects.toMatchObject({ code: "io_error" });
+  expect(r.pending()).toBe(0);
+  await r.manager.close();
 });

@@ -12,7 +12,7 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const MAX_YIELD_MS = 30_000;
 
 function readinessPattern(value: string | undefined): RegExp | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined || value.trim() === "") return undefined;
   try {
     return new RegExp(value);
   } catch (error) {
@@ -61,7 +61,7 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
   return {
     name: "shell",
     description:
-      "Run a shell command (sh -c) and return stdout, stderr, and exit code. Blocks until exit unless yield_time_ms is supplied; a live command then returns a session_id for shell_session. Output is byte-bounded in memory and older bytes may expire. Prefer focused output.",
+      "Run a shell command (sh -c) and return stdout, stderr, exit code and a session_id. Blocks until exit unless yield_time_ms is supplied. Returned output is byte-bounded; older bytes may expire from the memory tail. Plain-text session logs preserve the first 16 MiB per stream; use shell_session status, tail or read, or inspect stdout_log/stderr_log for diagnostics instead of rerunning the command. Logs last until run close or session eviction. Prefer focused output.",
     bounded: true,
     inputSchema: {
       type: "object",
@@ -85,9 +85,15 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
           maximum: MAX_YIELD_MS,
           description: "Wait at most this many ms, then return a session_id if still running.",
         },
+        keep_alive: {
+          type: "boolean",
+          description:
+            "Keep the Linux Sandbox boundary alive after a successful initializer exits. Requires explicit yield_time_ms; retain the returned session_id and stop it when finished.",
+        },
         ready_when: {
           type: "string",
-          description: "Optional readiness regex scanned across bounded output windows.",
+          description:
+            "Optional readiness regex scanned across bounded output windows. Blank or whitespace-only strings are ignored; yield_time_ms still applies.",
         },
         execution_permissions: {
           type: "object",
@@ -114,7 +120,31 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
       const requestedTimeoutMs = (args.timeout_ms as number | undefined) || config.shellTimeoutMs;
       const timeoutMs = Math.min(requestedTimeoutMs, config.shellTimeoutMaxMs, MAX_TIMER_DELAY_MS);
       const yieldMs = args.yield_time_ms as number | undefined;
+      const keepAlive = args.keep_alive === true;
       const readyWhen = readinessPattern(args.ready_when as string | undefined);
+      const requestedPermissions = args.execution_permissions as
+        | {
+            mode?: string;
+            write_roots?: unknown[];
+            network?: string;
+          }
+        | undefined;
+
+      if (keepAlive && yieldMs === undefined) {
+        throw new ToolError("invalid_input", "keep_alive requires an explicit yield_time_ms");
+      }
+      if (
+        keepAlive &&
+        requestedPermissions !== undefined &&
+        (requestedPermissions.mode !== "use_default" ||
+          requestedPermissions.write_roots?.length ||
+          requestedPermissions.network !== undefined)
+      ) {
+        throw new ToolError(
+          "invalid_input",
+          "keep_alive is supported only with the run's default Sandbox policy",
+        );
+      }
 
       if (dependencies.statDirectory) await dependencies.statDirectory(cwd, cwdArg ?? cwd);
       else await statDirectory(cwd, cwdArg ?? cwd);
@@ -131,6 +161,7 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
         dependencies.spawn,
         yieldMs,
         readyWhen,
+        keepAlive,
       );
     },
   };
@@ -152,6 +183,7 @@ async function runCommand(
   spawnChild: SpawnSessionChild = spawn,
   yieldMs?: number,
   readyWhen?: RegExp,
+  keepAlive = false,
 ): Promise<string> {
   if (signal?.aborted) {
     throw new ToolError("aborted", "Command aborted", { stdout: "", stderr: "" });
@@ -169,6 +201,8 @@ async function runCommand(
     onOutput,
     onExecutionStarted,
     spawnChild,
+    keepAlive,
+    retainOutput: true,
   });
   let retained = false;
   try {
@@ -190,7 +224,9 @@ async function runCommand(
         });
       if (session.running) {
         retained = true;
-        return JSON.stringify(shellSessionView(session, undefined, config.maxOutputBytes));
+        return JSON.stringify(
+          shellSessionView(session, undefined, Math.min(config.maxOutputBytes, 8192), true),
+        );
       }
     }
     let result = await session.completed;
@@ -229,15 +265,21 @@ async function runCommand(
       });
     }
     if (result.timedOut) {
+      retained = true;
       throw new ToolError("timeout", `Command exceeded ${timeoutMs}ms`, {
+        session_id: session.id,
+        ...session.outputInfo(),
         timeout_ms: timeoutMs,
         stdout: result.stdout,
         stderr: result.stderr,
         ...outputMeta,
       });
     }
-    const page = session.readStreams(undefined, config.maxOutputBytes);
+    retained = true;
+    const page = session.readTail(config.maxShellOutputBytes);
     return JSON.stringify({
+      session_id: session.id,
+      ...session.outputInfo(),
       running: false,
       exit_code: computeExit(result.code, result.signal),
       stdout: result.stdout,
@@ -247,6 +289,14 @@ async function runCommand(
       ready: readyWhen === undefined ? null : session.ready,
       next_cursor: page.nextCursor,
       ...outputMeta,
+      ...(session.keepAlive
+        ? {
+            keep_alive: true,
+            command_status: result.commandStatus,
+            command_exit_code: result.commandExitCode ?? null,
+            command_signal: result.commandSignal ?? null,
+          }
+        : {}),
     });
   } finally {
     if (!retained && (session.terminationConfirmed || (await session.stop())))

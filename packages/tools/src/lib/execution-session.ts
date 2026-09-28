@@ -1,14 +1,25 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
+import { ToolIsolationSetupError } from "../execution/isolation-port.ts";
+import {
+  SESSION_SUPERVISOR_PROTOCOL_VERSION,
+  SupervisorChild,
+  sessionSupervisorPath,
+  verifySessionSupervisorSource,
+  type SupervisorCommandStatus,
+} from "../execution/session-supervisor.ts";
 import { resolveShell, shellArgs, type ShellSpec } from "../shell.ts";
 import { ownProcessGroup } from "./process.ts";
 import { ownedTreeRunning, stopOwnedProcess, type OwnedProcess } from "./process-owner.ts";
 import { allocateBudget, createOutputCoalescer, type OutputCoalescer } from "./output.ts";
 import { createScanBudget } from "./scan-budget.ts";
 import { SessionWindow, decodeCursor, encodeCursor, type OutputSlice } from "./session-window.ts";
+import { createSessionLog, type SessionLog } from "./session-log.ts";
 
 const SESSION_WINDOW_BYTES = 256 * 1024;
 const READY_WINDOW_BYTES = 64 * 1024;
@@ -54,6 +65,8 @@ export interface SessionOwnership {
 export interface ExecutionSessionDependencies {
   clock: SessionClock;
   ownership: SessionOwnership;
+  /** Omit for effect-free tests; production allocates run-owned plain-text logs. */
+  createLog?: (logger: RuntimeConfig["logger"]) => SessionLog;
 }
 
 const REAL_SESSION_DEPS: ExecutionSessionDependencies = {
@@ -63,6 +76,7 @@ const REAL_SESSION_DEPS: ExecutionSessionDependencies = {
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   },
   ownership: { isRunning: ownedTreeRunning, stop: stopOwnedProcess },
+  createLog: createSessionLog,
 };
 
 interface LaunchRequest {
@@ -77,6 +91,9 @@ interface LaunchRequest {
   readonly onOutput?: (chunk: string) => void;
   readonly onExecutionStarted?: () => void;
   readonly spawnChild?: SpawnSessionChild;
+  readonly keepAlive?: boolean;
+  /** Preserve command output for later inspection until confirmed cleanup or eviction. */
+  readonly retainOutput?: boolean;
 }
 
 export interface SessionPage {
@@ -98,6 +115,9 @@ export interface SessionResult {
   readonly stderrOmittedBytes: number;
   readonly timedOut: boolean;
   readonly aborted: boolean;
+  readonly commandStatus?: SupervisorCommandStatus;
+  readonly commandExitCode?: number | null;
+  readonly commandSignal?: NodeJS.Signals | null;
 }
 
 export type SessionPhase =
@@ -111,6 +131,10 @@ export interface SessionSnapshot {
   readonly signal: NodeJS.Signals | null;
   readonly ready: boolean;
   readonly timedOut: boolean;
+  readonly keepAlive?: true;
+  readonly commandStatus?: SupervisorCommandStatus;
+  readonly commandExitCode?: number | null;
+  readonly commandSignal?: NodeJS.Signals | null;
 }
 
 export interface ExecutionSession {
@@ -128,8 +152,17 @@ export interface ExecutionSession {
   readonly signal: NodeJS.Signals | null;
   readonly timedOut: boolean;
   readonly aborted: boolean;
+  readonly keepAlive: boolean;
+  readonly commandStatus?: SupervisorCommandStatus;
+  readonly commandExitCode?: number | null;
+  readonly commandSignal?: NodeJS.Signals | null;
   snapshot(): SessionSnapshot;
   readStreams(cursor: string | undefined, limit: number): SessionPage;
+  /** Read recent output without paging through historical log bytes. */
+  readTail(limit: number): SessionPage;
+  /** Report byte totals, log paths and whether capture reached a bound or failed. */
+  outputInfo(): Record<string, unknown>;
+  /** Batch output until the wait expires, completion, or cancellation; output does not wake it. */
   waitForChange(cursor: string | undefined, timeoutMs: number, signal?: AbortSignal): Promise<void>;
   waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean>;
   stop(deadline?: number): Promise<boolean>;
@@ -163,6 +196,8 @@ class LiveSession implements ExecutionSession {
   private drainTimer: unknown;
   private abortListener: (() => void) | undefined;
   private readonly activityListeners = new Set<() => void>();
+  private logFailed = false;
+  private logDisposed = false;
 
   constructor(
     readonly id: string,
@@ -174,6 +209,12 @@ class LiveSession implements ExecutionSession {
     private readonly readyWhen: RegExp | undefined,
     onOutput: ((chunk: string) => void) | undefined,
     private readonly deps: ExecutionSessionDependencies,
+    private readonly log?: SessionLog,
+    private readonly commandState?: {
+      status: SupervisorCommandStatus;
+      exitCode: number | null;
+      signal: NodeJS.Signals | null;
+    },
   ) {
     this.startedAt = deps.clock.now();
     this.completed = new Promise((resolve, reject) => {
@@ -183,6 +224,22 @@ class LiveSession implements ExecutionSession {
     this.completed.catch(() => undefined);
     this.readyBudget = createScanBudget(config.regexScanBudgetMs, () => deps.clock.now());
     this.live = onOutput ? createOutputCoalescer(onOutput, 200, deps.clock) : undefined;
+  }
+
+  get keepAlive(): boolean {
+    return this.commandState !== undefined;
+  }
+
+  get commandStatus(): SupervisorCommandStatus | undefined {
+    return this.commandState?.status;
+  }
+
+  get commandExitCode(): number | null | undefined {
+    return this.commandState?.exitCode;
+  }
+
+  get commandSignal(): NodeJS.Signals | null | undefined {
+    return this.commandState?.signal;
   }
 
   get running(): boolean {
@@ -209,6 +266,14 @@ class LiveSession implements ExecutionSession {
       signal: this.child.signalCode,
       ready: this.readyMatched,
       timedOut: this.didTimeOut,
+      ...(this.commandState === undefined
+        ? {}
+        : {
+            keepAlive: true as const,
+            commandStatus: this.commandState.status,
+            commandExitCode: this.commandState.exitCode,
+            commandSignal: this.commandState.signal,
+          }),
     };
   }
 
@@ -266,6 +331,17 @@ class LiveSession implements ExecutionSession {
       if (deadline !== undefined && this.deps.clock.now() >= deadline) expire();
       this.live?.push(text);
       (stream === "stdout" ? this.stdoutWindow : this.stderrWindow).push(text);
+      if (this.log && !this.logFailed && !this.logDisposed) {
+        try {
+          this.log[stream].push(text);
+        } catch {
+          this.logFailed = true;
+          this.config.logger.warn(
+            { event: "tools.session_log_failed" },
+            "Session log capture failed; recent output remains available",
+          );
+        }
+      }
       this.scanReady(text);
       this.notifyActivity();
     };
@@ -329,13 +405,61 @@ class LiveSession implements ExecutionSession {
     const errPending = this.stderrWindow.totalBytes > offsets.stderr;
     const outLimit = outPending && errPending ? Math.max(1, Math.floor(limit / 2)) : limit;
     const errLimit = outPending && errPending ? Math.max(1, limit - outLimit) : limit;
-    const stdout = this.stdoutWindow.read(offsets.stdout, outLimit);
-    const stderr = this.stderrWindow.read(offsets.stderr, errLimit);
+    const read = (stream: "stdout" | "stderr", offset: number, budget: number) => {
+      const window = stream === "stdout" ? this.stdoutWindow : this.stderrWindow;
+      const archive = this.log?.[stream];
+      if (!this.logFailed && !this.logDisposed && archive && offset < archive.totalBytes) {
+        const slice = archive.read(offset, budget);
+        return { ...slice, more: slice.nextOffset < window.totalBytes };
+      }
+      return window.read(offset, budget);
+    };
+    const stdout = read("stdout", offsets.stdout, outLimit);
+    const stderr = read("stderr", offsets.stderr, errLimit);
     return {
       stdout,
       stderr,
       nextCursor: encodeCursor({ stdout: stdout.nextOffset, stderr: stderr.nextOffset }),
     };
+  }
+
+  readTail(limit: number): SessionPage {
+    const [outBudget, errBudget] = allocateBudget(
+      this.stdoutWindow.totalBytes,
+      this.stderrWindow.totalBytes,
+      limit,
+    );
+    const read = (window: SessionWindow, budget: number) =>
+      window.read(Math.max(0, window.totalBytes - budget), Math.max(1, budget));
+    const stdout = read(this.stdoutWindow, outBudget);
+    const stderr = read(this.stderrWindow, errBudget);
+    return {
+      stdout,
+      stderr,
+      nextCursor: encodeCursor({ stdout: stdout.nextOffset, stderr: stderr.nextOffset }),
+    };
+  }
+
+  outputInfo(): Record<string, unknown> {
+    return {
+      stdout_bytes: this.stdoutWindow.totalBytes,
+      stderr_bytes: this.stderrWindow.totalBytes,
+      ...(this.log
+        ? {
+            stdout_log: this.log.stdoutPath,
+            stderr_log: this.log.stderrPath,
+            log_truncated:
+              this.logFailed ||
+              this.stdoutWindow.totalBytes > this.log.stdout.totalBytes ||
+              this.stderrWindow.totalBytes > this.log.stderr.totalBytes,
+          }
+        : {}),
+    };
+  }
+
+  disposeOutput(): void {
+    this.logDisposed = true;
+    this.log?.dispose();
   }
 
   private notifyActivity(): void {
@@ -347,12 +471,8 @@ class LiveSession implements ExecutionSession {
     timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<void> {
-    const offsets = decodeCursor(cursor);
-    const changed = () =>
-      this.stdoutWindow.totalBytes > offsets.stdout ||
-      this.stderrWindow.totalBytes > offsets.stderr ||
-      this.settled ||
-      signal?.aborted === true;
+    decodeCursor(cursor);
+    const changed = () => this.settled || signal?.aborted === true;
     if (changed() || timeoutMs <= 0) return;
     await new Promise<void>((resolve) => {
       const wake = () => {
@@ -464,6 +584,13 @@ class LiveSession implements ExecutionSession {
         stderrOmittedBytes: stderr.omitted,
         timedOut: this.didTimeOut,
         aborted: this.wasAborted,
+        ...(this.commandState === undefined
+          ? {}
+          : {
+              commandStatus: this.commandState.status,
+              commandExitCode: this.commandState.exitCode,
+              commandSignal: this.commandState.signal,
+            }),
       });
     } catch (error) {
       this.rejectCompleted(error instanceof Error ? error : new Error(String(error)));
@@ -490,7 +617,7 @@ export class ExecutionSessionManager {
     if (request.signal?.aborted) throw new ToolError("aborted", "Command aborted");
     for (const [id, session] of this.sessions) {
       if (!session.treeRunning() && this.sessions.size >= request.config.maxSessions)
-        this.sessions.delete(id);
+        this.forget(id);
     }
     if (this.sessions.size >= request.config.maxSessions) {
       throw new ToolError("too_many_sessions", "Too many live command sessions");
@@ -514,13 +641,26 @@ export class ExecutionSessionManager {
       args: shellArgs(resolvedShell, request.command),
       options: { cwd: request.cwd, env },
     };
+    if (request.keepAlive && request.config.actionValid?.() === false) {
+      throw new ToolError("sandbox_denied", "Action authority changed before session retention");
+    }
+    const supervisor = request.keepAlive
+      ? this.prepareSupervisor(
+          request.config,
+          shellSpec.options.cwd,
+          shellSpec.options.env as Record<string, string>,
+        )
+      : undefined;
     const prepared = request.config.executionPolicy
-      ? request.config.sandboxBackend?.prepare(request.config.executionPolicy, {
-          file: shellSpec.file,
-          args: shellSpec.args,
-          cwd: shellSpec.options.cwd,
-          env: shellSpec.options.env as Record<string, string>,
-        })
+      ? request.config.sandboxBackend?.prepare(
+          request.config.executionPolicy,
+          supervisor ?? {
+            file: shellSpec.file,
+            args: shellSpec.args,
+            cwd: shellSpec.options.cwd,
+            env: shellSpec.options.env as Record<string, string>,
+          },
+        )
       : undefined;
     const spec = prepared
       ? {
@@ -546,16 +686,31 @@ export class ExecutionSessionManager {
       throw new ToolError("sandbox_denied", "Action authority changed before process launch");
     }
     let child: SessionChild;
+    let supervisorChild: SupervisorChild | undefined;
+    const log = request.retainOutput ? this.deps.createLog?.(request.config.logger) : undefined;
     try {
-      child = (request.spawnChild ?? spawn)(spec.file, spec.args, {
-        ...spec.options,
-        stdio: ["ignore", "pipe", "pipe"],
-        detached,
-      });
+      if (request.keepAlive) {
+        supervisorChild = new SupervisorChild(
+          spawn(spec.file, spec.args, {
+            ...spec.options,
+            stdio: ["pipe", "pipe", "pipe"],
+            detached,
+          }),
+        );
+        child = supervisorChild;
+      } else {
+        child = (request.spawnChild ?? spawn)(spec.file, spec.args, {
+          ...spec.options,
+          stdio: ["ignore", "pipe", "pipe"],
+          detached,
+        });
+      }
     } catch (error) {
+      log?.dispose();
       throw new ToolError("io_error", `Failed to spawn command: ${(error as Error).message}`);
     }
     if (child.pid === undefined) {
+      log?.dispose();
       child.on("error", () => {});
       throw new ToolError("io_error", "Failed to run command: process has no pid");
     }
@@ -570,17 +725,75 @@ export class ExecutionSessionManager {
       request.readyWhen,
       request.onOutput,
       this.deps,
+      log,
+      supervisorChild?.commandState,
     );
     try {
       this.sessions.set(id, session);
       session.start(request.signal, request.timeoutMs, request.onExecutionStarted);
       this.afterSpawn?.(child);
+      if (supervisorChild && supervisor) {
+        supervisorChild.sendInit({
+          version: SESSION_SUPERVISOR_PROTOCOL_VERSION,
+          type: "init",
+          file: shellSpec.file,
+          args: shellSpec.args,
+          cwd: shellSpec.options.cwd,
+          env: shellSpec.options.env as Record<string, string>,
+        });
+      }
       if (this.closed) throw new ToolError("aborted", "Process admission is closed");
       return session;
     } catch (error) {
-      if (await session.stop()) this.sessions.delete(id);
+      if (await session.stop()) this.forget(id);
       throw error;
     }
+  }
+
+  private prepareSupervisor(
+    config: RuntimeConfig,
+    cwd: string,
+    env: Record<string, string>,
+  ): { file: string; args: string[]; cwd: string; env: Record<string, string> } {
+    const policy = config.executionPolicy;
+    const backend = config.sandboxBackend;
+    if (
+      process.platform !== "linux" ||
+      policy?.mode !== "sandbox" ||
+      backend?.name !== "bubblewrap" ||
+      backend.capabilities?.pidNamespace !== true
+    ) {
+      throw new ToolIsolationSetupError(
+        "sandbox_unavailable",
+        "Retained sessions require the Linux Bubblewrap PID namespace backend",
+        backend && policy ? { backend: backend.name, policyId: policy.id } : undefined,
+      );
+    }
+    const helper = sessionSupervisorPath();
+    try {
+      verifySessionSupervisorSource(helper);
+      const canonical = realpathSync(helper);
+      const installed = policy.installationRoots.some((root) => {
+        const suffix = relative(realpathSync(root), canonical);
+        return (
+          suffix === "" ||
+          (suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))
+        );
+      });
+      if (!installed) throw new Error("supervisor is outside installation roots");
+    } catch {
+      throw new ToolIsolationSetupError(
+        "sandbox_setup_failed",
+        "Retained-session supervisor cannot be verified",
+        { backend: backend.name, policyId: policy.id },
+      );
+    }
+    return {
+      file: process.execPath,
+      args: [helper],
+      cwd,
+      env,
+    };
   }
 
   getSession(id: string, agent: object): ExecutionSession {
@@ -596,6 +809,7 @@ export class ExecutionSessionManager {
   }
 
   forget(id: string): void {
+    this.sessions.get(id)?.disposeOutput();
     this.sessions.delete(id);
   }
 
@@ -604,7 +818,13 @@ export class ExecutionSessionManager {
     this.closed = true;
     const deadline = this.deps.clock.now() + budgetMs;
     const outcomes = await Promise.all([
-      ...[...this.sessions.values()].map((session) => session.stop(deadline)),
+      ...[...this.sessions.values()].map(async (session) => {
+        const confirmed = await session.stop(deadline);
+        if (confirmed) {
+          this.forget(session.id);
+        }
+        return confirmed;
+      }),
     ]);
     return outcomes.every(Boolean);
   }

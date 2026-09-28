@@ -79,7 +79,7 @@ describe("a Subagent survives a tool result larger than its window", () => {
     expect(spills).toHaveLength(1);
     const spillPath = path.join(localDir, spills[0]!);
     expect(spillPath.startsWith(workspaceRoot)).toBe(false);
-    expect(seen).toContain(`full output at ${spillPath}`);
+    expect(seen).toContain(`complete tool response at ${spillPath}`);
     const spilled = await readFile(spillPath, "utf8");
     expect(spilled).toContain(BIG);
     expect(spilled.length).toBe(ev.original_chars);

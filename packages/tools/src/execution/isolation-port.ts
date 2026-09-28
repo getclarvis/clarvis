@@ -29,6 +29,8 @@ export interface ToolLaunchSpec {
 /** Native launcher supplied by the kernel; tools does not import a backend package. */
 export interface ToolIsolationBackend {
   readonly name: "bubblewrap" | "seatbelt";
+  /** Native boundary capabilities relevant to long-lived process ownership. */
+  readonly capabilities?: { readonly pidNamespace?: boolean };
   prepare(
     policy: ToolIsolationPolicy,
     child: {

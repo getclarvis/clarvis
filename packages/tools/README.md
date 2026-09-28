@@ -57,8 +57,8 @@ Clarvis loop supplies run-owned scratch and system temporary roots. The first
 root becomes `TMPDIR`, `TEMP` and `TMP` for commands.
 The optional `SandboxToolExecutor` runs file handlers in its source worker. Its
 versioned manifest, generated at `assets/worker.manifest.json` and ignored by Git,
-binds the worker source to an OS, architecture, protocol and
-SHA-256 digest; a mismatch fails before launch.
+binds the worker and retained-session supervisor sources to an OS, architecture,
+protocol and SHA-256 digest; a mismatch fails before launch.
 Sandbox outcomes identify the selected backend and policy. Setup errors report
 `execution_started: false`; worker handler failures and uncertain outcomes
 report that execution started so callers do not replay effects blindly.
@@ -86,11 +86,35 @@ read-only paths retain precedence. Production: `prepareToolAction` in
 
 ## Execution and limits
 
-`shell` can return a live `session_id` when `yield_time_ms` expires.
-`shell_session` polls, stops or lists only sessions owned by the same run and
-agent. Output capture uses bounded per-stream windows. Text reads use bounded
-descriptor reads and reject non-regular files. An omitted or empty cursor
-starts a `shell_session` read at the first retained output page.
+`shell` returns a `session_id` for completed commands as well as yielded commands.
+`shell_session` controls only sessions owned by the same run and agent: `status`
+returns metadata, `tail` returns recent output, and `read` pages earlier output
+using `next_cursor`. `poll` accumulates output for `yield_time_ms` (default 10000,
+maximum 30000), returning early only on completion or cancellation; use 0 for an
+immediate check. An omitted or empty cursor starts at the beginning of the
+retained log. Poll/read/tail responses are capped at 8 KiB of output.
+Empty or whitespace-only `ready_when` values are ignored, preserving the requested
+shell yield; nonblank patterns retain their significant whitespace.
+
+Each command has private, plain-text `stdout_log` and `stderr_log` files. Each
+file preserves the first 16 MiB, rounded down to complete UTF-8 characters;
+`log_truncated` reports a cap or capture failure. The latest 256 KiB per stream
+remain available in memory for `tail` even after the file cap. Read the log paths
+with `read_file`, `tail` or `rg` to diagnose a failure without rerunning a command.
+Logs survive command exit and timeout until session eviction or confirmed run
+cleanup. Read failures are reported; missing output is never reconstructed by
+reexecuting the command. Text reads use bounded descriptor reads and reject
+non-regular files.
+`keep_alive: true` is an explicit Linux Sandbox-only opt-in and requires an
+explicit `yield_time_ms`. The original shell command is analyzed and authorized
+before a verified supervisor asset is launched inside the Bubblewrap PID
+namespace; the command runs once with stdin closed. A zero exit keeps the
+supervisor/session boundary alive for later `shell_session` control and reports
+`command_status`, `command_exit_code` and `command_signal` separately from the
+supervisor's physical status. A nonzero exit, signal, invalid supervisor frame
+or bootstrap failure does not retain the boundary. Timeout includes the
+initializer and retained lifetime; stop, cancellation, run close and timeout
+must confirm physical termination before the session is forgotten.
 The session manager owns one clock, timer scheduler and tree-ownership adapter;
 its shell handler uses that same clock for yield and duration. Defaults probe and
 signal the real owned process tree. Controlled tests deliver child events and

@@ -51,19 +51,19 @@ canonical owner-scoped host state. The root entry exposes `workflowContextOf`,
 
 In ascending order of how much structure they assume:
 
-| Tool              | Effect                                                              |
-| ----------------- | ------------------------------------------------------------------- |
-| `run_leader`      | starts one ad-hoc leader                                            |
-| `run_work_items`  | starts a whole decomposition, scheduled into internal waves         |
-| `run_round`       | starts the first round of a manager-controlled round sequence       |
-| `workflow_status` | inspects the active or latest sequence without starting work        |
-| `workflow_decide` | explicitly continues its exact proposed round or stops the sequence |
-| `run_workflow`    | reviews, then starts a built-in or operator-authored round sequence |
+| Tool              | Effect                                                                     |
+| ----------------- | -------------------------------------------------------------------------- |
+| `run_leader`      | starts one ad-hoc leader                                                   |
+| `run_work_items`  | starts a whole decomposition, scheduled into internal waves                |
+| `run_round`       | starts the first round of a manager-controlled round sequence              |
+| `workflow_status` | inspects the active or latest sequence without starting work               |
+| `workflow_decide` | continues/stops fixed rounds or completes/dispatches/stops manager control |
+| `run_workflow`    | reviews, then starts fixed rounds or opens an authored manager checkpoint  |
 
 `run_workflow` is **not contributed at all** when the host supplies no definitions, so the model never
 sees a tool whose only argument has no legal value. Clarvis's kernel always supplies the built-in
 `audit`, `implement` and `research` definitions, plus any valid operator overrides. Its
-`explain: true` prints the rounds and what the fan-out costs without running anything — and says
+`explain: true` prints the fixed rounds or manager criteria/stages without running anything — and says
 plainly that an `each` round's cost is not knowable in advance rather than inventing a number.
 
 ## Scheduling is derived from data, not re-decided by the model
@@ -179,6 +179,18 @@ same bounds, schema, name, selector, acceptance, repetition and brief rules as t
 The referenced briefs must already exist below `directory`. Configuration consumers use this
 validation when loading an authored workflow; ordinary file tools can write the document before
 it is validated.
+
+An authored document may opt into `control: manager` with `objective`, 1–16
+`completion.criteria` (unique `id`, `description`, optional `requires_completed_stages`),
+1–16 `stages` with `over: once`, and `max_dispatches` from 1 to 16. Omission of `control`
+keeps fixed rounds/repeat semantics. Manager documents cannot mix in `rounds` or `repeat`;
+they open at `awaiting_manager` without a leader after the usual human preflight.
+`workflow_status` lists admitted context/tool/leader evidence refs and retrieves bounded
+detail by `evidence_ref`. `workflow_decide` then accepts `complete` with evidence-backed
+assessment, `dispatch` with a declared `stage_id` and bounded `gap`, or `stop` with
+`remaining_gaps`. A completed objective is distinct from failed optional execution.
+The [authored example](examples/sufficiency/WORKFLOW.md) can be copied into a workflow root
+under the directory name `sufficiency`; it is not a built-in.
 
 The ordinary file tools can create a workflow, its brief and a separate skill launcher;
 an ordinary manager turn loads and executes them under the workflow's own preflight. Workflows are

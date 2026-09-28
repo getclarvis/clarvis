@@ -40,6 +40,30 @@ Three concerns sit here:
    via `get`/`list`/`delete`, and the policy that decides whether an incoming `StartRunParams`
    should be routed through that machinery at all.
 
+An authored manager definition uses `control: manager`, objective, criteria, once stages and a
+1–16 dispatch cap. It cannot mix fixed `rounds` or `repeat`; missing `control` stays fixed.
+Criterion dependencies name declared stages; a dependency requires a completed leader result,
+not merely user-provided evidence. The example under
+[`examples/sufficiency`](../../packages/workflows/examples/sufficiency/WORKFLOW.md) is author-owned,
+not a new built-in. Production: `workflowFrontmatterSchema` and `compileWorkflowDocument` in
+[`artifact.ts`](../../packages/workflows/src/artifact.ts). Test: `loads a manager workflow` and
+`ships an operational authored manager example` in
+[`artifact.test.ts`](../../packages/workflows/tests/integration/artifact.test.ts).
+
+The kernel indexes only the current user message, completed manager tool results and settled
+leader outcomes as per-execution opaque refs, using existing run events and tree records. It flushes
+manager decision checkpoints before emitting their live state. A stored objective assessment does
+not replace `finalWorkflowStatus`'s operational rollup, so `failed` and `sufficient` can coexist.
+Records without a manager assessment project as `not_assessed`; there is no state migration.
+Production: `runManagerWorkflow` and `finalWorkflowStatus` in
+[`workflows-service.ts`](../../packages/kernel/src/workflows/workflows-service.ts),
+`boundedWorkflowSequence` in [`workflow-store.ts`](../../packages/kernel/src/workflows/workflow-store.ts).
+Test: `opens an authored manager workflow without a leader and persists an evidence-backed completion`
+and `rehydrates a sufficient objective without erasing an operational failure` in
+[`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts),
+and `failed optional leader remains visible` in
+[`manager-sequence.test.ts`](../../packages/workflows/tests/component/manager-sequence.test.ts).
+
 The types in `packages/workflows/src/types.ts` are the seam between these two halves and the
 scheduling engine: `WorkflowCtx`, `LeaderSpec` and `LeaderResult` are what the scheduling capability
 (out of scope here) consumes, and what this document's `WorkflowsService` constructs once per manager
@@ -68,7 +92,7 @@ definitions remain unavailable; no subset or host bridge substitutes for the wor
 | `WORKFLOW_FILE` | const | `packages/workflows/src/artifact.ts` | `"WORKFLOW.md"` — the required filename |
 | `workflowFrontmatterSchema` | zod schema | `packages/workflows/src/artifact.ts` | Validates the YAML frontmatter; `.loose()` (unknown keys pass) |
 | `WorkflowRound` | interface | `packages/workflows/src/artifact.ts` | One compiled round: `id`, `type`, `profile?`, `over` (a `Selector`), `title`, `brief`, `fanout`, `accept?`, `when?` |
-| `WorkflowDefinition` | interface | `packages/workflows/src/artifact.ts` | `name`, `description`, `args`, `rounds`, `repeat?`, `synthesis`, `dir` |
+| `WorkflowDefinition` | discriminated type | `packages/workflows/src/artifact.ts` | fixed rounds/repeat by default, or manager objective/criteria/once stages/max dispatches; common name, args and synthesis |
 | `WorkflowLoadError` | interface | `packages/workflows/src/artifact.ts` | `{ dir, message }` — one failed load |
 | `WorkflowRegistry` | interface | `packages/workflows/src/artifact.ts` | `{ workflows, errors }` — the outcome of a scan |
 | `validateWorkflowDocument(raw, { directory })` | function | `packages/workflows/src/artifact.ts` | Validates prospective bytes with the same compiler as discovery, including existing brief files; throws on any defect |
@@ -192,6 +216,14 @@ repeat:                            # optional
 # Synthesis
 Say what was found.
 ```
+
+For the manager variant, replace `rounds`/`repeat` with `control: manager`, an `objective`,
+`completion: {criteria: [{id, description, requires_completed_stages?}]}`, `stages` containing
+`over: once` entries, and positive `max_dispatches` no greater than 16. The directory
+[`examples/sufficiency`](../../packages/workflows/examples/sufficiency/WORKFLOW.md) has a complete
+authorable document and brief. The parser rejects mixed control shapes and unknown criterion
+stage dependencies (`compileWorkflowDocument` in `packages/workflows/src/artifact.ts`; test:
+`loads a manager workflow` in `packages/workflows/tests/integration/artifact.test.ts`).
 
 Cited: `packages/workflows/src/artifact.ts` (schema), `packages/workflows/src/artifact.ts` (compilation into `WorkflowRound[]`),
 `packages/workflows/src/artifact.ts` (`titleSchema` reuses `parseTaskTitle` from `@clarvis/capability`).

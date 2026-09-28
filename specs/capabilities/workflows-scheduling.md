@@ -25,6 +25,24 @@ reviews and compiles a workflow document into that same controlled sequence
 the sequence, and `workflow_decide` is the only operation that may authorize its proposed next
 authored round or repeat pass.
 
+For `control: manager`, `run_workflow` instead opens a checkpoint with zero leaders. The manager
+must explicitly `complete`, `dispatch` one declared `once` stage, or `stop`. `run_round` remains
+fixed. A dispatched stage returns to `awaiting_manager` even if it is the last declared stage;
+neither an empty list nor an exhausted dispatch cap proves sufficiency. `workflow_status` lists up
+to 16 host-admitted refs and retrieves at most 32 KiB of detail; `complete` validates one
+evidence-backed record per criterion, required completed stages and dispositions for known leader
+failures. Origin validation is not a semantic truth judgment. A stale revision, active physical
+child or failed checkpoint flush refuses terminal claims. Production: `ManagerSequence` in
+[`manager-sequence.ts`](../../packages/workflows/src/manager-sequence.ts), `createRoundCoordinator`
+in [`run-round.ts`](../../packages/workflows/src/run-round.ts), and `buildRunWorkflowHandler` in
+[`run-workflow.ts`](../../packages/workflows/src/run-workflow.ts). Test:
+[`manager-sequence.test.ts`](../../packages/workflows/tests/component/manager-sequence.test.ts)
+(`opens without a child`, `invalid refs and required stage`, `failed optional leader`, `failed flush`)
+and `opens an authored manager workflow without a leader and persists an evidence-backed completion`
+in [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts)
+and `approved manager definition opens at a checkpoint` in
+[`run-workflow.test.ts`](../../packages/workflows/tests/component/run-workflow.test.ts).
+
 `run_leader`, `run_work_items`, `run_round`, `workflow_status`, and `workflow_decide` answer
 **immediately**. `run_round` starts only its first semantic round; the sequence pauses after that
 round settles. `run_workflow` first awaits its mandatory interactive review; after explicit approval
@@ -134,14 +152,16 @@ functions).
 when the workspace ships no workflow documents. It requires `name`; its properties are `name` (enum
 of loaded workflow names), `args`, and boolean `explain`.
 
-**`workflow_status`** (`buildWorkflowStatusTool`) — accepts an optional bounded `session_id`. It
-returns the active or latest sequence status, revision, current/proposed round, and cumulative leader
-usage. It is read-only and never starts work.
+**`workflow_status`** (`buildWorkflowStatusTool`) — accepts an optional bounded `session_id` and
+`evidence_ref`. It returns the active or latest checkpoint, cumulative leader usage, and, for a
+manager sequence, criteria and admitted refs or bounded detail for one ref. It never starts work.
 
 **`workflow_decide`** (`buildWorkflowDecideTool`) — requires `session_id`, positive `revision`,
-`decision: "continue" | "stop"`, and a bounded non-empty `reason`. `continue` can start only the
-round already named by the checkpoint. Unknown sessions, stale revisions, duplicate decisions, and
-states other than `awaiting_manager` are non-progressing refusals that spawn nothing.
+`decision`, and a bounded non-empty `reason`. Fixed sequences admit `continue | stop` and continue
+only the proposed round. Manager sequences admit `complete | dispatch | stop`; dispatch supplies
+`stage_id` and `gap`, complete supplies an assessment, and stop supplies `remaining_gaps`.
+Unknown sessions, stale revisions, duplicate decisions, and states other than
+`awaiting_manager` are non-progressing refusals that spawn nothing.
 
 ### 2.4 The capability object
 
@@ -714,8 +734,8 @@ the loaded catalogue → if `explain`, return `explainWorkflow(workflow)` and ru
 `toRoundCall` compile → **fail closed** when there is no `elicit` or no `clock` → a
 `workflow_review` elicitation whose decision enum is ordered `["cancel", "run"]`, whose accepted
 decision must be `"run"`, and whose timeout is the manager run's effective `elicit_wait_ms` →
-`startRounds` with the shared coordinator → an answer carrying the first-round plan plus the
-document's synthesis instruction. Every settled review logs `workflow.review_resolved` with its
+`startRounds` for fixed control or `startManager` with no child for manager control → an answer
+carrying the checkpoint plus the document's synthesis instruction. Every settled review logs `workflow.review_resolved` with its
 decision and `waited_ms`; a timeout additionally logs `capability.elicit_no_response`.
 The TUI also leaves this choice unselected initially; neither schema order nor an untouched Enter
 can approve it. Production: `buildRunWorkflowHandler`; tests:
@@ -738,8 +758,8 @@ format and the catalogue that fills `ctx.workflowDefs` are **workflows-documents
 | `run_work_items` | `parseWorkItemsCall` → `toWorkItem` | every item is fully validated; the *rendered* brief is checked against `textChars` after the prefix is applied |
 | `run_round` | `parseRoundCall` → `parseRound`, `parseRepeat`, `parseArgs` | round ids must be unique within the call; `repeat.rounds` must name rounds declared in the same call |
 | `run_workflow` | `parseCall` | `args` must be a non-array object; property names and string values bounded |
-| `workflow_status` | `buildWorkflowStatusHandler` | object required; optional `session_id` must be a bounded non-empty string |
-| `workflow_decide` | `buildWorkflowDecideHandler` | object required; bounded `session_id`/`reason`, positive integer `revision`, closed `continue \| stop` decision |
+| `workflow_status` | `buildWorkflowStatusHandler` | object required; optional `session_id` and `evidence_ref` must be bounded non-empty strings |
+| `workflow_decide` | `buildWorkflowDecideHandler` | object required; bounded `session_id`/`reason`, positive integer `revision`; mode-specific decision and payload validated at coordinator |
 
 Every parse failure becomes a **non-terminal** `{kind:"result", progress:false}` prefixed
 `Tool '<name>' result: …` (the local `verdict` / `controlVerdict` functions) — the manager is

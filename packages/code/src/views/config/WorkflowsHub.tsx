@@ -189,6 +189,28 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
   };
   const treeNodes = (): WorkflowNode[] =>
     mergeTreeNodes(detail()?.nodes ?? [], detail()?.execution_id);
+  const sequence = (): WorkflowDetail["sequence"] => {
+    const persisted = detail()?.sequence;
+    const live = deps.live?.();
+    if (!live || live.root !== detail()?.execution_id || live.sequence === undefined)
+      return persisted;
+    const current = live.sequence;
+    if (persisted !== undefined && persisted.revision > current.revision) return persisted;
+    return {
+      session_id: current.sessionId,
+      status: current.status,
+      revision: current.revision,
+      leaders_started: current.leadersStarted,
+      max_total_leaders: current.maxTotalLeaders,
+      ...(current.roundId === undefined ? {} : { round_id: current.roundId }),
+      ...(current.reason === undefined ? {} : { reason: current.reason }),
+      ...(current.control === undefined ? {} : { control: current.control }),
+      ...(current.objective === undefined ? {} : { objective: current.objective }),
+      ...(current.dispatches === undefined ? {} : { dispatches: current.dispatches }),
+      ...(current.maxDispatches === undefined ? {} : { max_dispatches: current.maxDispatches }),
+      ...(current.assessment === undefined ? {} : { assessment: current.assessment }),
+    };
+  };
   const selectedRow = (): WorkflowSummary | undefined =>
     listItems()[clampListIndex(listSel(), listItems().length)];
   const selectedNode = (): WorkflowNode | undefined =>
@@ -569,12 +591,43 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
           >
             {progress()}
           </text>
-          <Show when={detail()?.sequence?.status === "awaiting_manager"}>
-            <text fg={tokens.warn}>Waiting for the next stage</text>
+          <Show when={sequence()?.status === "awaiting_manager"}>
+            <text fg={tokens.warn}>
+              {sequence()?.control === "manager"
+                ? "Waiting for manager decision"
+                : "Waiting for the next stage"}
+            </text>
           </Show>
-          <Show when={detail()?.sequence?.reason}>
+          <Show when={sequence()?.control === "manager"}>
+            <text wrapMode="word">Objective: {sequence()?.objective}</text>
+            <text wrapMode="word">
+              Objective assessment: {sequence()?.assessment?.outcome ?? "not_assessed"}; execution:{" "}
+              {detail()?.status}
+            </text>
+            <Show when={sequence()?.assessment}>
+              <text wrapMode="word">
+                Criteria:{" "}
+                {sequence()
+                  ?.assessment?.criteria.map(
+                    (criterion) =>
+                      `${criterion.id} [${criterion.evidenceRefs.join(", ")}] ${criterion.explanation}`,
+                  )
+                  .join("; ")}
+              </text>
+              <text wrapMode="word">
+                Failure dispositions:{" "}
+                {sequence()
+                  ?.assessment?.unresolvedFailures.map(
+                    (failure) =>
+                      `${failure.runId}: ${failure.disposition} - ${failure.explanation}`,
+                  )
+                  .join("; ") || "none"}
+              </text>
+            </Show>
+          </Show>
+          <Show when={sequence()?.reason}>
             <text fg={tokens.warn} wrapMode="word">
-              {detail()?.sequence?.reason}
+              {sequence()?.reason}
             </text>
           </Show>
           <DetailHeading>Tasks</DetailHeading>

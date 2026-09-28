@@ -57,6 +57,8 @@ export type {
   WorkflowRunDeps,
   WorkflowSequenceState,
   WorkflowSequenceStatus,
+  WorkflowAssessment,
+  WorkflowEvidence,
 } from "./types.ts";
 export {
   isWorkflowPersistedTraceEvent,

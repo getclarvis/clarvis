@@ -292,6 +292,12 @@ and returns internal corrections or a final verdict to the Goal capability. A pr
 validates the Steward's decision shape and semantic targets before accepting its output, allowing one
 corrective nudge within the same evaluation budget; a second invalid result fails closed.
 Workflow title generation also ignores extra response fields and returns only the validated title.
+
+For an authored manager-controlled workflow, the kernel admits the current user message and
+completed manager tool results as opaque evidence refs, and attaches a leader's run identity and
+status when it settles. It flushes accepted decision checkpoints through the workflow store before
+the live state event announces them. The stored objective assessment remains distinct from the
+aggregate operational status; a failed optional leader is not erased by a sufficient judgment.
 Unknown fields in Steward decisions and assessments are discarded before semantic validation;
 extra commentary alone does not reject an otherwise valid review.
 Observations reserve evaluation slots for completion, and prior observation failures do not

@@ -670,8 +670,12 @@ The Workflows tree follows the same contextual-action contract. Rows show the pe
 title rather than the first line of the full prompt. `Enter` opens the selected node's result; `T`
 appears only for a leader whose complete task is available and opens that task on a separate detail
 page. The manager and legacy records without a persisted task do not advertise or bind `T`. Above
-the tree, an `awaiting_manager` checkpoint appears as waiting for the next stage. The live Parallel work section shows the same checkpoint even when no
-leader remains live, so an Admiral decision cannot disappear with the last child. Its header and
+the tree, a fixed `awaiting_manager` checkpoint appears as waiting for the next stage, while an
+authored manager workflow waits for an explicit completion, dispatch or stop decision. Its detail
+shows objective assessment and operational execution status separately, including optional failure
+dispositions; it merges live checkpoints with the persisted view. The live Parallel work section
+shows the same checkpoint even when no leader remains live, so an Admiral decision cannot disappear
+with the last child. Its header and
 leader roster mirror the compact Plan/Agents grammar: settled/total plus active running count, then
 one plan-tone status glyph, handle and title per leader in an isolated bounded scroll. Lifecycle
 words, elapsed time, iteration counts and failure totals stay out of this summary surface.

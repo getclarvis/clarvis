@@ -33,6 +33,25 @@ export interface WorkflowSequence {
   leaders_started: number;
   max_total_leaders: number;
   reason?: string;
+  control?: "manager";
+  objective?: string;
+  dispatches?: number;
+  max_dispatches?: number;
+  assessment?: WorkflowObjectiveAssessment;
+}
+
+/** Manager judgment, independent of the aggregate operational status. */
+export interface WorkflowObjectiveAssessment {
+  outcome: "not_assessed" | "sufficient" | "insufficient";
+  decisionRevision: number;
+  criteria: readonly { id: string; evidenceRefs: readonly string[]; explanation: string }[];
+  remainingGaps: readonly string[];
+  unresolvedFailures: readonly {
+    runId: string;
+    disposition: "resolved" | "non_blocking";
+    explanation: string;
+    evidenceRefs: readonly string[];
+  }[];
 }
 
 /**

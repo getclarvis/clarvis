@@ -24,6 +24,10 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Added
 
+- Authored workflows can use `control: manager` to open at an explicit decision checkpoint, cite
+  host-admitted evidence, dispatch one declared stage at a time, and record objective sufficiency
+  separately from execution failures. Packaged workflows keep their fixed-round behavior.
+
 - `/diff` and `Ctrl+X D` show the current Git working tree, including staged, unstaged and untracked
   files, instead of grouping transcript tool calls. The overlay opens on an empty conversation.
 - `/background`, `/background list`, `/attach` and scoped cancellation let a local host run

@@ -39,6 +39,8 @@ import {
   type DispatchUnit,
 } from "./dispatch.ts";
 import { interpolate } from "./interpolate.ts";
+import type { ManagerWorkflowDefinition } from "./artifact.ts";
+import { ManagerSequence } from "./manager-sequence.ts";
 import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
 import { faultFields, workflowLogger } from "./log.ts";
 import { reportScheduleDerived, reportScheduleRefused } from "./schedule-log.ts";
@@ -83,8 +85,8 @@ export function buildWorkflowStatusTool(): NamespacedTool {
     mcpName: "",
     toolName: WORKFLOW_STATUS_TOOL_NAME,
     description:
-      "Inspect the active or named workflow round sequence: its revision, current state, proposed " +
-      "next round, and cumulative leader capacity. This tool never starts work.",
+      "Inspect the active or named workflow sequence, criteria, admitted evidence refs and cumulative " +
+      "capacity. Pass evidence_ref for bounded detail. This tool never starts work.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -95,6 +97,7 @@ export function buildWorkflowStatusTool(): NamespacedTool {
           maxLength: WORKFLOW_LIMITS.identifierChars,
           description: "OPTIONAL — omit to inspect the active or most recent sequence.",
         },
+        evidence_ref: { type: "string", minLength: 1, maxLength: WORKFLOW_LIMITS.identifierChars },
       },
     },
   };
@@ -108,9 +111,9 @@ export function buildWorkflowDecideTool(): NamespacedTool {
     mcpName: "",
     toolName: WORKFLOW_DECIDE_TOOL_NAME,
     description:
-      "At an awaiting_manager checkpoint, explicitly continue exactly the proposed next round or " +
-      "stop the sequence. Supply the revision returned by workflow_status; stale or duplicate " +
-      "decisions are refused before any leader is spawned.",
+      "At an awaiting_manager checkpoint, use continue/stop for fixed sequences or complete/dispatch/stop " +
+      "for manager workflows. Supply revision and reason; complete needs an evidence-backed assessment, " +
+      "dispatch needs a declared stage_id and gap. Stale decisions never spawn a leader.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -122,13 +125,21 @@ export function buildWorkflowDecideTool(): NamespacedTool {
           maxLength: WORKFLOW_LIMITS.identifierChars,
         },
         revision: { type: "integer", minimum: 1 },
-        decision: { enum: ["continue", "stop"] },
+        decision: { enum: ["continue", "complete", "dispatch", "stop"] },
         reason: {
           type: "string",
           minLength: 1,
           maxLength: WORKFLOW_LIMITS.textChars,
           description: "Why another round is needed, or why the sequence should stop now.",
         },
+        dispatch: {
+          type: "object",
+          additionalProperties: false,
+          required: ["stage_id", "gap"],
+          properties: { stage_id: { type: "string" }, gap: { type: "string" } },
+        },
+        assessment: { type: "object" },
+        remaining_gaps: { type: "array", items: { type: "string" } },
       },
     },
   };
@@ -1158,8 +1169,15 @@ interface WorkflowDecision {
 /** Per-manager authority over authored round boundaries. */
 export interface RoundCoordinator {
   start(deps: DispatchDeps, call: RoundCall): { text: string } | { error: string };
-  status(sessionId?: string): CoordinatorResult;
-  decide(decision: WorkflowDecision): CoordinatorResult;
+  startManager(
+    deps: DispatchDeps,
+    definition: ManagerWorkflowDefinition,
+    args: Record<string, unknown>,
+  ): { text: string } | { error: string };
+  status(sessionId?: string, evidenceRef?: string): CoordinatorResult;
+  decide(
+    decision: WorkflowDecision | (Record<string, unknown> & { sessionId: string }),
+  ): CoordinatorResult;
   finalizeGate(): FinalizeGate;
 }
 
@@ -1202,6 +1220,7 @@ async function drainRound(
 /** Build the one coordinator shared by every workflow tool on a manager run. */
 export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
   const sequences = new Map<string, RoundSequence>();
+  const managers = new Map<string, ManagerSequence>();
   let activeId: string | undefined;
   let latestId: string | undefined;
   let nextId = 0;
@@ -1501,6 +1520,8 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
 
   const coordinator: RoundCoordinator = {
     start(deps, call) {
+      if (activeId !== undefined && managers.has(activeId))
+        return { error: `sequence '${activeId}' is awaiting manager; decide it first.` };
       const boundsError = roundCallBoundsError(call);
       if (boundsError !== null) return { error: boundsError };
       const active = activeId === undefined ? undefined : sequences.get(activeId);
@@ -1537,7 +1558,20 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
       latestId = sequence.id;
       return { text: result.text };
     },
-    status(sessionId) {
+    startManager(deps, definition, args) {
+      if (activeId !== undefined)
+        return { error: `sequence '${activeId}' is active; decide it first.` };
+      const sequence = new ManagerSequence(`wfseq-${String(++nextId)}`, definition, deps, args);
+      const opened = sequence.open();
+      if (opened.error === true) return { error: opened.text };
+      managers.set(sequence.id, sequence);
+      activeId = sequence.id;
+      latestId = sequence.id;
+      return { text: opened.text };
+    },
+    status(sessionId, evidenceRef) {
+      const manager = managers.get(sessionId ?? activeId ?? latestId ?? "");
+      if (manager !== undefined) return manager.statusText(evidenceRef);
       const sequence = find(sessionId);
       if (sequence === undefined) {
         return {
@@ -1561,6 +1595,19 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
       };
     },
     decide(decision) {
+      const manager = managers.get(decision.sessionId);
+      if (manager !== undefined) {
+        const result = manager.decide(decision as unknown as Record<string, unknown>);
+        if (result.progress && (manager.status === "completed" || manager.status === "stopped"))
+          activeId = undefined;
+        return result;
+      }
+      if (decision.decision !== "continue" && decision.decision !== "stop")
+        return {
+          text: "only fixed sequences accept continue or stop.",
+          progress: false,
+          error: true,
+        };
       const sequence = sequences.get(decision.sessionId);
       if (sequence === undefined) {
         return { text: `unknown sequence '${decision.sessionId}'.`, progress: false, error: true };
@@ -1583,12 +1630,12 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
       }
       if (decision.decision === "stop") {
         return {
-          text: terminal(sequence, "stopped", `Admiral stopped it: ${decision.reason}`),
+          text: terminal(sequence, "stopped", `Admiral stopped it: ${String(decision.reason)}`),
           progress: true,
         };
       }
       const priorReason = sequence.reason;
-      sequence.reason = `Admiral continued it: ${decision.reason}`;
+      sequence.reason = `Admiral continued it: ${String(decision.reason)}`;
       const launched = launch(sequence, sequence.next, false);
       if (launched.error === true && sequence.status === "awaiting_manager") {
         sequence.reason = priorReason;
@@ -1598,10 +1645,29 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
     finalizeGate(): FinalizeGate {
       return {
         fastAcceptOk: () => {
+          if (activeId !== undefined && managers.get(activeId)?.status === "awaiting_manager")
+            return false;
           const sequence = activeId === undefined ? undefined : sequences.get(activeId);
           return sequence?.status !== "awaiting_manager";
         },
         check(): Promise<GateOutcome> {
+          const manager = activeId === undefined ? undefined : managers.get(activeId);
+          if (manager?.status === "awaiting_manager") {
+            const key = `${manager.id}:${String(manager.revision)}`;
+            if (finalizeNudge !== key) {
+              finalizeNudge = key;
+              return Promise.resolve({
+                kind: "nudge",
+                note: `Manager sequence '${manager.id}' awaits revision ${String(manager.revision)}. Inspect workflow_status and decide complete, dispatch or stop. Finalizing again stops without assessment.`,
+              });
+            }
+            manager.status = "stopped";
+            manager.reason = "manager finalized without a decision; objective not assessed";
+            manager.revision++;
+            ctx.onSequenceState?.(manager.state());
+            activeId = undefined;
+            return Promise.resolve({ kind: "pass" });
+          }
           const sequence = activeId === undefined ? undefined : sequences.get(activeId);
           if (sequence === undefined || sequence.status !== "awaiting_manager") {
             return Promise.resolve({ kind: "pass" });
@@ -1656,7 +1722,18 @@ export function buildWorkflowStatusHandler(coordinator: RoundCoordinator): ToolH
           ),
         );
       }
-      const result = coordinator.status(typeof sessionId === "string" ? sessionId : undefined);
+      const ref = (raw as Record<string, unknown>).evidence_ref;
+      if (
+        ref !== undefined &&
+        (!isBoundedWorkflowString(ref, WORKFLOW_LIMITS.identifierChars) || ref.length === 0)
+      )
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_STATUS_TOOL_NAME, "invalid evidence_ref.", false),
+        );
+      const result = coordinator.status(
+        typeof sessionId === "string" ? sessionId : undefined,
+        typeof ref === "string" ? ref : undefined,
+      );
       return Promise.resolve(
         controlVerdict(WORKFLOW_STATUS_TOOL_NAME, result.text, result.progress),
       );
@@ -1693,11 +1770,14 @@ export function buildWorkflowDecideHandler(coordinator: RoundCoordinator): ToolH
           ),
         );
       }
-      if (record.decision !== "continue" && record.decision !== "stop") {
+      if (!["continue", "stop", "complete", "dispatch"].includes(String(record.decision)))
         return Promise.resolve(
-          controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, "'decision' must be continue or stop.", false),
+          controlVerdict(
+            WORKFLOW_DECIDE_TOOL_NAME,
+            "'decision' must be continue or stop (fixed), or complete, dispatch or stop (manager).",
+            false,
+          ),
         );
-      }
       if (
         !isBoundedWorkflowString(record.reason, WORKFLOW_LIMITS.textChars) ||
         record.reason.trim().length === 0
@@ -1711,6 +1791,9 @@ export function buildWorkflowDecideHandler(coordinator: RoundCoordinator): ToolH
         revision: Number(record.revision),
         decision: record.decision,
         reason: record.reason,
+        ...(record.dispatch === undefined ? {} : { dispatch: record.dispatch }),
+        ...(record.assessment === undefined ? {} : { assessment: record.assessment }),
+        ...(record.remaining_gaps === undefined ? {} : { remaining_gaps: record.remaining_gaps }),
       });
       return Promise.resolve(
         controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, result.text, result.progress),

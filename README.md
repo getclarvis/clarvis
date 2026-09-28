@@ -21,8 +21,9 @@ repository in front of you.
 - **Bring your model:** configure API providers, OpenAI-compatible local endpoints, or the beta
   ChatGPT and Grok subscription flows for eligible accounts. Availability is provider-controlled and
   does not imply provider endorsement of Clarvis.
-- **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
-  `audit`, `implement`, and `research` workflows.
+- **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, run the packaged
+  `audit`, `implement`, and `research` workflows, or author a manager-controlled workflow that
+  explicitly judges evidence before completing or dispatching a declared stage.
 - **Tool use:** Shell and file tools use Sandbox by default, with explicit Host selection and
   manual or automatic review for eligible permissions. Workspace trust still governs
   activation of workspace configuration.

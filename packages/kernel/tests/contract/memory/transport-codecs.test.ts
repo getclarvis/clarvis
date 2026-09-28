@@ -634,6 +634,41 @@ describe("remote run codec", () => {
     expect(decodeRunEvent({ ...event, leaders_started: 33 })).toBeNull();
   });
 
+  it("round-trips a manager assessment without conflating it with execution status", () => {
+    const event = {
+      type: "workflow_sequence_state",
+      at: 17,
+      run_id: "manager",
+      session_id: "wfseq-2",
+      status: "completed",
+      revision: 3,
+      leaders_started: 1,
+      max_total_leaders: 32,
+      control: "manager",
+      objective: "Answer",
+      dispatches: 1,
+      max_dispatches: 2,
+      assessment: {
+        outcome: "sufficient",
+        decisionRevision: 2,
+        criteria: [{ id: "answer", evidenceRefs: ["evidence-1"], explanation: "Supported" }],
+        remainingGaps: [],
+        unresolvedFailures: [
+          {
+            runId: "leader-1",
+            disposition: "non_blocking",
+            explanation: "Optional failure",
+            evidenceRefs: [],
+          },
+        ],
+      },
+    } as const;
+    expect(decodeRunEvent(event)).toEqual(event);
+    expect(
+      decodeRunEvent({ ...event, assessment: { ...event.assessment, outcome: "unverified" } }),
+    ).toBeNull();
+  });
+
   it("settles the result independently and keeps accepting events until stream_end", async () => {
     const transport = new FakeTransport();
     const client = await connectKernelClient(transport);

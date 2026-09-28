@@ -28,6 +28,17 @@ All three views reach their data through `@clarvis/protocol` service interfaces 
 workflows/runs services, never the local filesystem, so a remote kernel needs no change"
 (`packages/code/src/views/config/WorkflowsHub.tsx`).
 
+The Workflows tree reads the same `WorkflowSequence` for live events and stored details. For
+manager-controlled documents it labels the decision checkpoint and displays the objective
+assessment separately from the execution status and leader failures. A sufficient judgment does
+not recolor a failed operational run as successful. Production: `reduceWorkflowProjection` in
+[`workflow-projection.ts`](../../packages/code/src/adapters/workflow-projection.ts) and
+`WorkflowsHub` in [`WorkflowsHub.tsx`](../../packages/code/src/views/config/WorkflowsHub.tsx).
+Test: `keeps objective assessment separate from a failed execution on live projection` in
+[`workflow-projection.test.ts`](../../packages/code/tests/unit/workflow-projection.test.ts), and
+`rehydrates a sufficient objective without erasing an operational failure` in
+[`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
+
 ## 2. Surface
 
 ### 2.1 Registered commands

@@ -78,7 +78,18 @@ cancel useful work or fabricate completion.
 
 Workflow scheduling protects declared conflicts within a batch, not across unrelated work or a
 manager's own writes. A checkpoint requires its current revision and an explicit decision; a paused
-sequence is not complete. Built-in verdict briefs supply the exact `finding_id` and distinguish
+sequence is not complete.
+For a manager-controlled authored workflow, the model inspects admitted evidence references and
+decides `complete`, one declared `once` stage with a gap, or `stop`. A user-supplied result may
+support a semantic criterion, but cannot prove Clarvis executed a check or satisfy a required
+completed stage. Textual finalization without a decision yields one nudge and then stops without
+assessment; optional failures need explicit dispositions before sufficiency. Production:
+`ManagerSequence` and `createRoundCoordinator` in
+[`manager-sequence.ts`](../../packages/workflows/src/manager-sequence.ts) and
+[`run-round.ts`](../../packages/workflows/src/run-round.ts). Test: `manager workflow sufficiency` in
+[`manager-sequence.test.ts`](../../packages/workflows/tests/component/manager-sequence.test.ts).
+
+Built-in verdict briefs supply the exact `finding_id` and distinguish
 static inspection from checks a read-only verifier cannot run. Their acceptance predicate counts
 refutations: `verify.accepted` meets that threshold; `verify.rejected` means not refuted, **not
 confirmed**. Failed, missing or inconclusive evidence remains uncertain. Failed or cancelled leaders

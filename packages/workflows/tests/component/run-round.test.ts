@@ -480,6 +480,7 @@ describe("run_round — Admiral checkpoints", () => {
     const statusCases: Array<[unknown, string]> = [
       ["not-an-object", "expected an object"],
       [{ session_id: "" }, "bounded non-empty string"],
+      [{ evidence_ref: "" }, "invalid evidence_ref"],
     ];
     for (const [args, expected] of statusCases) {
       expect((await h.status(args as Record<string, unknown>)).text).toContain(expected);
@@ -498,6 +499,10 @@ describe("run_round — Admiral checkpoints", () => {
       [
         { session_id: "wfseq-1", revision: 1, decision: "later", reason: "because" },
         "'decision' must be continue or stop",
+      ],
+      [
+        { session_id: "wfseq-1", revision: 1, decision: "complete", reason: "because" },
+        "only fixed sequences accept continue or stop",
       ],
       [
         { session_id: "wfseq-1", revision: 1, decision: "stop", reason: "" },

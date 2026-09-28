@@ -170,6 +170,41 @@ async function harness(
 }
 
 describe("run_workflow — the tool exists only when there is something to run", () => {
+  test("approved manager definition opens at a checkpoint without starting a leader", async () => {
+    const manager: WorkflowDefinition = {
+      name: "sufficiency",
+      description: "Decide explicitly",
+      control: "manager",
+      args: ["question"],
+      rounds: [],
+      objective: "Answer {{args.question}}",
+      completion: { criteria: [{ id: "answer", description: "Supported answer" }] },
+      stages: [
+        {
+          id: "inspect",
+          type: "free",
+          over: { kind: "once" },
+          title: "Inspect",
+          brief: "Investigate",
+          fanout: 1,
+        },
+      ],
+      maxDispatches: 2,
+      synthesis: "Report",
+      dir: "/test",
+    };
+    const h = await harness([manager], 16, undefined, "run");
+    expect((await h.handle({ name: "sufficiency", explain: true })).text).toContain(
+      "No leader starts",
+    );
+    expect(h.reviews).toHaveLength(0);
+    expect(
+      (await h.handle({ name: "sufficiency", args: { question: "the fixture" } })).text,
+    ).toContain("awaiting_manager; no leader was started");
+    expect(h.reviews[0]?.message).toContain("Criteria: answer");
+    expect(h.reviews[0]?.message).toContain("Objective: Answer the fixture");
+    expect(h.briefs).toHaveLength(0);
+  });
   test("is not contributed at all when the host supplies no workflows", async () => {
     const h = await harness([]);
     expect(h.toolNames).not.toContain(RUN_WORKFLOW_TOOL_NAME);

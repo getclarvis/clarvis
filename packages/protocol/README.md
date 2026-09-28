@@ -273,6 +273,11 @@ proposed round/pass, and cumulative `leaders_started/max_total_leaders`. The mat
 `workflow_sequence_state` run event updates the live projection immediately. The field is optional
 for legacy records and workflows that used only ad-hoc leaders.
 
+Manager-controlled sequences add `control: manager`, objective, dispatch count and an optional
+assessment (`not_assessed`, `sufficient` or `insufficient`) to the same checkpoint and live event.
+`WorkflowDetail.status` remains the operational rollup: a sufficient objective may coexist with
+a failed execution, and old records without an assessment project as not assessed.
+
 ### Revision-bound settings writes and repair
 
 Every `SettingsSource` carries the SHA-256 revision of the exact source bytes, or `null` when the

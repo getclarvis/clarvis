@@ -49,6 +49,51 @@ Say what was found.
 `;
 
 describe("loadWorkflow", () => {
+  test("ships an operational authored manager example", () => {
+    const workflow = loadWorkflow(join(import.meta.dir, "../../examples/sufficiency"));
+    expect(workflow.control).toBe("manager");
+    if (workflow.control !== "manager") throw new Error("expected manager example");
+    expect(workflow.stages[0]?.brief).toContain("{{args.question}}");
+  });
+  test("loads a manager workflow and rejects fixed-round mixing or invalid dependencies", () => {
+    const document = `---
+name: probe
+description: Decide whether the answer suffices.
+control: manager
+objective: Answer the question.
+completion:
+  criteria:
+    - id: supported
+      description: The answer has evidence.
+      requires_completed_stages: [inspect]
+stages:
+  - id: inspect
+    type: findings
+    profile: explorer
+    over: once
+    title: Inspect the gap
+    brief: briefs/one.md
+max_dispatches: 2
+---
+Summarize the decision.
+`;
+    const { dir } = write("probe", document);
+    expect(loadWorkflow(dir)).toMatchObject({
+      control: "manager",
+      maxDispatches: 2,
+      stages: [{ id: "inspect" }],
+      rounds: [],
+    });
+    expect(() =>
+      validateWorkflowDocument(
+        document.replace("max_dispatches: 2", "max_dispatches: 2\nrounds: []"),
+        { directory: dir },
+      ),
+    ).toThrow();
+    expect(() =>
+      validateWorkflowDocument(document.replace("[inspect]", "[unknown]"), { directory: dir }),
+    ).toThrow(/unknown stage/u);
+  });
   test("loads frontmatter, resolves the selector and reads the brief off disk", () => {
     const { dir } = write("probe", MINIMAL);
     const workflow = loadWorkflow(dir);

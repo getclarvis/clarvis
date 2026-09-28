@@ -200,6 +200,58 @@ describe("WorkflowStore (file-backed)", () => {
     expect(store.delete("missing")).toBe(false);
   });
 
+  it("pages an absent owner directory as an empty catalog", async () => {
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-absent-"));
+    const store = createWorkflowStore({ dir, owner: "o" });
+    expect(await store.listPage()).toMatchObject({ items: [], total: 0 });
+  });
+
+  it("rehydrates a sufficient objective without erasing an operational failure", () => {
+    const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-assessment-"));
+    const store = createWorkflowStore({ dir, owner: "o" });
+    const value = record("assessed", 2);
+    value.status = "failed";
+    value.edges.push({
+      run_id: "leader-1",
+      parent_run_id: "assessed",
+      kind: "leader",
+      title: "optional",
+      status: "error",
+    });
+    value.sequence = {
+      session_id: "wfseq-1",
+      status: "completed",
+      revision: 3,
+      leaders_started: 1,
+      max_total_leaders: 32,
+      control: "manager",
+      objective: "Answer",
+      dispatches: 1,
+      max_dispatches: 2,
+      assessment: {
+        outcome: "sufficient",
+        decisionRevision: 2,
+        criteria: [
+          { id: "supported", evidenceRefs: ["evidence-1"], explanation: "Context answer" },
+        ],
+        remainingGaps: [],
+        unresolvedFailures: [
+          {
+            runId: "leader-1",
+            disposition: "non_blocking",
+            explanation: "Optional",
+            evidenceRefs: [],
+          },
+        ],
+      },
+    };
+    store.save(value);
+    const loaded = createWorkflowStore({ dir, owner: "o" }).get("assessed");
+    expect(loaded?.status).toBe("failed");
+    expect(loaded?.sequence?.assessment?.outcome).toBe("sufficient");
+    expect(loaded?.sequence?.assessment?.unresolvedFailures).toHaveLength(1);
+  });
+
   it("pages a large catalog from bounded sidecars without parsing workflow bodies", async () => {
     const dir = ownedTempDirSync(join(tmpdir(), "clarvis-wfstore-page-"));
     const ownerDir = join(globalPaths(dir).workflowRecordsDir, "o");
@@ -658,6 +710,183 @@ describe("WorkflowsService", () => {
       code: "not_found",
     });
     await kernel.close();
+  });
+
+  it("persists a manager-only completion and records an explicitly dispatched stage", async () => {
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-wf-manager-"));
+    const globalConfigDir = ownedTempDirSync(join(tmpdir(), "clarvis-wf-manager-global-"));
+    const workflowDir = join(globalPaths(globalConfigDir).workflowsDir, "answer");
+    mkdirSync(join(workflowDir, "briefs"), { recursive: true });
+    writeFileSync(join(workflowDir, "briefs", "inspect.md"), "Investigate {{args.question}}.");
+    writeFileSync(
+      join(workflowDir, "WORKFLOW.md"),
+      `---
+name: answer
+description: Answer from admitted evidence.
+control: manager
+args: [question]
+objective: "Answer {{args.question}}."
+completion:
+  criteria:
+    - id: supported
+      description: Cite admissible evidence.
+stages:
+  - id: inspect
+    type: findings
+    profile: researcher
+    over: once
+    title: Inspect the question
+    brief: briefs/inspect.md
+max_dispatches: 1
+---
+Report the cited answer.
+`,
+    );
+    const deps = buildDeps(
+      ws,
+      [],
+      [
+        {
+          name: "manager",
+          when: IS_MANAGER,
+          script: [
+            {
+              toolCalls: [
+                {
+                  name: "run_workflow",
+                  arguments: { name: "answer", args: { question: "the fixture token" } },
+                },
+              ],
+            },
+            { toolCalls: [{ name: "workflow_status", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
+            {
+              toolCalls: [{ name: "workflow_status", arguments: { evidence_ref: "evidence-1" } }],
+            },
+            {
+              toolCalls: [
+                {
+                  name: "workflow_decide",
+                  arguments: {
+                    session_id: "wfseq-1",
+                    revision: 1,
+                    decision: "complete",
+                    reason: "the user supplied it",
+                    assessment: {
+                      criteria: [
+                        {
+                          id: "supported",
+                          evidence_refs: ["evidence-1"],
+                          explanation: "The user supplied the fixture token.",
+                        },
+                      ],
+                      remaining_gaps: [],
+                      unresolved_failures: [],
+                    },
+                  },
+                },
+              ],
+            },
+            { text: "The fixture token is ALPHA-41, supplied by the user." },
+          ],
+        },
+      ],
+    );
+    const kernel = createInProcessKernel({
+      deps,
+      workspaceRoot: ws,
+      ...kernelIdentity(ws),
+      configStore: seededConfig(),
+      globalConfigDir,
+    });
+    trackOwnedResource(ws, () => kernel.close());
+    const handle = await kernel.runs.start({
+      messages: [{ role: "user", content: "The fixture token is ALPHA-41." }],
+      agent: "manager",
+    });
+    let reviews = 0;
+    handle.onElicit((request) => {
+      if (request.kind !== "workflow_review") return;
+      reviews++;
+      void handle.respond({ id: request.id, action: "accept", content: { decision: "run" } });
+    });
+    const events: RunEvent[] = [];
+    for await (const event of handle.events) events.push(event);
+    expect((await handle.done).status).toBe("completed");
+    expect(reviews).toBe(1);
+    const states = events.filter((event) => event.type === "workflow_sequence_state");
+    expect(states.map((state) => state.status)).toEqual(["awaiting_manager", "completed"]);
+    expect(states[0]).toMatchObject({ leaders_started: 0, control: "manager" });
+    expect(states[1]).toMatchObject({ assessment: { outcome: "sufficient" } });
+    const detail = await kernel.workflows.get(handle.execution_id);
+    expect(detail.sequence?.assessment).toMatchObject({
+      outcome: "sufficient",
+      criteria: [{ id: "supported", evidenceRefs: ["evidence-1"] }],
+    });
+    expect(detail.leader_count).toBe(0);
+    await kernel.close();
+
+    const dispatchDeps = buildDeps(
+      ws,
+      [],
+      [
+        {
+          name: "manager",
+          when: IS_MANAGER,
+          script: [
+            {
+              toolCalls: [
+                {
+                  name: "run_workflow",
+                  arguments: { name: "answer", args: { question: "stage" } },
+                },
+              ],
+            },
+            {
+              toolCalls: [
+                {
+                  name: "workflow_decide",
+                  arguments: {
+                    session_id: "wfseq-1",
+                    revision: 1,
+                    decision: "dispatch",
+                    reason: "the answer needs inspection",
+                    dispatch: { stage_id: "inspect", gap: "verify the answer" },
+                  },
+                },
+              ],
+            },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
+            { text: "Inspection was requested." },
+          ],
+        },
+        { name: "leader", when: () => true, script: [{ text: "The answer is supported." }] },
+      ],
+    );
+    const dispatchKernel = createInProcessKernel({
+      deps: dispatchDeps,
+      workspaceRoot: ws,
+      ...kernelIdentity(ws),
+      configStore: seededConfig(),
+      globalConfigDir,
+    });
+    trackOwnedResource(ws, () => dispatchKernel.close());
+    const dispatched = await dispatchKernel.runs.start({
+      messages: [{ role: "user", content: "Inspect this answer." }],
+      agent: "manager",
+    });
+    dispatched.onElicit((request) => {
+      if (request.kind === "workflow_review")
+        void dispatched.respond({ id: request.id, action: "accept", content: { decision: "run" } });
+    });
+    const dispatchedEvents: RunEvent[] = [];
+    for await (const event of dispatched.events) dispatchedEvents.push(event);
+    await dispatched.done;
+    expect(dispatchedEvents.some((event) => event.type === "workflow_run_started")).toBe(true);
+    const dispatchedDetail = await dispatchKernel.workflows.get(dispatched.execution_id);
+    expect(dispatchedDetail.leader_count).toBe(1);
+    expect(dispatchedDetail.sequence?.dispatches).toBe(1);
+    await dispatchKernel.close();
   });
 
   it("starts the manager while semantic title generation is still in flight", async () => {

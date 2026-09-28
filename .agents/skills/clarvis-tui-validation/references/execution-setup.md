@@ -33,6 +33,20 @@ and continue independent checks. Follow the environment's approval process; do n
 An application timeout after sockets and PTY start successfully requires diagnosis, not automatic
 escalation. Reuse successful preflight evidence for the same environment.
 
+When a credential-free or provider-backed journey exercises a retained shell session, keep the
+session ID inside the same disposable run and use `shell_session` for follow-up
+control and its read/tail/status actions for inspection. On Linux, qualify the retained Sandbox boundary and assert physical cleanup before
+removing scratch; do not pass a model-supplied PID, socket or path as authority. Retention is not
+available on Host or macOS Seatbelt, and its absence must be reported as an explicit capability
+limit rather than retried on Host. The retained-session contract does not add a TUI renderer route
+or a separate interactive tool, so existing scenario IDs and journey profiles remain unchanged.
+
+For a noisy shell journey, assert that nonzero poll waits batch continuous output,
+blank `ready_when` preserves the wait, and status/tail/log reads diagnose an early
+failure after output exceeds 256 KiB without launching the original command again.
+Check that the reported plain-text logs survive command exit and disappear on
+confirmed run cleanup. Generic tool-response spills are not command logs.
+
 ## Select a configured provider
 
 Deterministic/local-only checks need no account discovery. For real-provider E2E:

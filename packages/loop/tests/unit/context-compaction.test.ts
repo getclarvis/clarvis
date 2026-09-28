@@ -617,7 +617,7 @@ describe("appendToolMessage — live-cap truncation", () => {
     const content = toolResult("big", 1000);
     ctx.appendToolMessage("c1", content, { spillPath: ".clarvis/toolout-a3f19c2e.txt" });
     expect(ctx.messages.at(-1)!.content).toContain(
-      "original ~1000 chars; full output at .clarvis/toolout-a3f19c2e.txt]",
+      "original ~1000 chars; complete tool response at .clarvis/toolout-a3f19c2e.txt]",
     );
   });
 
@@ -626,7 +626,7 @@ describe("appendToolMessage — live-cap truncation", () => {
     ctx.appendToolMessage("c1", toolResult("big", 1000));
     const body = contentToText(ctx.messages.at(-1)!.content);
     expect(body).toContain("original ~1000 chars]");
-    expect(body).not.toContain("full output at");
+    expect(body).not.toContain("complete tool response at");
   });
 
   it("keeps head and tail byte-identical whether or not a spill path is present", () => {

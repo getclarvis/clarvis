@@ -256,9 +256,11 @@ instruction.
 ### The truncation marker (`packages/loop/src/runtime/context/live-context.ts`)
 
 ```
-[runtime: tool result truncated — kept the first <N> and last <M> chars, dropped ~<K> from the middle; original ~<L> chars; full output at <spillPath>]
+[runtime: tool result truncated — kept the first <N> and last <M> chars, dropped ~<K> from the middle; original ~<L> chars; complete tool response at <spillPath>]
 ```
-(the `; full output at …` clause is present only when a `spillPath` was supplied).
+(the `; complete tool response at …` clause is present only when a `spillPath` was supplied).
+The spill preserves one tool response, including upstream output limits. It does not
+promise a complete shell log; shell responses carry separate session log paths.
 
 ### The eviction marker (`packages/loop/src/runtime/context/live-context.ts`)
 
@@ -734,7 +736,7 @@ below the automatic threshold and appends user text after hooks") and
 | A `CompactionContribution.text` is not a string | Silently skipped (never trusted) | `packages/loop/src/runtime/context/llm-compaction.ts` |
 | Contributions overflow `CONTRIBUTIONS_BLOCK_MAX_CHARS` (12,000) | Lowest-precedence (earliest) contributions dropped first, in reverse-select-then-restore-order | `packages/loop/src/runtime/context/llm-compaction.ts` |
 | A single contribution exceeds `CONTRIBUTION_MAX_CHARS` (4,000) | Clamped (`.slice`), not dropped | `packages/loop/src/runtime/context/llm-compaction.ts` |
-| Tool-result spill write fails (`writeFile` throws) | Logs `tool.spill_failed` at `warn`, resolves `undefined` — the truncation marker's `full output at …` clause is simply omitted | `packages/loop/src/runtime/context/tool-spill.ts` |
+| Tool-result spill write fails (`writeFile` throws) | Logs `tool.spill_failed` at `warn`, resolves `undefined` — the truncation marker's `complete tool response at …` clause is simply omitted | `packages/loop/src/runtime/context/tool-spill.ts` |
 | A declared `context_window_tokens` is larger than what the provider actually accepts | `compaction.unreachable` warned once per agent loop, from a `context_overflow` observed *below* the high-water mark — a diagnosis only, never a clamp | `packages/loop/src/runtime/loop/compaction-reach.ts` (adjacent module; consumes `CompactionConfig` from this subsystem) |
 | `target_fraction` set equal to (or above) `context_fraction` | Guarded upstream, not here: `resolveSubagentProfiles` clamps `targetFraction` to stay `MIN_COMPACTION_HYSTERESIS` (0.2) below `fraction` | `packages/loop/src/runtime/subagents/subagent-profiles.ts` (out of this document's module list; see §7) |
 | `compact()`/`forceEvictOldest()` find nothing eligible | Returns `undefined`; caller treats as "nothing to do", never an error | `packages/loop/src/runtime/context/live-context.ts` |

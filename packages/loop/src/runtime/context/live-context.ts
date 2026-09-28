@@ -228,7 +228,8 @@ export function createLiveContext(
         const head = content.slice(0, headChars);
         const tail = content.slice(content.length - tailChars);
         const dropped = content.length - head.length - tail.length;
-        const where = opts?.spillPath !== undefined ? `; full output at ${opts.spillPath}` : "";
+        const where =
+          opts?.spillPath !== undefined ? `; complete tool response at ${opts.spillPath}` : "";
         const marker = `[runtime: tool result truncated — kept the first ${head.length} and last ${tail.length} chars, dropped ~${dropped} from the middle; original ~${content.length} chars${where}]`;
         const message = `${head}\n${marker}\n${tail}`;
         store.push(

@@ -1550,7 +1550,7 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
   expect(pendingActivity).toMatch(/working.*Ctrl\+C to interrupt/);
   expect(pendingActivity).not.toContain("Ctrl+X active");
   expect(pendingFrame.match(/Ctrl\+X active/g)?.length).toBe(1);
-  expect(pendingFrame).toMatch(/Ctrl\+X active.*\[K\] expand/);
+  expect(pendingFrame).toMatch(/Ctrl\+X active.*\[E\] expand editor/);
   press(t, "escape");
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("Ctrl+X active");
@@ -3471,12 +3471,6 @@ test("transcript navigation: the leader enters block focus, then plain arrows mo
   await t.renderOnce();
   expect(rgbToHex(first.backgroundColor).toLowerCase()).toBe(focusBg().toLowerCase());
   expect(t.captureCharFrame()).toContain("[↑ / ↓] previous / next block");
-  press(t, "x", { ctrl: true });
-  press(t, "k");
-  await t.renderOnce();
-  press(t, "escape");
-  await t.renderOnce();
-  await t.renderOnce();
   const out = t.captureCharFrame();
   expect(out).toContain("New task");
   t.renderer.destroy();
@@ -3522,8 +3516,6 @@ test("Tab returns block focus to the composer with a sidebar open and never sele
   expect(open).toContain("│ Plan");
   press(t, "x", { ctrl: true });
   press(t, "down");
-  press(t, "x", { ctrl: true });
-  press(t, "k");
   await t.renderOnce();
   press(t, "tab");
   await t.renderOnce();
@@ -3533,13 +3525,6 @@ test("Tab returns block focus to the composer with a sidebar open and never sele
   t.mockInput.pressEnter();
   await t.renderOnce();
   expect(submissions).toEqual(["submit from composer after Tab"]);
-
-  press(t, "x", { ctrl: true });
-  press(t, "k");
-  await t.renderOnce();
-  // Ctrl+X K now targets the transcript as a whole; it must not re-toggle the
-  // block that Tab just left behind.
-  expect(t.captureCharFrame()).toContain("blocks expanded");
   t.renderer.destroy();
 });
 
@@ -3556,7 +3541,7 @@ test("transcript scroll keys (pageup/pagedown/alt+up/alt+down) run without crash
   t.renderer.destroy();
 });
 
-test("the split sidebar owns one compact textual agent roster, including after expand all", async () => {
+test("the split sidebar owns one compact textual agent roster", async () => {
   const stream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -4158,7 +4143,7 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
     await t.mockInput.typeText("draft preserved");
     await t.renderOnce();
     const initial = t.captureCharFrame();
-    for (const text of ["Memory:", "[M] memory", "[I] isolation", "[E] editor"])
+    for (const text of ["Memory:", "[A] approval", "[M] memory", "[I] isolation", "[E] editor"])
       expect(initial).toContain(text);
     for (const [key, title] of [["m", "Select memory"]] as const) {
       press(t, "x", { ctrl: true });

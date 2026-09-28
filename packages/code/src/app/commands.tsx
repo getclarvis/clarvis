@@ -358,6 +358,10 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     slash: "/approval",
     surface: "slash",
     group: "navigate",
+    actionSurfaces: ["footer", "full-help"],
+    footerLabel: "approval",
+    hintPriority: 49,
+    hintGroup: "navigation",
     run: () => effects.openApprovalPicker?.(),
   });
 

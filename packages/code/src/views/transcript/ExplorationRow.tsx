@@ -23,9 +23,7 @@ export function ExplorationRow(props: {
     const row = props.projection.row(props.id);
     return row?.kind === "exploration" ? row.members : [];
   });
-  const expanded = () =>
-    props.transcript.overrideOf(props.id) === "expanded" ||
-    (props.transcript.overrideOf(props.id) !== "collapsed" && props.transcript.expandAll());
+  const expanded = () => props.transcript.overrideOf(props.id) === "expanded";
   const counts = createMemo(() => {
     let hasActive = false;
     let failed = 0;

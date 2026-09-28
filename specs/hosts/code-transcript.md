@@ -1289,7 +1289,7 @@ Test: [transcript-records.test.ts](../../packages/code/tests/unit/transcript-rec
 [transcript-content-render.test.tsx](../../packages/code/tests/integration/transcript-content-render.test.tsx)
 and [transcript-window-render.test.tsx](../../packages/code/tests/integration/transcript-window-render.test.tsx).
 
-**INV-T21.** "Expand all" unfolds blocks but does **not** lift a body's ten-line clamp; only an
+**INV-T21.** Block expansion does **not** lift a body's ten-line clamp; only an
 explicit per-block or per-head `"expanded"` override does. Production
 `packages/code/src/views/blocks.tsx` (rule stated). Test
 `packages/code/tests/integration/tool-clamp.test.tsx`, which mounts every fixture with

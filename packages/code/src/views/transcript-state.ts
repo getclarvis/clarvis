@@ -46,7 +46,6 @@ export interface TranscriptState {
   }): void;
   /** Lead-only main projection, or one explicitly selected sub-agent transcript. */
   semanticNodes: Accessor<readonly TranscriptNode[]>;
-  expandAll: Accessor<boolean>;
   selectedSubagent: Accessor<string | null>;
   focusedKey: Accessor<string | null>;
   overrideOf(key: string): BlockOverride | undefined;
@@ -55,7 +54,6 @@ export interface TranscriptState {
   /** Selects `id`'s isolated view, or clears the selection if `id` is already selected. */
   toggleSubagent(id: string): void;
   cycleSubagent(): void;
-  toggleExpandOrBlock(): void;
   focusBlock(delta: number): string | null;
   clearFocus(): boolean;
   /** All diff-producing calls in the active Lead or selected sub-agent transcript. */
@@ -71,7 +69,6 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
     destination: (key: string) => string | undefined;
     defaultFolded: (key: string) => boolean;
   }>();
-  const [expandAll, setExpandAll] = createSignal(false);
   const [selectedSubagent, setSelectedSubagent] = createSignal<string | null>(null);
   const [focusedKey, setFocusedKey] = createSignal<string | null>(null);
   const focusedByProjection = new Map<string | null, string | null>();
@@ -135,14 +132,13 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
     const rows = rowBinding();
     const own = overrides().get(key);
     const defaultFolded = rows?.defaultFolded(key) ?? deps.defaultFolded?.(key) ?? false;
-    const expanded = own === "expanded" || (own !== "collapsed" && (expandAll() || !defaultFolded));
+    const expanded = own === "expanded" || (own !== "collapsed" && !defaultFolded);
     setOverrides(new Map(overrides()).set(key, expanded ? "collapsed" : "expanded"));
   }
 
   return {
     bindRows: setRowBinding,
     semanticNodes: visibleNodes,
-    expandAll,
     selectedSubagent,
     focusedKey,
     overrideOf: (key) => overrides().get(key),
@@ -181,15 +177,6 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
         const w = subagents.find((x) => x.id === next);
         deps.notify(subagentFocusToast(w ? w.title : next));
       }
-    },
-    toggleExpandOrBlock: () => {
-      const key = focusedKey();
-      if (key) {
-        toggleBlock(key);
-        return;
-      }
-      setExpandAll((e) => !e);
-      deps.notify(expandAll() ? "blocks expanded" : "");
     },
     focusBlock: (delta) => {
       const next = nextFocus(focusables(), focusedKey(), delta);

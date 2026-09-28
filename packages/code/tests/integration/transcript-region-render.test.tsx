@@ -473,7 +473,7 @@ test("a collapsed mutation chip counts the real diff, not the display-bounded co
   expect(frame).toContain(`+${String(changed)}`);
 });
 
-test("the main transcript hides sub-agent work until an isolated transcript is selected", async () => {
+test("clicking a tool expands it after an isolated transcript is selected", async () => {
   const card: TranscriptNode = {
     key: "run-1::subagent-s1",
     kind: "subagent",
@@ -503,7 +503,7 @@ test("the main transcript hides sub-agent work until an isolated transcript is s
   props.transcript.toggleSubagent("s1");
   await settleSyntaxSurfaces(t);
   expect(t.captureCharFrame()).toContain("Worker");
-  props.transcript.toggleExpandOrBlock();
+  props.transcript.toggleAt(body.key);
   await settleSyntaxSurfaces(t);
   expect(t.captureCharFrame()).toContain("edit_file");
   t.renderer.destroy();

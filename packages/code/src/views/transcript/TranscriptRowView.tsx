@@ -49,7 +49,6 @@ export function TranscriptRowView(props: {
         interactive={props.active}
         maxWidth="100%"
         overrideOf={(key) => props.transcript.overrideOf(key)}
-        forceExpand={props.transcript.expandAll}
         focused={() => props.transcript.focusedKey() === props.id}
         onToggle={toggle}
         onOpenDetail={props.onOpenDetail}

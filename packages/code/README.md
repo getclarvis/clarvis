@@ -118,7 +118,7 @@ Creation never switches screens automatically. Insufficient, stale or
 failed outcomes show their one question or actionable message and never retry analysis
 automatically. From the complete Goal view, `Ctrl+X G` returns to the transcript without requiring
 `Escape`. The full view uses a bounded reading column with spaced status, review and usage blocks;
-completed goals omit the internal completion reason. Transcript-wide expansion is a separate `Ctrl+X K` action. `/goal edit` opens a
+completed goals omit the internal completion reason. `/goal edit` opens a
 deterministic form for objective, criteria, constraints, exclusions, assumptions and limits. A
 semantic edit warns that saving converts the complete definition to literal and clears normative
 source bindings; a limit-only edit preserves them. Editing a terminal goal requires confirmed
@@ -613,11 +613,11 @@ Sandbox preserves host tool availability and ordinary filesystem reads, includin
 other repositories, while limiting writes and applying explicit read denies.
 Its read-only mounts do not imply that all files outside the workspace are hidden.
 Application actions use Ctrl+X: M for Memory,
-I for Isolation, A for Approval, P for Plan, G for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
+I for Isolation, A for Approval, P for Plan, G for Goal, W for Workflow, D for Diff, S for the activity Sidebar, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
 plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
 the navigation band names the sequence the user actually holds and lists the continuations the
-keymap would dispatch next (`Ctrl+X active ▸ [K] expand · [M] memory …`), so the options appear
+keymap would dispatch next (`Ctrl+X active ▸ [M] memory …`), so the options appear
 next to the prefix they belong to and the activity line keeps reporting the run instead. A pending
 prefix is announced once, on the surface that owns the band, and each continuation reflects the
 binding that would really fire there. These defaults are identical

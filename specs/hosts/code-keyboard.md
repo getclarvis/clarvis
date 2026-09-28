@@ -346,7 +346,6 @@ The following commands and candidates (`packages/code/src/keys/interaction.ts`,
 | `workflow.current` | `<leader>w` | `overlay==none`; current workflow required |
 | `goal.toggle` | `<leader>g` | `overlay==none` |
 | `transcript.diff` | `<leader>d` | `overlay==none` |
-| `transcript.toggleCollapse` | `<leader>k` | `overlay==none` |
 | `transcript.focusPrev` | `<leader>up` | `overlay==none` |
 | `transcript.focusNext` | `<leader>down` | `overlay==none` |
 | `transcript.scrollPageUp` | `pageup` | `overlay==none` |
@@ -370,7 +369,7 @@ Production: `packages/code/src/keys/interaction.ts` (`focus.next`) and
 `packages/code/src/views/App.tsx` (`focusNext`). Test:
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Tab returns block focus to the
 composer with a sidebar open and never selects an agent" and "the split sidebar owns one compact
-textual agent roster, including after expand all").
+textual agent roster").
 
 `Ctrl+X Up/Down` enters the transcript's logical block focus without taking the textarea's native
 editing bindings away from the composer. While a block is focused, a contextual layer maps plain
@@ -955,7 +954,7 @@ of a hand-embedded bracketed shortcut instruction (a `[esc]`/`[enter]`/`[ctrl+x]
 hint followed by an action verb, or a literal `glyph("return")` reference). Navigation
 hints are generated from the live keymap (§4.6, `active-actions.ts`), never hand-written
 per screen. The three exemptions are principled: `FatalBoot` runs before the shared
-keymap exists; `KeyboardView`'s diagnostic probe labels (`"Press Ctrl+X K"`, etc.,
+keymap exists; `KeyboardView`'s diagnostic probe labels (`"Press Ctrl+K"`, etc.,
 `packages/code/src/views/config/KeyboardView.tsx`) are *inputs under test*, not navigation instructions; `keyspec.ts`
 is the one file that legitimately declares the prompt-editing chord table
 (`PROMPT_EDITING_KEYS`, `packages/code/src/keys/keyspec.ts`), consumed by `InputDock`.
@@ -1084,8 +1083,8 @@ Tests: `packages/code/tests/integration/interaction.test.ts`; full-shell paths a
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx`.
 
 **INV-D13.** Application actions use Ctrl+X consistently across client platforms and profiles:
-M Memory, A Approval, I Isolation, P Plan, G Goal, W Workflow, S Sidebar, K block
-expansion, E expanded editor, and Up/Down block navigation. These are sequential keypresses,
+M Memory, A Approval, I Isolation, P Plan, G Goal, W Workflow, S Sidebar, D Diff, E expanded
+editor, and Up/Down block navigation. These are sequential keypresses,
 not simultaneous chords. The shared OpenTUI timed-leader addon expires a pending prefix after
 two seconds. Keyboard manual overrides remain supported.
 Memory and Agent pickers are disabled during a run and while another overlay owns

@@ -198,26 +198,14 @@ test("selecting a subagent clears a focused key that's no longer visible", () =>
   h.dispose();
 });
 
-test("toggleExpandOrBlock without focus flips expand-all; the second flip clears the toast", () => {
-  const h = harness([]);
-  h.ts.toggleExpandOrBlock();
-  expect(h.ts.expandAll()).toBe(true);
-  expect(h.toasts.at(-1)).toBe("blocks expanded");
-  h.ts.toggleExpandOrBlock();
-  expect(h.ts.expandAll()).toBe(false);
-  expect(h.toasts.at(-1)).toBe("");
-  h.dispose();
-});
-
-test("toggleExpandOrBlock with a focused block overrides that block only", () => {
+test("toggleAt with a focused block overrides that block only", () => {
   const nodes = [
     node({ key: "r::t1", mcpName: "fs", toolName: "list_dir" }),
     node({ key: "r::t2", mcpName: "fs", toolName: "read_file" }),
   ];
   const h = harness(nodes);
   expect(h.ts.focusBlock(-1)).toBe("r::t2");
-  h.ts.toggleExpandOrBlock();
-  expect(h.ts.expandAll()).toBe(false);
+  h.ts.toggleAt("r::t2");
   expect(h.ts.overrideOf("r::t2")).toBe("collapsed");
   expect(h.ts.overrideOf("r::t1")).toBeUndefined();
   h.dispose();

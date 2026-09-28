@@ -362,11 +362,7 @@ export function TranscriptViewport(props: {
       return projection.ids().flatMap((id) => {
         const row = projection.row(id);
         const explicit = props.transcript.overrideOf(id);
-        if (
-          row?.kind !== "exploration" ||
-          (explicit !== "expanded" && (explicit === "collapsed" || !props.transcript.expandAll()))
-        )
-          return [id];
+        if (row?.kind !== "exploration" || explicit !== "expanded") return [id];
         const start = (current.pages.get(id) ?? 0) * 20;
         return [id, ...row.members.slice(start, start + 20)];
       });

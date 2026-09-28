@@ -18,7 +18,6 @@ export function ToolRow(props: {
       node={props.node}
       interactive={props.active}
       maxWidth="100%"
-      forceExpand={props.transcript.expandAll}
       defaultFolded={props.defaultFolded}
       overrideOf={(key) => props.transcript.overrideOf(key)}
       focused={() => props.transcript.focusedKey() === props.node.key}

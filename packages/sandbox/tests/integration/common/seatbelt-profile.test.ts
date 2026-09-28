@@ -46,7 +46,7 @@ test("Seatbelt read-only profile denies workspace writes while keeping scratch w
       workspaceRoot: workspace,
       homeRoot: root,
       workspaceAccess: "read-only",
-      temporaryWriteRoots: [scratch],
+      temporaryWriteRoots: [root, scratch],
     });
     const profile = seatbeltProfile(policy);
     expect(profile).toContain(`(require-not (literal ${JSON.stringify(workspace)}))`);

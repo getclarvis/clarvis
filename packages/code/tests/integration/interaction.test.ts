@@ -82,9 +82,6 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
     openGoal: () => {
       calls.push("openGoal");
     },
-    toggleExpandAll: () => {
-      calls.push("toggleExpandAll");
-    },
     openDiff: () => {
       calls.push("openDiff");
     },
@@ -188,15 +185,13 @@ test("modified arrows stay portable — they are plain xterm, not an enhanced ca
   expect(portable()["transcript.focusNext"]).toBe("<leader>down");
 });
 
-test("Ctrl+X G owns Goal detail, Ctrl+X A opens approval, and Ctrl+X K expands", () => {
+test("Ctrl+X G owns Goal detail and Ctrl+X A opens approval", () => {
   expect(portable()["goal.toggle"]).toBe("<leader>g");
   expect(portable()["approval.picker"]).toBe("<leader>a");
-  expect(portable()["transcript.toggleCollapse"]).toBe("<leader>k");
   expect(DEFAULT_BINDING_CANDIDATES["transcript.copyMode"]).toBeUndefined();
   const vital = buildVitalBindings(portable(), DEFAULT_WHEN);
   expect(find(vital, "goal.toggle")[0]?.when).toBe("overlay==none");
   expect(find(vital, "approval.picker")[0]?.when).toBe("overlay==none");
-  expect(find(vital, "transcript.toggleCollapse")[0]?.when).toBe("overlay==none");
 });
 
 test("Ctrl+X D opens the same transcript diff destination as /diff", async () => {
@@ -286,7 +281,6 @@ test("a pending modal keeps scrolling, suspend and cancel, and withholds the res
     "approval.picker",
     "goal.toggle",
     "transcript.diff",
-    "transcript.toggleCollapse",
     "transcript.focusPrev",
   ]) {
     expect(modalOf(cmd), `${cmd} must be withheld under a modal`).toBe("none");
@@ -708,7 +702,7 @@ test("createInteraction: a SIGCONT listener resumes the platform (no real signal
   t.renderer.destroy();
 });
 
-test("createInteraction: Tab, collapse and block-navigation commands each call their one effect", async () => {
+test("createInteraction: Tab and block-navigation commands each call their one effect", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects();
   createInteraction(t.renderer, fakePlatform(), effects);
@@ -716,11 +710,6 @@ test("createInteraction: Tab, collapse and block-navigation commands each call t
   press(t.renderer, "tab");
   await settle();
   expect(effects.calls).toEqual(["focusNext"]);
-
-  press(t.renderer, "x", { ctrl: true });
-  press(t.renderer, "k");
-  await settle();
-  expect(effects.calls).toEqual(["focusNext", "toggleExpandAll"]);
 
   press(t.renderer, "x", { ctrl: true });
   press(t.renderer, "up");

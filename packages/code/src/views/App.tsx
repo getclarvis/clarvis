@@ -814,10 +814,6 @@ export function App(props: AppProps): JSX.Element {
       }
       commands.runCommand("goal.open");
     },
-    toggleExpandAll: () => {
-      if (overlays.overlay() !== "none") return;
-      ts.toggleExpandOrBlock();
-    },
     focusBlock: (delta) => {
       if (overlays.overlay() !== "none") return;
       const key = ts.focusBlock(delta);

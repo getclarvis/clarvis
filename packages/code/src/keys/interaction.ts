@@ -72,7 +72,6 @@ export interface InteractionEffects {
   focusNext(): void;
   /** Open the current Goal detail from the shell. */
   openGoal(): void;
-  toggleExpandAll(): void;
   openDiff(): void;
   openPlan(): void;
   focusBlock(delta: number): void;
@@ -121,7 +120,6 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "goal.toggle": [{ key: "<leader>g" }],
   "workflow.current": [{ key: "<leader>w" }],
   "transcript.diff": [{ key: "<leader>d" }],
-  "transcript.toggleCollapse": [{ key: "<leader>k" }],
   "tool.interruptFocused": [{ key: "<leader>t" }],
   "transcript.focusPrev": [{ key: "<leader>up" }],
   "transcript.focusNext": [{ key: "<leader>down" }],
@@ -153,7 +151,6 @@ export const DEFAULT_WHEN: Record<string, string> = {
   "transcript.followTail": WHEN_NO_OVERLAY,
   "transcript.scrollLineUp": WHEN_NO_OVERLAY,
   "transcript.scrollLineDown": WHEN_NO_OVERLAY,
-  "transcript.toggleCollapse": WHEN_NO_OVERLAY,
   "transcript.focusPrev": WHEN_NO_OVERLAY,
   "transcript.focusNext": WHEN_NO_OVERLAY,
 };
@@ -263,12 +260,11 @@ const ACTION_PROJECTION: Readonly<Record<string, Record<string, unknown>>> = {
   },
   "app.suspend": { uiSurfaces: ["full-help"] },
   "goal.toggle": { uiSurfaces: ["full-help"] },
-  "approval.picker": { uiSurfaces: ["full-help"] },
-  "transcript.toggleCollapse": {
+  "approval.picker": {
     uiSurfaces: ["footer", "full-help"],
-    footerLabel: "expand",
-    hintPriority: 50,
-    hintGroup: "primary",
+    footerLabel: "approval",
+    hintPriority: 49,
+    hintGroup: "navigation",
   },
   "tool.interruptFocused": {
     uiSurfaces: ["full-help"],
@@ -617,11 +613,6 @@ export function createInteraction(
       desc: "Choose manual or automatic review for eligible actions",
       category: "app",
       enabled: () => !effects.isRunActive(),
-    }),
-    command("transcript.toggleCollapse", () => effects.toggleExpandAll(), {
-      title: "Expand / collapse blocks",
-      desc: "Toggle the focused block, else all collapsible blocks",
-      category: "view",
     }),
     command("transcript.focusPrev", () => effects.focusBlock(-1), {
       title: "Focus previous block",

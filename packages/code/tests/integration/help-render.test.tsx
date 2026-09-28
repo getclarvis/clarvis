@@ -6,7 +6,6 @@ import type { Interaction } from "#src/keys/interaction.ts";
 import type { CommandEntryView } from "#src/keys/commands.ts";
 import { registerUiActionFields, uiCommand } from "#src/keys/actions.ts";
 import { registerWhenField } from "#src/keys/when-dsl.ts";
-import { LAYER } from "#src/keys/keyspec.ts";
 
 function fakeInteraction(): { interaction: Interaction; cleanup(): void } {
   const harness = createTestKeymap({ defaultKeys: true });
@@ -53,23 +52,6 @@ function fakeInteraction(): { interaction: Interaction; cleanup(): void } {
       { key: "shift+return", cmd: "prompt.newline" },
     ],
   });
-  const offGated = keymap.registerLayer({
-    priority: LAYER.VITAL,
-    commands: [
-      uiCommand({
-        id: "transcript.toggleCollapse",
-        title: "Expand / collapse blocks",
-        description: "Toggle the focused block, else all collapsible blocks",
-        category: "view",
-        surfaces: ["footer", "full-help"],
-        footerLabel: "expand",
-        hintPriority: 50,
-        hintGroup: "primary",
-        run: () => {},
-      }),
-    ],
-    bindings: [{ key: "ctrl+k", cmd: "transcript.toggleCollapse", when: "overlay==none" }],
-  });
   return {
     interaction: {
       keymap,
@@ -92,7 +74,6 @@ function fakeInteraction(): { interaction: Interaction; cleanup(): void } {
       }),
     } as unknown as Interaction,
     cleanup: () => {
-      offGated();
       offActions();
       offWhen();
       offFields();
@@ -198,19 +179,4 @@ test("help projects active actions, destinations and environment without duplica
   expect(out).toContain("Mouse");
   expect(out).not.toContain("Config panels");
   expect(out).not.toContain("During a run");
-});
-
-test("help documents the global keys its own overlay deactivates", async () => {
-  // `/help` is a view overlay, so every binding gated on `overlay==none` is
-  // inactive for exactly as long as the reader is looking at the reference — and
-  // "Available here" is projected from *active* keys. Without a registered-
-  // visibility section the one screen whose purpose is the key reference listed
-  // none of the app's global keys.
-  const out = await frame();
-  expect(out).toContain("Available elsewhere");
-  expect(out).toContain("Toggle the focused block, else all collapsible blocks");
-  expect(out).toContain("[Ctrl+K]");
-  // ...and it does not repeat what is active right here.
-  const elsewhereBlock = out.slice(out.indexOf("Available elsewhere"));
-  expect(elsewhereBlock).not.toContain("Cancel the current run");
 });

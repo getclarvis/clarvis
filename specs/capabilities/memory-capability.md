@@ -381,6 +381,8 @@ Production: `prepareMemoryRunInternal`, `createMemoryCapability` and `prepareMem
   supply it to record successful writes in their pyramid ledger
   (`packages/memory/src/indexer/capability.ts`, `buildMemoryToolsHandler`).
 - `onRunEnd` is present **iff** `opts.enqueueOnRunEnd !== false` **and** `memory !== undefined`:
+  - It acts only when the persisted record has `status: "completed"`. Other
+    statuses emit no ingest notice and do not subscribe, enqueue or poke.
   - If `provider.writeTools === undefined` (a read-only provider): `onRunEnd` emits a single
     `MEMORY_INGEST_EVENT` notice `{ phase: "done", skipped: true, note: "provider-read-only" }` and
     resolves — no enqueue is attempted.
@@ -392,6 +394,13 @@ Production: `prepareMemoryRunInternal`, `createMemoryCapability` and `prepareMem
     unsubscribes immediately if the enqueue itself reports `phase: "failed"`, and finally calls
     `factory.poke(ctx.owner)` **without awaiting it** — draining costs an
     inference call and happens off the response path.
+
+Production: `createMemoryRunCapability` in `packages/memory/src/capability.ts`.
+Test: `does no ingest work for a run that did not complete` and `a read-only
+selected provider emits a skipped ingest and never enqueues` in
+`packages/memory/tests/component/capability.test.ts`; `does not queue the
+persisted record when the run is cancelled` in
+`packages/memory/tests/integration/capability-loop.test.ts`.
 
 ### 4.3 Read-tool dispatch (`packages/memory/src/tools.ts`)
 

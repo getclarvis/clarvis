@@ -295,6 +295,15 @@ export function createInMemoryMemoryStore(opts: CreateInMemoryStoreOptions = {})
       for (const job of jobs.values()) counts[job.state] += 1;
       return counts;
     },
+    async peekDue(now) {
+      const due = (job: MemoryIndexJob): boolean =>
+        job.state === "pending" ||
+        (job.state === "retry_wait" && (job.not_before ?? 0) <= now) ||
+        (job.state === "running" && (job.lease_until ?? 0) <= now);
+      return (
+        [...jobs.values()].filter(due).sort((a, b) => a.enqueued_at - b.enqueued_at)[0] ?? null
+      );
+    },
     async nextDueAt() {
       let earliest: number | undefined;
       for (const job of jobs.values()) {
@@ -332,12 +341,8 @@ export function createInMemoryMemoryStore(opts: CreateInMemoryStoreOptions = {})
       return job;
     },
     async claim(now, lease) {
-      const due = (job: MemoryIndexJob): boolean =>
-        job.state === "pending" ||
-        (job.state === "retry_wait" && (job.not_before ?? 0) <= now) ||
-        (job.state === "running" && (job.lease_until ?? 0) <= now);
-      const next = [...jobs.values()].filter(due).sort((a, b) => a.enqueued_at - b.enqueued_at)[0];
-      if (next === undefined) return null;
+      const next = await jobReader.peekDue(now);
+      if (next === null) return null;
       const claimed: MemoryIndexJob = {
         ...next,
         agent_instance_id: next.agent_instance_id ?? randomUUID(),
@@ -1020,6 +1025,9 @@ export function memoryStoreConformance(): readonly ConformanceCase[] {
           failed: 0,
         });
         assert.equal(await store.jobs.nextDueAt(), 3);
+        assert.equal((await store.jobs.peekDue(3))?.run_id, "pending");
+        assert.equal((await store.jobs.peekDue(50))?.run_id, "retry");
+        assert.equal((await store.jobs.peekDue(101))?.run_id, "running");
       },
     },
     {

@@ -14,7 +14,12 @@ import {
 } from "#src/capability.ts";
 import { fakeAgentBuildContext, fakeRunCapabilityContext } from "../helpers/capability.ts";
 import { makeExecutionRecord } from "../helpers/fixtures.ts";
-import type { AgentBuildContext, CapabilityEvent, RunCapabilityContext } from "@clarvis/capability";
+import type {
+  AgentBuildContext,
+  CapabilityEvent,
+  ExecutionRecord,
+  RunCapabilityContext,
+} from "@clarvis/capability";
 import {
   MEMORY_TOOL_CONTRACTS,
   memoryToolParameters,
@@ -259,7 +264,7 @@ describe("createMemoryCapability", () => {
       stop: async () => {},
       subscribeToRun,
     }).forRun(ctxOf({ emit: (event) => events.push(event) }));
-    await run!.onRunEnd!({ id: "read-only", owner: "o", request: { messages: [] } } as never);
+    await run!.onRunEnd!(makeExecutionRecord({ id: "read-only", owner_key_name: "o" }));
     expect(enqueue).not.toHaveBeenCalled();
     expect(poke).not.toHaveBeenCalled();
     expect(subscribeToRun).not.toHaveBeenCalled();
@@ -275,6 +280,43 @@ describe("createMemoryCapability", () => {
         },
       },
     ]);
+    await run!.onRunEnd!(
+      makeExecutionRecord({ id: "read-only-cancelled", owner_key_name: "o", status: "cancelled" }),
+    );
+    expect(events).toHaveLength(1);
+  });
+
+  it("does no ingest work for a run that did not complete", async () => {
+    const events: CapabilityEvent[] = [];
+    const memory = fakeMemory();
+    const enqueue = vi.spyOn(memory, "enqueue");
+    const subscribeToRun = vi.fn(() => () => {});
+    const poke = vi.fn();
+    const run = await createMemoryCapability(factoryOf(memory, { subscribeToRun, poke })).forRun(
+      ctxOf({ emit: (event) => events.push(event) }),
+    );
+
+    for (const status of [
+      "cancelled",
+      "error",
+      "budget_exhausted",
+      "soft_limit_declined",
+      "interrupted",
+      "unknown",
+    ]) {
+      await run!.onRunEnd!(
+        makeExecutionRecord({
+          id: status,
+          owner_key_name: "o",
+          status: status as ExecutionRecord["status"],
+        }),
+      );
+    }
+
+    expect(subscribeToRun).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(poke).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
   });
 
   it("tells every agent the wiki exists even when the tree is empty", async () => {

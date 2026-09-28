@@ -61,6 +61,39 @@ describe("file store job durability", () => {
     }
   });
 
+  test("a reopened cancelled job converges without an indexer or wiki writes", async () => {
+    const { root, cleanup } = await makeRoot();
+    try {
+      const first = createFileMemoryStore({ root });
+      await first.exclusive((tx) =>
+        tx.jobs.enqueue({
+          run_id: "cancelled",
+          snapshot: run({ run_id: "cancelled", status: "cancelled" }),
+          at: 1,
+          provider_key: "wiki:local",
+        }),
+      );
+
+      const reopened = createMemory({ store: createFileMemoryStore({ root }) });
+      const report = await reopened.drain();
+      expect(report.jobs).toEqual([
+        { run_id: "cancelled", outcome: "completed", note: "run-not-completed" },
+      ]);
+      expect((await reopened.jobs())[0]).toMatchObject({
+        state: "completed",
+        note: "run-not-completed",
+      });
+      expect(await reopened.store.wasIndexed("cancelled")).toBe(false);
+      expect(await reopened.store.read("PROFILE.md")).toBeNull();
+
+      const again = createMemory({ store: createFileMemoryStore({ root }) });
+      expect((await again.jobs())[0]?.state).toBe("completed");
+      expect(await again.retryJob("cancelled")).toBeNull();
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("encodes an awkward run id without letting it escape the state directory", async () => {
     const { root, cleanup } = await makeRoot();
     try {

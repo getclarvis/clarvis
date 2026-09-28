@@ -143,13 +143,13 @@ The `Memory` interface itself is the complete host-facing surface — every memb
 
 | Member | Signature | Implemented at | Owner of its behaviour |
 | --- | --- | --- | --- |
-| `index(run)` | `(run: RunSnapshot) => Promise<IndexReport>` | `packages/memory/src/memory.ts` | this document (dispatch) / **memory-indexer-and-jobs** (`indexRun`) |
+| `index(run)` | `(run: RunSnapshot) => Promise<IndexReport>`; non-completed runs are skipped before runtime resolution | `packages/memory/src/memory.ts` | this document (dispatch) / **memory-indexer-and-jobs** (`indexRun`) |
 | `reindex(tx?)` | reindexes through the supplied transaction when present; otherwise takes `store.exclusive` | `memory-contract.ts`, `packages/memory/src/memory.ts` | this document — §4.11 |
 | `review()` | `() => Promise<ReviewDigest>` | `packages/memory/src/memory.ts` | this document — §4.11 |
 | `seed(task?)` | `(task?: string) => Promise<string \| null>` | `packages/memory/src/memory.ts` | this document (`buildSeed`, `packages/memory/src/seed.ts`) |
 | `query(input)` | `(input: MemoryQueryInput) => Promise<MemoryQueryResult>` | `packages/memory/src/memory.ts` | this document — §4.9 |
 | `health()` | `() => Promise<MemoryHealthReport>` | `packages/memory/src/memory.ts` | **memory-indexer-and-jobs** (`health.ts`) |
-| `enqueue(run, opts?)` | `(run, {providerKey?}) => Promise<MemoryIndexJob>` | `packages/memory/src/memory.ts` | **memory-indexer-and-jobs** (durable job queue) |
+| `enqueue(run, opts?)` | `(run, {providerKey?}) => Promise<MemoryIndexJob>`; rejects non-completed runs before storage | `packages/memory/src/memory.ts` | **memory-indexer-and-jobs** (durable job queue) |
 | `drain(opts?)` | `({limit?, signal?, clock?}) => Promise<MemoryDrainReport>` | `packages/memory/src/memory.ts` | **memory-indexer-and-jobs** (`drainIndexJobs`) — §4.11 constructs the shared `admitBlocked` rate limiter this delegates through |
 | `jobs(filter?)` | `({state?, limit?}) => Promise<MemoryIndexJob[]>` | `packages/memory/src/memory.ts` | **memory-indexer-and-jobs** |
 | `retryJob(runId)` | `(runId: string) => Promise<MemoryIndexJob \| null>` | `packages/memory/src/memory.ts` | **memory-indexer-and-jobs** |
@@ -161,7 +161,10 @@ store unit of work passes that handle through to `reindexTree`; an ordinary call
 facade takes `store.exclusive`. Mutation tools use the same transaction-aware rule through their
 callback (`packages/memory/src/memory.ts`, `reindex` and `createMemoryTools`).
 
-`index()`'s dispatch is this document's own logic even though the pass it delegates to is not: with no
+`index()`'s dispatch is this document's own logic even though the pass it delegates to is not: a
+non-completed run returns `{skipped: true, note: "run-not-completed"}` without resolving the runtime
+(`packages/memory/src/memory.ts`; test `skips direct indexing before resolving a runtime for a
+non-completed run` in `packages/memory/tests/integration/memory.test.ts`). With no
 `opts.indexer` resolver it returns `{skipped: true, note: "no-indexer", written: [], deleted: [],
 reindexed: false}` rather than throwing (`packages/memory/src/memory.ts`), and a thrown `MemoryIndexError` from
 `indexRun` is caught and folded into the same shape with `skipped: false` and the error's message as

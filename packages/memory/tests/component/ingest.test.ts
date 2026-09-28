@@ -140,6 +140,29 @@ describe("enqueueFinishedRun", () => {
     return { logger: { warn, info, error: vi.fn() } as unknown as Logger, warn, info };
   }
 
+  it("does nothing before notices, Git capture or enqueue for a non-completed run", async () => {
+    const memory = fakeMemory();
+    const enqueue = vi.spyOn(memory, "enqueue");
+    const captureWorkspaceState = vi.fn().mockResolvedValue(undefined);
+    const onNotice = vi.fn();
+    const { logger, info, warn } = makeLogger();
+
+    await enqueueFinishedRun({
+      memory,
+      record: makeExecutionRecord({ id: "cancelled", owner_key_name: "o", status: "cancelled" }),
+      workspaceRoot: nonGitWorkspace(),
+      captureWorkspaceState,
+      logger,
+      onNotice,
+    });
+
+    expect(captureWorkspaceState).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(onNotice).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it("notifies started then queued, and logs memory.run.enqueued, on success", async () => {
     const record = makeExecutionRecord({ id: "exec_ok", owner_key_name: "o" });
     const notices: MemoryIngestNotice[] = [];

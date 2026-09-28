@@ -15,6 +15,11 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   connections remain available. Release candidates use source identity and
   stable releases continue to publish portable binaries.
 
+### Fixed
+
+- Cancelled and other non-completed runs no longer start automatic memory indexing;
+  older queued jobs for those runs settle without changing the memory wiki.
+
 ## [0.2.0] - Unreleased
 
 ### Added

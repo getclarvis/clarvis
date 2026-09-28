@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, vi } from "bun:test";
 
 import { DEFAULT_BUDGETS } from "#src/config.ts";
 import type { MemoryClock } from "#src/clock.ts";
 import { drainIndexJobs } from "#src/drain.ts";
+import { indexRun } from "#src/indexer/run.ts";
 import { createInMemoryMemoryStore, createTestClock } from "#src/testing.ts";
 import type { IndexerRuntime, MemoryStore } from "#src/types.ts";
 import { doc, run } from "../helpers/fixtures.ts";
@@ -45,6 +46,114 @@ function openPyramidIndexer(): () => IndexerRuntime {
 }
 
 describe("drainIndexJobs failure classification", () => {
+  test("a direct index pass skips a non-completed subject before any model call", async () => {
+    const store = createInMemoryMemoryStore();
+    const fake = fakeIndexerRuntime([{ text: "unused" }]);
+    const result = await indexRun({
+      run: run({ run_id: "cancelled", status: "cancelled" }),
+      store,
+      indexer: fake.runtime,
+      budgets: DEFAULT_BUDGETS,
+    });
+
+    expect(result).toEqual({
+      run_id: "cancelled",
+      skipped: true,
+      note: "run-not-completed",
+      written: [],
+      deleted: [],
+      reindexed: false,
+    });
+    expect(fake.llm.calls).toHaveLength(0);
+    expect(await store.wasIndexed("cancelled")).toBe(false);
+  });
+
+  for (const configured of [true, false]) {
+    test(`converges a legacy cancelled job without a model or runtime (${configured ? "configured" : "unconfigured"})`, async () => {
+      const store = createInMemoryMemoryStore();
+      await store.exclusive((tx) =>
+        tx.jobs.enqueue({
+          run_id: "cancelled",
+          snapshot: run({ run_id: "cancelled", status: "cancelled" }),
+          at: 1,
+          provider_key: "wiki:local",
+        }),
+      );
+      const fake = fakeIndexerRuntime([{ text: "unused" }]);
+      const resolve = vi.fn(() => fake.runtime);
+      const report = await drainIndexJobs({
+        store,
+        ...(configured ? { indexer: resolve } : {}),
+        budgets: DEFAULT_BUDGETS,
+        owner: "worker",
+      });
+
+      expect(report).toMatchObject({ claimed: 1, completed: 1, blocked: 0 });
+      expect(report.jobs).toEqual([
+        { run_id: "cancelled", outcome: "completed", note: "run-not-completed" },
+      ]);
+      expect(resolve).not.toHaveBeenCalled();
+      expect(fake.llm.calls).toHaveLength(0);
+      expect(await store.jobs.get("cancelled")).toMatchObject({
+        state: "completed",
+        note: "run-not-completed",
+      });
+      expect(await store.read("PROFILE.md")).toBeNull();
+      expect(await store.wasIndexed("cancelled")).toBe(false);
+    });
+  }
+
+  test("rechecks a stale non-completed peek before blocking an eligible job", async () => {
+    const backing = createInMemoryMemoryStore();
+    await backing.exclusive(async (tx) => {
+      await tx.jobs.enqueue({
+        run_id: "cancelled",
+        snapshot: run({ run_id: "cancelled", status: "cancelled" }),
+        at: 1,
+      });
+      await tx.jobs.enqueue({
+        run_id: "completed",
+        snapshot: run({ run_id: "completed" }),
+        at: 2,
+        provider_key: "wiki:local",
+      });
+    });
+    let first = true;
+    const store: MemoryStore = {
+      ...backing,
+      jobs: {
+        ...backing.jobs,
+        async peekDue(now) {
+          const job = await backing.jobs.peekDue(now);
+          if (first && job?.run_id === "cancelled") {
+            first = false;
+            await backing.exclusive(async (tx) => {
+              const lease = { owner: "other", token: "other-claim" };
+              await tx.jobs.claim(now, { ms: 1000, ...lease });
+              await tx.jobs.complete("cancelled", now, "run-not-completed", lease);
+            });
+          }
+          return job;
+        },
+      },
+    };
+    const fake = fakeIndexerRuntime([{ text: "nothing to record" }]);
+    const resolve = vi.fn(() => fake.runtime);
+
+    const report = await drainIndexJobs({
+      store,
+      indexer: resolve,
+      budgets: DEFAULT_BUDGETS,
+      owner: "worker",
+      limit: 1,
+    });
+
+    expect(report).toMatchObject({ completed: 1, blocked: 0 });
+    expect(report.jobs[0]?.run_id).toBe("completed");
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect((await backing.jobs.get("completed"))?.state).toBe("completed");
+  });
+
   test("renews a live lease with the current clock while a model call is in flight", async () => {
     const store = await storeWithJob("renewed");
     const clock = createTestClock(100);
@@ -426,7 +535,7 @@ describe("drainIndexJobs failure classification", () => {
     );
     let reads = 0;
     const expiringClock: MemoryClock = {
-      now: () => (reads++ === 0 ? 100 : 201),
+      now: () => (reads++ < 2 ? 100 : 201),
       after: () => () => undefined,
     };
     const runtime = fakeIndexerRuntime([{ throw: new Error("must not run") }]);

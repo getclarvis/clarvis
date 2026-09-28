@@ -197,10 +197,10 @@ describe("memory capability through executeRun", () => {
     });
   });
 
-  it("still queues the persisted record when the run is cancelled", async () => {
+  it("does not queue the persisted record when the run is cancelled", async () => {
     const fake = fakeMemory();
 
-    const { executionId, response } = await executeRun({
+    const { response } = await executeRun({
       rawBody: BODY,
       owner: "owner-1",
       deps: deps(fake.memory, new MockLLM({ script: [{ text: "unused" }] })),
@@ -208,7 +208,7 @@ describe("memory capability through executeRun", () => {
     });
 
     expect(response.status).toBe("cancelled");
-    expect(fake.queued).toHaveLength(1);
-    expect(fake.queued[0]).toMatchObject({ run_id: executionId, status: "cancelled" });
+    expect(fake.enqueue).not.toHaveBeenCalled();
+    expect(fake.queued).toHaveLength(0);
   });
 });

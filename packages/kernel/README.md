@@ -1058,8 +1058,8 @@ definition available. The kernel never materializes a built-in as a user-owned f
 
 Workflow leaders are isolated auxiliary runs. Their requests force both planning and memory off,
 and their engine deps exclude the memory capability. The manager keeps the ordinary primary-run
-memory surface and is the only run in that workflow that enqueues an index job. A leader failure,
-unfinished edge, or refused leader reservation makes the aggregate workflow record failed while
+memory surface and is the only run in that workflow eligible to enqueue an index job when it
+completes. A leader failure, unfinished edge, or refused leader reservation makes the aggregate workflow record failed while
 preserving the manager edge's own completed status. Because the manager's `workflow` capability is
 injected only for that primary run, its later memory pass uses the isolated digest path instead of
 trying an invalid continuation with an undeclared grant.
@@ -1077,10 +1077,11 @@ model call at that fair share; leaders claim their subtree only after semaphore 
 root/subagent model calls partition it again. A model with no explicit output cap therefore cannot
 let one call reserve the entire workflow budget before its siblings start.
 
-A settled run no longer remains leased for the memory indexer's multi-minute retry schedule. Its
+A completed run no longer remains leased for the memory indexer's multi-minute retry schedule. Its
 event stream waits five idle seconds for the usual immediate terminal notice, renews only within a
 15-second absolute window, and hard-caps every override at one minute. The durable memory job keeps
 retrying after the stream closes; only the transient client projection is released.
+Cancelled and other non-completed runs emit no memory-ingest notice and require no memory grace.
 Each physical indexer pass reacquires the same Extension Profile run lease before calling the loop, so a
 durable retry cannot consume host skills or extension bytes after the foreground lease has closed.
 

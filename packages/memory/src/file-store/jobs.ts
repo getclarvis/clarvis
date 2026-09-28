@@ -201,6 +201,17 @@ export function createJobRepository(options: {
       });
       return counts;
     },
+    async peekDue(now) {
+      let next: MemoryIndexJob | undefined;
+      await scanJobs((job) => {
+        const due =
+          job.state === "pending" ||
+          (job.state === "retry_wait" && (job.not_before ?? 0) <= now) ||
+          (job.state === "running" && (job.lease_until ?? 0) <= now);
+        if (due && (next === undefined || job.enqueued_at < next.enqueued_at)) next = job;
+      });
+      return next ?? null;
+    },
     async nextDueAt() {
       let earliest: number | undefined;
       await scanJobs((job) => {
@@ -238,15 +249,8 @@ export function createJobRepository(options: {
       return job;
     },
     async claim(now, lease) {
-      let next: MemoryIndexJob | undefined;
-      await scanJobs((job) => {
-        const due =
-          job.state === "pending" ||
-          (job.state === "retry_wait" && (job.not_before ?? 0) <= now) ||
-          (job.state === "running" && (job.lease_until ?? 0) <= now);
-        if (due && (next === undefined || job.enqueued_at < next.enqueued_at)) next = job;
-      });
-      if (next === undefined) return null;
+      const next = await reader.peekDue(now);
+      if (next === null) return null;
       const claimed: MemoryIndexJob = {
         ...next,
         agent_instance_id: next.agent_instance_id ?? randomUUID(),

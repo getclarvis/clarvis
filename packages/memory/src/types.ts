@@ -320,6 +320,8 @@ export interface MemoryJobReader {
   }): Promise<MemoryIndexJob[]>;
   /** How many jobs sit in each state. */
   counts(): Promise<Record<MemoryJobState, number>>;
+  /** Oldest claimable job, without taking its lease or consuming an attempt. */
+  peekDue(now: number): Promise<MemoryIndexJob | null>;
   /**
    * The earliest time any waiting job becomes claimable.
    *

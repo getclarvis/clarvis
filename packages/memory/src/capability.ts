@@ -371,6 +371,7 @@ function createMemoryRunCapability(
       : provider.writeTools === undefined
         ? {
             onRunEnd(record: ExecutionRecord): Promise<void> {
+              if (record.status !== "completed") return Promise.resolve();
               ctx.emit({
                 capability: MEMORY_CAPABILITY_NAME,
                 kind: MEMORY_INGEST_EVENT,
@@ -408,6 +409,7 @@ function createMemoryRunCapability(
              * is `false`, which is how an indexing pass avoids enqueueing itself.
              */
             async onRunEnd(record: ExecutionRecord): Promise<void> {
+              if (record.status !== "completed") return;
               const emit = ctx.emit;
               const emitNotice = (notice: MemoryIngestNotice): void =>
                 emit({

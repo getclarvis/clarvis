@@ -52,12 +52,14 @@ export interface ReviewDigest {
 
 /** Public facade over one workspace's memory tree. */
 export interface Memory {
+  /** Run one pass only for a completed subject; other statuses return `skipped`. */
   index(run: RunSnapshot): Promise<IndexReport>;
   reindex(tx?: Pick<MemoryTx, "read" | "write" | "list">): Promise<string[]>;
   review(): Promise<ReviewDigest>;
   seed(task?: string): Promise<string | null>;
   query(input: MemoryQueryInput): Promise<MemoryQueryResult>;
   health(): Promise<MemoryHealthReport>;
+  /** Queue a completed subject; rejects every other status before writing a job. */
   enqueue(run: RunSnapshot, options?: { providerKey?: string }): Promise<MemoryIndexJob>;
   drain(opts?: {
     limit?: number;

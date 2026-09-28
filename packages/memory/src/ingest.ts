@@ -50,8 +50,8 @@ export type MemoryIngestListener = (notice: MemoryIngestNotice) => void;
  *   still in flight, just backed off); `"failed"`/`"blocked"` carrying the
  *   job's `note`; or `"done"`, reporting `written`/`deleted`/`reindexed` when
  *   a real index pass ran, or `skipped: true` when the job converged without
- *   one (the already-indexed / no-snapshot shortcut in `drainIndexJobs`,
- *   which reports no counts).
+ *   one (for example, an already-indexed job or a non-completed legacy run,
+ *   which report no counts).
  */
 export function translateDrainSettlement(job: MemoryJobSettlement): MemoryIngestNotice {
   const link =
@@ -108,8 +108,9 @@ export function translateDrainSettlement(job: MemoryJobSettlement): MemoryIngest
  *   git probe, whose failure is otherwise silent.
  * @param a.onNotice - optional listener; its own throws are swallowed so they
  *   cannot break the fire-and-forget contract.
- * @returns a promise that resolves once indexing settles.
- * @remarks Never rejects: the run is already persisted, so any indexing failure
+ * @returns a promise that resolves after a completed run is queued, or immediately for any other status.
+ * @remarks A non-completed run emits no notices, captures no workspace state and creates no job.
+ * Never rejects: the run is already persisted, so any indexing failure
  *   is caught, logged, and reported as a `"failed"` notice rather than
  *   propagated. Callers do not await it, keeping the LLM call and file writes off
  *   the response's critical path. See {@link storedExecutionToRunSnapshot}. Only
@@ -129,6 +130,7 @@ export async function enqueueFinishedRun(a: {
   logger?: Logger;
   onNotice?: MemoryIngestListener;
 }): Promise<void> {
+  if (a.record.status !== "completed") return;
   const notify = (notice: MemoryIngestNotice): void => {
     try {
       a.onNotice?.(notice);

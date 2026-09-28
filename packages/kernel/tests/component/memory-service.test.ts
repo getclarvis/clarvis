@@ -37,6 +37,7 @@ function fakeMemory(over: MemOver = {}): Memory {
       get: async () => null,
       list: async () => [],
       counts: async () => ({ pending: 0, running: 0, retry_wait: 0, completed: 0, failed: 0 }),
+      peekDue: async () => null,
       nextDueAt: async () => undefined,
     },
     recover: over.recover ?? (async () => ({ entries: [], required: false })),

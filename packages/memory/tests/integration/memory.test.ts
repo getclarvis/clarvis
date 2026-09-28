@@ -87,6 +87,22 @@ describe("createFileMemory — seed", () => {
     const [stored] = await memory.jobs();
     expect(stored?.snapshot?.tool_calls.length).toBe(500);
   });
+
+  test("rejects direct enqueue of a run that did not complete", async () => {
+    for (const status of [
+      "cancelled",
+      "error",
+      "budget_exhausted",
+      "soft_limit_declined",
+      "interrupted",
+      "unknown",
+    ]) {
+      await expect(memory.enqueue(run({ run_id: status, status }))).rejects.toThrow(
+        "Only completed runs can be enqueued for memory indexing",
+      );
+    }
+    expect(await memory.jobs()).toEqual([]);
+  });
 });
 
 describe("createFileMemory — per-run indexer", () => {
@@ -125,6 +141,30 @@ describe("createFileMemory — per-run indexer", () => {
     expect(await memory.store.read("infra/bun/MEMORY.md")).toContain("1.3.11");
     // The deterministic restitch ran inside each mutation's own batch.
     expect(await memory.store.read("infra/TOPIC.md")).toContain("[bun](bun/MEMORY.md)");
+  });
+
+  test("skips direct indexing before resolving a runtime for a non-completed run", async () => {
+    const { runtime, llm } = fakeIndexerRuntime([{ text: "unused" }]);
+    let resolutions = 0;
+    const memory = createFileMemory({
+      root,
+      indexer: () => {
+        resolutions += 1;
+        return runtime;
+      },
+    });
+
+    expect(await memory.index(run({ run_id: "cancelled", status: "cancelled" }))).toEqual({
+      run_id: "cancelled",
+      skipped: true,
+      note: "run-not-completed",
+      written: [],
+      deleted: [],
+      reindexed: false,
+    });
+    expect(resolutions).toBe(0);
+    expect(llm.calls).toHaveLength(0);
+    expect(await memory.store.wasIndexed("cancelled")).toBe(false);
   });
 
   test("keeps compiled knowledge at PROFILE, TOPIC, and MEMORY pyramid levels", async () => {

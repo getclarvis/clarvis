@@ -198,6 +198,7 @@ export const DEFAULT_JOB_RETENTION: MemoryJobRetention = {
 /** What the claim section decided for one iteration. */
 type ClaimOutcome =
   | { kind: "none" }
+  | { kind: "stale" }
   | { kind: "blocked"; job: MemoryIndexJob }
   | { kind: "lost"; job: MemoryIndexJob }
   | { kind: "converged"; job: MemoryIndexJob; note: string }
@@ -428,12 +429,24 @@ export async function drainIndexJobs(args: DrainArgs): Promise<MemoryDrainReport
   for (let i = 0; i < limit; i++) {
     if (aborted()) break;
 
-    const indexer = await args.indexer?.();
+    const next = await args.store.jobs.peekDue(now());
+    if (next === null) break;
+    const skipRuntime = next.snapshot !== undefined && next.snapshot.status !== "completed";
+    const indexer = skipRuntime ? undefined : await args.indexer?.();
     const claim: ClaimOutcome = await args.store.exclusive(async (tx) => {
       if (indexer === undefined) {
-        const waiting = await tx.jobs.list({ state: ["pending", "retry_wait"], limit: 1 });
-        const first = waiting[0];
-        return first === undefined ? { kind: "none" } : { kind: "blocked", job: first };
+        const waiting = await tx.jobs.peekDue(now());
+        if (waiting === null) return { kind: "none" };
+        if (waiting.snapshot === undefined || waiting.snapshot.status === "completed") {
+          if (skipRuntime && args.indexer !== undefined) return { kind: "stale" };
+          return { kind: "blocked", job: waiting };
+        }
+        const lease: MemoryJobLease = { owner: args.owner, token: randomUUID() };
+        const job = await tx.jobs.claim(now(), { ms: leaseMs, ...lease });
+        if (job === null) return { kind: "none" };
+        return (await tx.jobs.complete(job.run_id, now(), "run-not-completed", lease))
+          ? { kind: "converged", job, note: "run-not-completed" }
+          : { kind: "lost", job };
       }
       const at = now();
       const lease: MemoryJobLease = { owner: args.owner, token: randomUUID() };
@@ -443,6 +456,9 @@ export async function drainIndexJobs(args: DrainArgs): Promise<MemoryDrainReport
         (await tx.jobs.complete(job.run_id, now(), note, lease))
           ? { kind: "converged", job, note }
           : { kind: "lost", job };
+      if (job.snapshot !== undefined && job.snapshot.status !== "completed") {
+        return converge("run-not-completed");
+      }
       if (job.provider_key === undefined) {
         return converge("provider-selection-unknown");
       }
@@ -463,6 +479,10 @@ export async function drainIndexJobs(args: DrainArgs): Promise<MemoryDrainReport
     });
 
     if (claim.kind === "none") break;
+    if (claim.kind === "stale") {
+      i -= 1;
+      continue;
+    }
     if (claim.kind === "blocked") {
       block(claim.job.run_id, "no_indexer", "the indexer runtime is not configured");
       break;

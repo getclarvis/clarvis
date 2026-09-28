@@ -20,7 +20,7 @@ export interface WorkspaceState {
   dirty?: boolean;
 }
 
-/** A finished run, adapted by the host for the memory indexer. */
+/** A finished run, adapted by the host; only `completed` is eligible for indexing. */
 export interface RunSnapshot {
   run_id: string;
   /** Entry profile model selected for this run and reused by its indexer. */

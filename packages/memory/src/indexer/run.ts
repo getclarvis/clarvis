@@ -155,6 +155,7 @@ function emptyReport(runId: string, note: string): IndexReport {
  */
 export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
   const { run, store, budgets, signal, mutationFence } = args;
+  if (run.status !== "completed") return emptyReport(run.run_id, "run-not-completed");
   const selected = args.indexer.resolveRunModel?.(run);
   if (args.indexer.resolveRunModel !== undefined && selected === undefined) {
     return emptyReport(run.run_id, "run-model-unavailable");

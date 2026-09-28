@@ -556,6 +556,15 @@ never invoked.
 
 ### 4.5 Stream close and the memory-ingest grace
 
+Memory emits no ingest event for a persisted run whose status is not `completed`;
+without another pending ingest, that run closes its stream without memory grace.
+Production: `createMemoryRunCapability` in `packages/memory/src/capability.ts`
+and `closeStream` in `packages/kernel/src/runs/managed-run.ts`. Test: `does not
+queue the persisted record when the run is cancelled` in
+`packages/memory/tests/integration/capability-loop.test.ts` and `closes
+immediately when no ingest is pending and on a terminal ingest notice` in
+`packages/kernel/tests/unit/managed-run.test.ts`.
+
 State machine, from `closeStream` and `endStream` :
 
 | State | Event | Next state | Effect |

@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This subsystem is what turns *a run that finished* into *something the wiki knows*. The work it
+This subsystem is what turns *a completed run* into *something the wiki knows*. The work it
 performs — one LLM agent run over the memory tools — is expensive and must not sit on the response
 path, so the code splits it in two: a **bounded, durable enqueue** performed synchronously at run end
 (`packages/memory/src/ingest.ts`, `packages/memory/src/memory.ts`), and a **background drain**
@@ -347,6 +347,21 @@ Test: [`indexer-continuation.test.ts`](../../packages/memory/tests/unit/indexer-
 
 ### 4.1 Enqueue (synchronous, on the response path)
 
+Only a persisted `ExecutionRecord` with `status: "completed"` enters this flow. Other
+statuses create no new job and emit no `memory_ingest` notice; the same check in
+`enqueueFinishedRun` protects direct callers. `Memory.enqueue` rejects a direct
+non-completed snapshot before writing a job, and `Memory.index` skips it before
+resolving a runtime. Production: `createMemoryRunCapability` in
+`packages/memory/src/capability.ts`, `enqueueFinishedRun` in
+`packages/memory/src/ingest.ts`, and `createMemory` in
+`packages/memory/src/memory.ts`. Test: `does no ingest work for a run that did
+not complete` in `packages/memory/tests/component/capability.test.ts`, `does
+nothing before notices, Git capture or enqueue for a non-completed run` in
+`packages/memory/tests/component/ingest.test.ts`, and the direct-entry cases in
+`packages/memory/tests/integration/memory.test.ts`.
+
+For an eligible run:
+
 1. The memory capability's `onRunEnd` **subscribes first**, then enqueues
    (`createMemoryRunCapability` in `packages/memory/src/capability.ts`) — subscribing after risks missing a settlement the
    worker drains immediately (`packages/memory/src/job-broker.ts`).
@@ -354,7 +369,7 @@ Test: [`indexer-continuation.test.ts`](../../packages/memory/tests/unit/indexer-
    (`packages/memory/src/ingest.ts`, `packages/memory/src/workspace-state.ts`), maps the record to a `RunSnapshot`
    (`packages/memory/src/ingest.ts`), calls `memory.enqueue` (`packages/memory/src/ingest.ts`), logs
    `memory.run.enqueued` and emits `phase: "queued"` (`packages/memory/src/ingest.ts`).
-3. `Memory.enqueue` bounds and redacts the snapshot, then writes it inside `store.exclusive`
+3. `Memory.enqueue` bounds and redacts the completed snapshot, then writes it inside `store.exclusive`
    with `provider_key` defaulting to `"wiki:local"` (`packages/memory/src/memory.ts`).
 4. `factory.poke(owner)` is called and **not** awaited (`createMemoryRunCapability`).
 
@@ -382,10 +397,12 @@ on the job.
 | Step | Code | Effect |
 | --- | --- | --- |
 | abort check | `packages/memory/src/drain.ts` | break |
-| resolve the indexer runtime **before** claiming | `packages/memory/src/drain.ts` | readiness precedes any attempt |
+| `store.jobs.peekDue(now)` | `packages/memory/src/drain.ts`; both job adapters | inspect the oldest due job without a lease or consumed attempt |
+| resolve the indexer runtime for an eligible snapshot | `packages/memory/src/drain.ts` | a legacy non-completed snapshot needs no runtime |
 | enter `store.exclusive` | `packages/memory/src/drain.ts` | one critical section for the claim decision |
-| no runtime → peek at the first `pending`/`retry_wait` job | `packages/memory/src/drain.ts` | `blocked` / `none` |
+| no runtime → peek again inside the critical section | `packages/memory/src/drain.ts` | eligible job is `blocked`; non-completed job is claimed and converged |
 | `tx.jobs.claim(now, {ms, owner, token: randomUUID()})` | `packages/memory/src/drain.ts` | stamps a lease, `attempts += 1` |
+| `snapshot.status !== "completed"` | `packages/memory/src/drain.ts` | converge, note `run-not-completed`, before inference or wiki mutation |
 | `provider_key === undefined` | `packages/memory/src/drain.ts` | converge, note `provider-selection-unknown` |
 | `provider_key !== (memoryProviderKey ?? "wiki:local")` | `packages/memory/src/drain.ts` | converge, `provider-selection-changed` |
 | provider has no `writeTools` | `packages/memory/src/drain.ts` | converge, `provider-read-only` |
@@ -393,10 +410,23 @@ on the job.
 | `job.snapshot === undefined` | `packages/memory/src/drain.ts` | converge, `no-snapshot` |
 | otherwise | `packages/memory/src/drain.ts` | `claimed` |
 
+`peekDue(now)` uses the same due-state and oldest-enqueue ordering as `claim`
+in both adapters. The drain checks again inside the exclusive section, so a
+concurrent claim cannot turn the initial peek into authority to settle a
+different job. If that claim exposes an eligible job after an ineligible peek,
+the drain retries runtime resolution instead of reporting a false `blocked`.
+Production: `MemoryJobReader` in `packages/memory/src/types.ts`,
+the job readers in `packages/memory/src/file-store/jobs.ts` and
+`packages/memory/src/testing.ts`, and `drainIndexJobs` in
+`packages/memory/src/drain.ts`. Test: `filters and limits job views and reports
+the earliest due work` in `memoryStoreConformance` at
+`packages/memory/src/testing.ts`, and `rechecks a stale non-completed peek
+before blocking an eligible job` in `packages/memory/tests/component/drain.test.ts`.
+
 A converge is itself lease-fenced: it calls `tx.jobs.complete(..., lease)` and reports `lost` when
 that returns false (`packages/memory/src/drain.ts`); the drain then blocks with `lease_lost`
 (`packages/memory/src/drain.ts`). `packages/memory/tests/component/drain.test.ts` drives exactly that with a clock whose
-second read is past the lease.
+settlement read is past the lease.
 
 For a claimed job the drain starts `keepLeaseAlive` (`packages/memory/src/drain.ts`), calls `indexRun`
 (`packages/memory/src/drain.ts`), stops the guard, and settles with a fenced `complete` (`packages/memory/src/drain.ts`). On a
@@ -475,6 +505,7 @@ Evaluated strictly in this order (`packages/memory/src/jobs.ts`):
 
 | # | Step | Code | Outcome on failure |
 | --- | --- | --- | --- |
+| 0 | subject run status is not `completed` | `packages/memory/src/indexer/run.ts` | `skipped` report, note `run-not-completed`; no model call |
 | 1 | resolve the subject run's model | `packages/memory/src/indexer/run.ts` | `skipped` report, note `run-model-unavailable` |
 | 2 | provider present but read-only | `packages/memory/src/indexer/run.ts` | `skipped` report, note `provider-read-only` |
 | 3 | `store.exclusive(tx => tx.wasIndexed(run_id))` | `packages/memory/src/indexer/run.ts` | `skipped`, note `already-indexed` |
@@ -936,10 +967,13 @@ Production: `packages/memory/src/file-store/jobs.ts`, `packages/memory/src/jobs.
 
 ### Drain and worker
 
-**MIX-14.** Readiness is checked *before* claiming: with no indexer runtime the drain only
-peeks at the first waiting job and reports it `blocked`, consuming no attempt and taking no lease.
+**MIX-14.** The oldest due job is inspected before runtime resolution. Without an indexer
+runtime, an eligible job is reported `blocked`, consuming no attempt and taking no lease;
+a legacy non-completed job is claimed and converged without a model call.
 Production: `packages/memory/src/drain.ts`.
-Test: `packages/memory/tests/component/jobs.test.ts` (`state: "pending", attempts: 0`).
+Test: `packages/memory/tests/component/jobs.test.ts` (`state: "pending", attempts: 0`),
+`converges a legacy cancelled job without a model or runtime` in
+`packages/memory/tests/component/drain.test.ts`.
 
 **MIX-15.** A `MemoryRecoveryRequiredError` thrown mid-pass releases the claim and stops
 the whole pass rather than failing the job; a shutdown does the same, decided from *our* abort signal
@@ -984,12 +1018,12 @@ nothing and through a drain that throws.
 Production: `packages/memory/src/worker.ts`.
 Test: `packages/memory/tests/component/worker.test.ts`.
 
-**MIX-22.** A job whose run was already folded in, whose `provider_key` is absent or has
+**MIX-22.** A job whose snapshot is non-completed, whose run was already folded in, whose `provider_key` is absent or has
 changed, whose provider is read-only, or which carries no snapshot converges straight to `completed`
 with a naming note and **no model call**.
 Production: `packages/memory/src/drain.ts`.
 Test: `packages/memory/tests/component/drain.test.ts` (`provider-selection-unknown`, zero LLM
-calls) (`provider-selection-changed`), `packages/memory/tests/component/jobs.test.ts`
+calls; `provider-selection-changed`; `converges a legacy cancelled job without a model or runtime`), `packages/memory/tests/component/jobs.test.ts`
 (`already-indexed`).
 
 **MIX-23.** A pass that ends in `no_progress` is terminal and is never replayed.
@@ -1002,6 +1036,23 @@ Test: `packages/memory/tests/component/drain.test.ts`.
 breaks it — on the success path or the failure path.
 Production: `packages/memory/src/ingest.ts`.
 Test: `packages/memory/tests/component/ingest.test.ts`.
+
+**MIX-40.** The ordinary host and every direct enqueue or index entry refuse a subject
+run whose status is not `completed`. Legacy non-completed jobs settle with
+`run-not-completed`, no indexer pass, no wiki write and no indexed marker; a
+reopened queue preserves that outcome. Manual tree reindex and explicit wiki
+edits do not depend on the subject run status.
+Production: `createMemoryRunCapability` in `packages/memory/src/capability.ts`,
+`enqueueFinishedRun` in `packages/memory/src/ingest.ts`, `createMemory` in
+`packages/memory/src/memory.ts`, `drainIndexJobs` in `packages/memory/src/drain.ts`,
+`indexRun` in `packages/memory/src/indexer/run.ts`.
+Test: `does not queue the persisted record when the run is cancelled` in
+`packages/memory/tests/integration/capability-loop.test.ts`, the direct entry
+cases in `packages/memory/tests/integration/memory.test.ts`, `a direct index
+pass skips a non-completed subject before any model call` in
+`packages/memory/tests/component/drain.test.ts`, and `a reopened cancelled job
+converges without an indexer or wiki writes` in
+`packages/memory/tests/integration/job-durability.test.ts`.
 
 **MIX-25.** A `blocked` settlement's notice carries `note` but never `indexer_run_id`,
 while `failed` and `queued` both carry it.

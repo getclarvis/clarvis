@@ -49,6 +49,9 @@ export function createMemory(opts: CreateMemoryOptions): Memory {
       run: RunSnapshot,
       enqueueOptions: { providerKey?: string } = {},
     ): Promise<MemoryIndexJob> {
+      if (run.status !== "completed") {
+        throw new Error("Only completed runs can be enqueued for memory indexing");
+      }
       const bounded = boundRunSnapshot(run);
       if (bounded.truncated !== undefined) {
         logger.debug(
@@ -94,6 +97,16 @@ export function createMemory(opts: CreateMemoryOptions): Memory {
     tools: createMemoryTools({ store, reindex: (tx) => reindexTree(tx, logger) }),
 
     async index(run: RunSnapshot): Promise<IndexReport> {
+      if (run.status !== "completed") {
+        return {
+          run_id: run.run_id,
+          skipped: true,
+          note: "run-not-completed",
+          written: [],
+          deleted: [],
+          reindexed: false,
+        };
+      }
       const indexer = await opts.indexer?.();
       if (indexer === undefined) {
         return {

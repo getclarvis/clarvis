@@ -94,7 +94,7 @@ const memory = createFileMemory({
 // At run start: inject the PROFILE index as a <memory>…</memory> block.
 const seed = await memory.seed("Work on the build again");
 
-// At run end: fold the finished run into the wiki, autonomously.
+// After a completed run: fold it into the wiki, autonomously.
 await memory.index({
   run_id: "run-123",
   workspace: process.cwd(),
@@ -123,6 +123,12 @@ stop with the pyramid open — a touched leaf must ship with each ancestor
 `TOPIC.md` and with `PROFILE.md`. Most runs deserve no change at all.
 Already-indexed run IDs are skipped. Runs without tool calls are still examined:
 user instructions and final answers may contain durable knowledge.
+Automatic indexing accepts only a persisted run with `status: "completed"`.
+Cancelled, failed, budget-stopped and interrupted runs produce no new job or
+ingest notice. Direct `enqueue` rejects those statuses and direct `index`
+returns a skipped report. A durable job from an older run with a non-completed
+snapshot is settled as `run-not-completed` without a model call or wiki writes.
+Manual `reindex()` and explicit wiki edits remain independent of run status.
 `CreateMemoryFactoryOptions.executeRun` lets the host wrap every physical pass in its own lifecycle
 admission. The file kernel uses that seam for the same immutable Extension Profile lease as foreground
 runs, including durable retries that begin after the original run handle has closed; an embedder
@@ -258,7 +264,7 @@ source modes such as planning `off` or `review` without importing those packages
 
 ## The index queue
 
-`index()` is not called on the response path. A finished run is **enqueued** as a
+`index()` is not called on the response path. A completed run is **enqueued** as a
 durable job (`enqueue`), and a background worker (`createIndexWorker`) drains the
 queue on a timer, so a process that dies mid-pass loses nothing it had accepted
 responsibility for. `drainIndexJobs` owns one pass of that queue and never

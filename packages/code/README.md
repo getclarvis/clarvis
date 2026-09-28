@@ -1249,9 +1249,9 @@ instead of being dropped. A successful steering response now means the loop drai
 not merely that an in-memory queue accepted it. If the run settles before that drain, the draft is
 restored and the transcript keeps one visible `Steer not delivered` receipt through stored-trace
 reconciliation. Once the run result settles, the composer immediately
-leaves steer mode and a subsequent message starts a new turn. Post-run memory
-indexing may keep the event stream physically open and continue updating the
-status line, but it never keeps the footer `Running` or routes user input to the
+leaves steer mode and a subsequent message starts a new turn. Memory indexing
+starts only after a completed run; its notices may keep the event stream physically open and
+continue updating the status line, but it never keeps the footer `Running` or routes user input to the
 settled run. Likewise, completion of a cancelled `!bash` job from an outgoing
 session cannot overwrite the current session's status.
 

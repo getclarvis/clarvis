@@ -69,7 +69,8 @@ function buildTools(): NamespacedTool[] {
       AGENT_POLL_TOOL,
       "Read a child's activity log: one line per iteration, tool call, result and assistant " +
         "turn. Page forward by passing back the previous next_offset. Use this to inspect " +
-        "before deciding; settled children also report results through the inbox.",
+        "before deciding; waits up to 30 seconds for new activity when caught up. Set wait_ms:0 " +
+        "for an immediate snapshot. Settled children also report results through the inbox.",
       {
         type: "object",
         properties: {
@@ -82,6 +83,12 @@ function buildTools(): NamespacedTool[] {
           match: {
             type: "string",
             description: "Optional regex; only matching lines are returned.",
+          },
+          wait_ms: {
+            type: "integer",
+            minimum: 0,
+            maximum: 30_000,
+            description: "Bounded wait for new activity; defaults to 30000 when caught up.",
           },
         },
         required: ["id"],
@@ -184,7 +191,8 @@ const unknownId = (name: string, id: string): HandlerVerdict =>
  * state-driven decline is informational, not a failure, in both.
  */
 function buildHandler(registry: AgentRegistry, bc: AgentBuildContext): ToolHandler {
-  const handleCall = (call: LLMToolCall): HandlerVerdict => {
+  const observedOffsets = new Map<string, number>();
+  const handleCall = async (call: LLMToolCall): Promise<HandlerVerdict> => {
     const args = argOf(call);
     switch (call.name) {
       case AGENT_LIST_TOOL:
@@ -196,12 +204,27 @@ function buildHandler(registry: AgentRegistry, bc: AgentBuildContext): ToolHandl
         const match = compileMatch(strArg(args, "match"));
         if (!match.ok) return errorResult(AGENT_POLL_TOOL, `invalid 'match' regex: ${match.why}`);
         const offset = typeof args.offset === "number" ? args.offset : undefined;
+        const waitMs = args.wait_ms ?? 30_000;
+        if (
+          typeof waitMs !== "number" ||
+          !Number.isInteger(waitMs) ||
+          waitMs < 0 ||
+          waitMs > 30_000
+        )
+          return errorResult(AGENT_POLL_TOOL, "'wait_ms' must be an integer from 0 to 30000.");
+        await registry.waitForUpdate(id, offset ?? 0, waitMs, bc.signal);
         const poll = registry.poll(id, {
           ...(offset !== undefined ? { offset } : {}),
           ...(match.re !== undefined ? { match: match.re } : {}),
         });
         if (poll === null) return unknownId(AGENT_POLL_TOOL, id);
-        return result(AGENT_POLL_TOOL, poll, false);
+        const previous = observedOffsets.get(id) ?? 0;
+        const productive = poll.output.length > 0 && poll.next_offset > previous;
+        observedOffsets.set(id, Math.max(previous, poll.next_offset));
+        for (const retained of observedOffsets.keys()) {
+          if (!registry.has(retained)) observedOffsets.delete(retained);
+        }
+        return result(AGENT_POLL_TOOL, poll, productive);
       }
 
       case AGENT_STOP_TOOL: {
@@ -247,7 +270,7 @@ function buildHandler(registry: AgentRegistry, bc: AgentBuildContext): ToolHandl
   };
   return {
     matches: (call) => TOOL_NAMES.has(call.name),
-    handle: (call) => Promise.resolve(handleCall(call)),
+    handle: (call) => handleCall(call),
   };
 }
 

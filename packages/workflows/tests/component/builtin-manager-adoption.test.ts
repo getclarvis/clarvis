@@ -86,6 +86,175 @@ const completed = (result: unknown): ExecuteRunOutcome["response"] => ({
   usage: { iterations_used: 1, elapsed_ms: 0, by_agent: [] },
 });
 
+test("the Admiral chooses read-only replica counts and revision-bound sources without duplicating writers", async () => {
+  const f = fixture("implement", async (prompt) =>
+    completed(
+      prompt.includes("Plan this change")
+        ? {
+            work_items: [
+              {
+                id: "build",
+                title: "Build",
+                goal: "Write module",
+                files: ["module.py"],
+                dependencies: [],
+                mutation: true,
+              },
+            ],
+          }
+        : { findings: [], coverage_gaps: [] },
+    ),
+  );
+  const choose = (stageId: string, replicas: number) => {
+    const snapshot = f.status();
+    const stage = snapshot.eligible.find((entry) => entry.stageId === stageId)!;
+    return f.coordinator.decide({
+      sessionId: snapshot.sessionId,
+      revision: snapshot.revision,
+      decision: "dispatch",
+      reason: "need stage evidence",
+      dispatch: {
+        stage_id: stageId,
+        gap: "need stage evidence",
+        items: stage.candidates.map(({ ref }) => ({ item_ref: ref, replicas, extra: "ignored" })),
+      },
+    });
+  };
+  expect(choose("plan", 1).progress).toBe(true);
+  await f.run.settle();
+  expect(choose("build", 2).progress).toBe(false);
+  expect(f.runDeps.calls).toHaveLength(1);
+  expect(choose("build", 1).progress).toBe(true);
+  await f.run.settle();
+  expect(choose("review", 3).progress).toBe(true);
+  await f.run.settle();
+  expect(f.runDeps.calls).toHaveLength(5);
+  expect(f.states.at(-1)?.invocations?.at(-1)).toMatchObject({
+    stageId: "review",
+    requested: 3,
+    started: 3,
+    completed: 3,
+    status: "completed",
+  });
+});
+
+test("independent discovery replicas preserve local dependencies despite colliding work ids", async () => {
+  const f = fixture("research", async (prompt) =>
+    completed(
+      prompt.includes("Frame")
+        ? {
+            work_items: [
+              {
+                id: "inspect",
+                title: "Inspect",
+                goal: "Inspect source",
+                files: [],
+                mutation: false,
+                dependencies: [],
+              },
+              {
+                id: "check",
+                title: "Check",
+                goal: "Check evidence",
+                files: [],
+                mutation: false,
+                dependencies: ["inspect"],
+              },
+            ],
+          }
+        : { findings: [] },
+    ),
+  );
+  const frame = f.status().eligible.find((stage) => stage.stageId === "frame")!;
+  expect(
+    dispatch(f, "frame", "independent plans", [{ item_ref: frame.candidates[0]!.ref, replicas: 3 }])
+      .progress,
+  ).toBe(true);
+  await f.run.settle();
+  const investigate = f.status().eligible.find((stage) => stage.stageId === "investigate")!;
+  expect(investigate.candidates).toHaveLength(6);
+  expect(
+    dispatch(
+      f,
+      "investigate",
+      "inspect all plans",
+      investigate.candidates.map(({ ref }) => ({ item_ref: ref, replicas: 1 })),
+    ).progress,
+  ).toBe(true);
+  await f.run.settle();
+  expect(f.states.at(-1)?.invocations?.at(-1)).toMatchObject({
+    stageId: "investigate",
+    status: "completed",
+    requested: 6,
+    completed: 6,
+  });
+  expect(f.runDeps.calls).toHaveLength(9);
+});
+
+for (const replicas of [1, 3]) {
+  for (const referenced of [false, true]) {
+    test(`discovery repairs unreferenced duplicate ids but refuses ambiguous dependencies (${replicas}, ${referenced})`, async () => {
+      const works = [
+        {
+          id: "inspect",
+          title: "Inspect code",
+          goal: "Read code",
+          files: [],
+          dependencies: [],
+          mutation: false,
+        },
+        {
+          id: "inspect",
+          title: "Inspect tests",
+          goal: "Read tests",
+          files: [],
+          dependencies: [],
+          mutation: false,
+        },
+        ...(referenced
+          ? [
+              {
+                id: "check",
+                title: "Check",
+                goal: "Check",
+                files: [],
+                dependencies: ["inspect"],
+                mutation: false,
+              },
+            ]
+          : []),
+      ];
+      const f = fixture("research", async (prompt) =>
+        completed(prompt.includes("Frame") ? { work_items: works } : { findings: [] }),
+      );
+      const frame = f.status().eligible.find((stage) => stage.stageId === "frame")!;
+      expect(
+        dispatch(f, "frame", "scope", [{ item_ref: frame.candidates[0]!.ref, replicas }]).progress,
+      ).toBe(true);
+      await f.run.settle();
+      const investigate = f.status().eligible.find((stage) => stage.stageId === "investigate")!;
+      const decision = dispatch(
+        f,
+        "investigate",
+        "inspect",
+        investigate.candidates.map(({ ref }) => ({ item_ref: ref, replicas: 1 })),
+      );
+      expect(decision.progress).toBe(!referenced);
+      if (referenced) {
+        expect(decision.text).toContain("duplicate work item ids");
+        expect(f.runDeps.calls).toHaveLength(replicas);
+      } else {
+        await f.run.settle();
+        expect(f.states.at(-1)?.invocations?.at(-1)).toMatchObject({
+          status: "completed",
+          completed: 2 * replicas,
+        });
+        expect(f.runDeps.calls).toHaveLength(3 * replicas);
+      }
+    });
+  }
+}
+
 function dispatch(
   f: ReturnType<typeof fixture>,
   stageId: string,

@@ -513,12 +513,15 @@ function splitSystemMessages(messages: ModelMessage[]): {
  * an object-root projection of `inputSchema` as the JSON-schema input and a
  * synthesized description fallback;
  * returns `undefined` when there are no tools so the call omits the field.
+ * Explicit non-strict tool generation preserves optional fields and open objects;
+ * the local dispatcher remains the authority for full argument validation.
  */
 function toAiSdkTools(tools: NamespacedTool[]): ToolSet | undefined {
   if (tools.length === 0) return undefined;
   const set: ToolSet = {};
   for (const t of tools) {
     set[t.wireName] = tool({
+      strict: false,
       description: t.description ?? `Tool ${t.fullName}`,
       inputSchema: jsonSchema(providerToolSchema(t.inputSchema as JSONSchema7)),
     });

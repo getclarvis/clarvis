@@ -32,11 +32,37 @@ interface Materialized {
   value: unknown;
 }
 
-function mergedResults(results: readonly unknown[]): unknown {
-  if (results.length === 1) return results[0];
+/** Scope discovery graphs and disambiguate only duplicate ids that no dependency references. */
+function mergedResults(results: readonly unknown[], discovery: boolean): unknown {
+  if (results.length === 1 && !discovery) return results[0];
   if (results.some((item) => typeof item !== "object" || item === null || Array.isArray(item)))
-    return results;
-  const entries = results as Record<string, unknown>[];
+    return results.length === 1 ? results[0] : results;
+  const entries = (results as Record<string, unknown>[]).map((result, index) => {
+    if (!discovery || !Array.isArray(result.work_items)) return result;
+    const works = result.work_items.map((item: unknown) => toWorkItem(item));
+    const ids = works.flatMap((work) => (work === null ? [] : [work.id]));
+    const duplicated = new Set(ids.filter((id, at) => ids.indexOf(id) !== at));
+    if (results.length === 1 && duplicated.size === 0) return result;
+    const referenced = new Set(works.flatMap((work) => work?.dependencies ?? []));
+    const scopedId = (id: string): string =>
+      `result-${String(index + 1)}-${createHash("sha256").update(id).digest("hex")}`;
+    return {
+      ...result,
+      work_items: result.work_items.map((item: unknown, at: number) => {
+        const work = works[at]!;
+        if (work === null) return item;
+        return {
+          ...(item as Record<string, unknown>),
+          id:
+            duplicated.has(work.id) && !referenced.has(work.id)
+              ? `${scopedId(work.id)}-item-${String(at + 1)}`
+              : scopedId(work.id),
+          dependencies: work.dependencies.map(scopedId),
+        };
+      }),
+    };
+  });
+  if (entries.length === 1) return entries[0];
   return Object.fromEntries(
     [...new Set(entries.flatMap(Object.keys))].map((key) => {
       const values = entries.map((item) => item[key]).filter((value) => value !== undefined);
@@ -59,6 +85,7 @@ export class ManagerSequence {
   private stageId?: string;
   private readonly completed = new Set<string>();
   private readonly invocations: Materialized[] = [];
+  private readonly checkpointWaiters = new Set<() => void>();
 
   constructor(
     id: string,
@@ -90,6 +117,26 @@ export class ManagerSequence {
   private commit(): void {
     this.deps.ctx.onSequenceState?.(this.state());
     this.deps.ctx.flushSequenceState?.();
+    for (const wake of [...this.checkpointWaiters]) wake();
+  }
+
+  /** Wait for a running stage's checkpoint, bounded by timeout and run cancellation. */
+  async waitForCheckpoint(timeoutMs: number): Promise<boolean> {
+    const signal = this.deps.ctx.signal;
+    if (this.status !== "running_round" || timeoutMs <= 0 || signal.aborted) return false;
+    const revision = this.revision;
+    await new Promise<void>((resolve) => {
+      const wake = (): void => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", wake);
+        this.checkpointWaiters.delete(wake);
+        resolve();
+      };
+      const timer = setTimeout(wake, Math.min(timeoutMs, 30_000));
+      this.checkpointWaiters.add(wake);
+      signal.addEventListener("abort", wake, { once: true });
+    });
+    return this.revision !== revision;
   }
 
   open(): Result {
@@ -103,7 +150,7 @@ export class ManagerSequence {
       };
     }
     return {
-      text: `started manager sequence '${this.id}' at revision 1, awaiting_manager; no leader was started. Inspect workflow_status and decide complete, dispatch or stop.`,
+      text: `started manager sequence '${this.id}' at revision 1, awaiting_manager; no leader was started. Decide complete, dispatch or stop using this checkpoint:\n${this.statusText().text}`,
       progress: true,
     };
   }
@@ -159,13 +206,17 @@ export class ManagerSequence {
           };
         }
       }
-      return { text: "unknown or stale item_ref.", progress: false, error: true };
+      return {
+        text: `unknown or stale item_ref. Omit item_ref/evidence_ref for overview; copy refs from the current checkpoint below. No work started.\n${this.statusText(undefined, page).text}`,
+        progress: false,
+        error: true,
+      };
     }
     if (ref !== undefined) {
       const item = evidence?.get(ref);
       if (item === undefined)
         return {
-          text: `unknown or inadmissible evidence ref '${ref}'.`,
+          text: `unknown or inadmissible evidence ref '${ref}'. Omit evidence_ref for overview; use only admitted refs below.\n${this.statusText(undefined, page).text}`,
           progress: false,
           error: true,
         };
@@ -201,7 +252,9 @@ export class ManagerSequence {
         {
           stageId: stage.id,
           selector: stage.over.kind,
-          replicas: stage.replicas,
+          replicas: stage.replicas ?? { min: 1, max: 1 },
+          mutation: stage.mutation ?? false,
+          accept: stage.accept,
           sourceInvocationId: proposal.source?.invocation.id,
           failedSource: proposal.failedSource,
           total: proposal.items.length,
@@ -218,10 +271,20 @@ export class ManagerSequence {
       text: JSON.stringify({
         ...this.state(),
         criteria: this.definition.completion.criteria,
-        eligible,
+        eligible: this.status === "awaiting_manager" ? eligible : [],
         completedStages: [...this.completed],
         evidence: refs,
         moreEvidence: (evidence?.list().length ?? 0) > 16,
+        decisionHelp: {
+          session_id: this.id,
+          revision: this.revision,
+          wait: "While running, workflow_status waits up to 30 seconds for a checkpoint; wait_ms:0 returns immediately. Invocation started/completed counts finalize at settlement; leadersStarted and evidence show live activity. Use agent_list and agent_poll for individual leader activity.",
+          dispatch:
+            "Choose eligible stageId and a gap. Copy candidate refs to dispatch.items with chosen replicas; account for other candidates with skipped/deferred/covered. Omitted replicas use the stage minimum. Source is inferred at this revision unless supplied.",
+          complete:
+            "Provide assessment.criteria with each criterion id, evidence_refs from evidence, and explanation. Inspect actual results; text claims alone do not prove edits or tests. Disclose remaining_gaps and resolve or qualify every failed leader in unresolved_failures.",
+          stop: "Provide reason and optional remaining_gaps. Stop does not claim completion.",
+        },
       }),
       progress: false,
     };
@@ -267,10 +330,11 @@ export class ManagerSequence {
       };
     if (decision === "dispatch") return this.dispatch(raw.dispatch);
     if (decision === "stop") {
+      const remainingGaps = raw.remaining_gaps ?? [raw.reason];
       if (
-        !Array.isArray(raw.remaining_gaps) ||
-        raw.remaining_gaps.length > 16 ||
-        raw.remaining_gaps.some((gap) => !isBoundedWorkflowString(gap, 1_024))
+        !Array.isArray(remainingGaps) ||
+        remainingGaps.length > 16 ||
+        remainingGaps.some((gap) => !isBoundedWorkflowString(gap, 1_024))
       )
         return { text: "stop requires bounded remaining_gaps.", progress: false, error: true };
       const prior = this.state();
@@ -281,7 +345,7 @@ export class ManagerSequence {
         outcome: "insufficient",
         decisionRevision: prior.revision,
         criteria: [],
-        remainingGaps: raw.remaining_gaps as string[],
+        remainingGaps: remainingGaps as string[],
         unresolvedFailures: [],
       };
       try {
@@ -386,7 +450,7 @@ export class ManagerSequence {
       this.deps.ctx.evidence
         ?.list()
         .filter((item) => item.origin === "leader" && item.status !== "completed") ?? [];
-    const dispositions = assessment.unresolved_failures;
+    const dispositions = assessment.unresolved_failures ?? [];
     if (!Array.isArray(dispositions) || dispositions.length !== failures.length)
       return {
         text: "every known leader failure requires a disposition.",
@@ -446,12 +510,11 @@ export class ManagerSequence {
         evidenceRefs: entry.evidence_refs as string[],
       });
     }
+    const remainingGaps = assessment.remaining_gaps ?? [];
     if (
-      !Array.isArray(assessment.remaining_gaps) ||
-      assessment.remaining_gaps.length > 16 ||
-      assessment.remaining_gaps.some(
-        (gap) => !isBoundedWorkflowString(gap, WORKFLOW_LIMITS.textChars),
-      )
+      !Array.isArray(remainingGaps) ||
+      remainingGaps.length > 16 ||
+      remainingGaps.some((gap) => !isBoundedWorkflowString(gap, WORKFLOW_LIMITS.textChars))
     )
       return { text: "invalid remaining_gaps.", progress: false, error: true };
     const prior = this.state();
@@ -459,7 +522,7 @@ export class ManagerSequence {
       outcome: "sufficient",
       decisionRevision: prior.revision,
       criteria: parsed,
-      remainingGaps: assessment.remaining_gaps as string[],
+      remainingGaps: remainingGaps as string[],
       unresolvedFailures: resolved,
     };
     if (Buffer.byteLength(JSON.stringify(this.assessment)) > 32 * 1024) {
@@ -514,6 +577,7 @@ export class ManagerSequence {
         error: true,
       };
     if (
+      request.source_invocation_id != null &&
       proposal.source?.invocation.id !== request.source_invocation_id &&
       stage.over.kind !== "once"
     )
@@ -568,21 +632,26 @@ export class ManagerSequence {
         return { text: "duplicate, unknown or stale item_ref.", progress: false, error: true };
       if (kind === "selected") {
         const range = stage.replicas ?? { min: 1, max: 1 };
+        const replicas = record.replicas === undefined ? range.min : record.replicas;
         if (
-          !Number.isInteger(record.replicas) ||
-          Number(record.replicas) < range.min ||
-          Number(record.replicas) > range.max
+          !Number.isInteger(replicas) ||
+          Number(replicas) < range.min ||
+          Number(replicas) > range.max
         )
-          return { text: "replicas outside the approved range.", progress: false, error: true };
+          return {
+            text: `replicas outside the approved range ${String(range.min)}–${String(range.max)} for '${stage.id}'.`,
+            progress: false,
+            error: true,
+          };
         const candidate = proposal.items.find((item) => item.ref === ref)!;
         if (
-          Number(record.replicas) > 1 &&
+          Number(replicas) > 1 &&
           (stage.mutation === true || toWorkItem(candidate.item)?.mutation === true)
         )
           return { text: "mutating items cannot have replicas.", progress: false, error: true };
-        if (stage.accept?.kind === "threshold" && stage.accept.count > Number(record.replicas))
+        if (stage.accept?.kind === "threshold" && stage.accept.count > Number(replicas))
           return { text: "accept threshold cannot be reached.", progress: false, error: true };
-        dispositions.set(ref, { ref, disposition: kind, replicas: Number(record.replicas) });
+        dispositions.set(ref, { ref, disposition: kind, replicas: Number(replicas) });
       } else if (kind === "covered") {
         const previous = this.invocations.find(
           ({ invocation }) =>
@@ -656,7 +725,11 @@ export class ManagerSequence {
     const sourceWorks = proposal.items.map((item) => toWorkItem(item.item));
     const ids = sourceWorks.filter((item) => item !== null).map((item) => item.id);
     if (new Set(ids).size !== ids.length)
-      return { text: "source has duplicate work item ids.", progress: false, error: true };
+      return {
+        text: "source has duplicate work item ids. Dependencies cannot identify one item safely; rerun discovery with distinct ids for referenced items.",
+        progress: false,
+        error: true,
+      };
     if (works.some((item) => item !== null) && works.some((item) => item === null))
       return { text: "mixed work item shapes are not schedulable.", progress: false, error: true };
     const scheduled = works.every((item) => item !== null) && stage.over.kind === "each";
@@ -858,7 +931,7 @@ export class ManagerSequence {
         );
         const value =
           stage.accept === undefined
-            ? mergedResults(results)
+            ? mergedResults(results, stage.type === "discovery")
             : {
                 accepted: selected
                   .filter(

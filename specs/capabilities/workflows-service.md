@@ -43,8 +43,8 @@ Three concerns sit here:
 An authored manager definition uses `control: manager`, objective, criteria, once/each/all stages and a
 1–16 dispatch cap. It cannot mix fixed `rounds` or `repeat`; missing `control` stays fixed.
 The shipped `audit`, `implement` and `research` definitions use this manager branch with three
-objective criteria, four selectable stages and `maxDispatches: 8`. Audit verification has 2–3
-replicas; research and implement verification have two. Verify is optional in all three and can
+objective criteria, four selectable stages and `maxDispatches: 8`. Read-only stages admit 1–8
+replicas; verification admits 2–8 to preserve its threshold of two. Verify is optional in all three and can
 select any finding from the source, regardless of its `needs_verification` suggestion. Implement's
 build is mutating with one replica; review is sourced from a completed build invocation. No
 criterion requires discovery, planning or review merely by convention. Existing evidence may

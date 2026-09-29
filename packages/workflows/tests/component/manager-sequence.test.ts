@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ManagerWorkflowDefinition } from "#src/artifact.ts";
-import { createRoundCoordinator } from "#src/run-round.ts";
+import {
+  buildWorkflowDecideHandler,
+  buildWorkflowStatusHandler,
+  createRoundCoordinator,
+} from "#src/run-round.ts";
 import type { WorkflowEvidence, WorkflowSequenceState } from "#src/types.ts";
 import {
   makeCtx,
@@ -33,28 +37,40 @@ const definition: ManagerWorkflowDefinition = {
   dir: "/test",
 };
 
-function fixture(options: { saveFails?: boolean; leaderFails?: boolean; result?: unknown } = {}) {
+function fixture(
+  options: {
+    saveFails?: boolean;
+    leaderFails?: boolean;
+    result?: unknown;
+    beforeResult?: Promise<void>;
+    signal?: AbortSignal;
+  } = {},
+) {
   const states: WorkflowSequenceState[] = [];
   const refs: WorkflowEvidence[] = [
     { ref: "evidence-1", origin: "user", status: "provided", summary: "answer", detail: "answer" },
   ];
   let saveFails = options.saveFails ?? false;
-  const runDeps = workflowRunDeps(async () => ({
-    executionId: "leader-1",
-    response: options.leaderFails
-      ? {
-          status: "error",
-          error: { code: "failed", message: "optional failure" },
-          usage: { iterations_used: 0, elapsed_ms: 0, by_agent: [] },
-        }
-      : {
-          status: "completed",
-          result: options.result ?? "finding",
-          usage: { iterations_used: 1, elapsed_ms: 0, by_agent: [] },
-        },
-  }));
+  const runDeps = workflowRunDeps(async () => {
+    await options.beforeResult;
+    return {
+      executionId: "leader-1",
+      response: options.leaderFails
+        ? {
+            status: "error",
+            error: { code: "failed", message: "optional failure" },
+            usage: { iterations_used: 0, elapsed_ms: 0, by_agent: [] },
+          }
+        : {
+            status: "completed",
+            result: options.result ?? "finding",
+            usage: { iterations_used: 1, elapsed_ms: 0, by_agent: [] },
+          },
+    };
+  });
   const run = testRunCtx();
   const ctx = makeCtx({
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
     runDeps,
     assemble: (spec) => requestWithPrompt(spec.prompt),
     onSequenceState: (state) => states.push(state),
@@ -108,6 +124,168 @@ const assessment = {
 };
 
 describe("manager workflow sufficiency", () => {
+  test("recovers invalid inspection refs and dispatches with checkpoint refs, defaults and extra fields", async () => {
+    const f = fixture();
+    const opened = f.coordinator.startManager(f.deps, definition, {});
+    expect(opened).toHaveProperty("text");
+    if (!("text" in opened)) throw new Error("checkpoint did not open");
+    expect(opened.text).toContain("wfseq-1:1:inspect:root:0");
+    const status = buildWorkflowStatusHandler(f.coordinator);
+    const blank = await status.handle(
+      {
+        id: "blank",
+        name: "workflow_status",
+        arguments: {
+          session_id: null,
+          item_ref: " ",
+          evidence_ref: null,
+          page: null,
+          extra: "ignored",
+        },
+      },
+      1,
+    );
+    expect(blank.kind).toBe("result");
+    if (blank.kind !== "result") throw new Error("missing result");
+    expect(blank.text).toContain('"eligible"');
+    const invalid = f.coordinator.status("wfseq-1", "none", 0, "not-used");
+    expect(invalid.error).toBe(true);
+    expect(invalid.progress).toBe(false);
+    expect(invalid.text).toContain('"ref":"wfseq-1:1:inspect:root:0"');
+    expect(f.runDeps.calls).toHaveLength(0);
+    const args = {
+      session_id: "wfseq-1",
+      revision: 1,
+      decision: "dispatch",
+      reason: "need evidence",
+      extra: true,
+      dispatch: {
+        stage_id: "inspect",
+        gap: "inspect",
+        extra: true,
+        items: [{ item_ref: "wfseq-1:1:inspect:root:0", extra: true }],
+      },
+    };
+    const decide = buildWorkflowDecideHandler(f.coordinator);
+    const started = await decide.handle(
+      { id: "start", name: "workflow_decide", arguments: args },
+      1,
+    );
+    expect(started).toMatchObject({ kind: "result", progress: true });
+    await f.run.settle();
+    expect(f.runDeps.calls).toHaveLength(1);
+    const replay = await decide.handle(
+      { id: "replay", name: "workflow_decide", arguments: args },
+      1,
+    );
+    expect(replay).toMatchObject({ kind: "result", progress: false });
+    expect(f.runDeps.calls).toHaveLength(1);
+    if (replay.kind !== "result") throw new Error("missing replay result");
+    expect(replay.text).toContain("Current checkpoint");
+    expect(replay.text).toContain('"revision":3');
+  });
+
+  test("manager status waits for a checkpoint without replaying progress and honors cancellation", async () => {
+    const gate = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const f = fixture({ beforeResult: gate.promise, signal: controller.signal });
+    f.coordinator.startManager(f.deps, definition, {});
+    f.coordinator.decide({
+      sessionId: "wfseq-1",
+      revision: 1,
+      decision: "dispatch",
+      reason: "inspect",
+      dispatch: {
+        stage_id: "inspect",
+        gap: "inspect",
+        items: [{ item_ref: "wfseq-1:1:inspect:root:0" }],
+      },
+    });
+    const handler = buildWorkflowStatusHandler(f.coordinator);
+    const inspect = (args: Record<string, unknown> = {}) =>
+      handler.handle({ id: "status", name: "workflow_status", arguments: args }, 1);
+    expect(await inspect({ wait_ms: 0 })).toMatchObject({ progress: false });
+    expect(await inspect({ wait_ms: -1 })).toMatchObject({ progress: false });
+    expect(JSON.parse(f.coordinator.status().text).eligible).toEqual([]);
+    let resolved = false;
+    const cancelled = inspect().then((result) => {
+      resolved = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    controller.abort();
+    expect(await cancelled).toMatchObject({ progress: false });
+    gate.resolve();
+    await f.run.settle();
+
+    const g = fixture();
+    g.coordinator.startManager(g.deps, definition, {});
+    g.coordinator.decide({
+      sessionId: "wfseq-1",
+      revision: 1,
+      decision: "dispatch",
+      reason: "inspect",
+      dispatch: {
+        stage_id: "inspect",
+        gap: "inspect",
+        items: [{ item_ref: "wfseq-1:1:inspect:root:0" }],
+      },
+    });
+    const status = buildWorkflowStatusHandler(g.coordinator);
+    const call = { id: "wait", name: "workflow_status", arguments: {} };
+    expect(await status.handle(call, 1)).toMatchObject({ progress: true });
+    expect(await status.handle(call, 1)).toMatchObject({ progress: false });
+    await g.run.settle();
+  });
+
+  test("omitted empty assessment lists do not hide a failed leader", async () => {
+    const clean = fixture();
+    clean.coordinator.startManager(clean.deps, definition, {});
+    expect(
+      clean.coordinator.decide({
+        sessionId: "wfseq-1",
+        revision: 1,
+        decision: "complete",
+        reason: "supported",
+        assessment: { criteria: assessment.criteria, extra: true },
+      }).progress,
+    ).toBe(true);
+    const failed = fixture({ leaderFails: true });
+    failed.coordinator.startManager(failed.deps, definition, {});
+    failed.coordinator.decide({
+      sessionId: "wfseq-1",
+      revision: 1,
+      decision: "dispatch",
+      reason: "inspect",
+      dispatch: {
+        stage_id: "inspect",
+        gap: "inspect",
+        items: [{ item_ref: "wfseq-1:1:inspect:root:0" }],
+      },
+    });
+    await failed.run.settle();
+    const result = failed.coordinator.decide({
+      sessionId: "wfseq-1",
+      revision: 3,
+      decision: "complete",
+      reason: "supported",
+      assessment: { criteria: assessment.criteria },
+    });
+    expect(result.progress).toBe(false);
+    expect(result.text).toContain("every known leader failure");
+    expect(failed.states.at(-1)?.status).toBe("awaiting_manager");
+    expect(
+      failed.coordinator.decide({
+        sessionId: "wfseq-1",
+        revision: 3,
+        decision: "stop",
+        reason: "cannot resolve failed work",
+      }).progress,
+    ).toBe(true);
+    expect(failed.states.at(-1)?.assessment?.remainingGaps).toEqual(["cannot resolve failed work"]);
+  });
+
   test("opens without a child, completes with context evidence, and refuses duplicate revision", () => {
     const f = fixture();
     expect(f.coordinator.startManager(f.deps, definition, {})).toHaveProperty("text");

@@ -1,5 +1,15 @@
 # Sub-agent spawning and supervision
 
+`agent_poll` waits up to 30 seconds when caught up, waking on child activity, settlement, a question,
+or parent cancellation; `wait_ms: 0` requests a nonblocking snapshot. New returned activity ranges
+count as progress once per parent; repeated pages and empty polls do not. The registry's bounded
+`waitForUpdate` removes its timer and abort listener after every wake. Production:
+`AgentRegistry.waitForUpdate` in `packages/supervision/src/registry.ts` and `buildHandler` in
+`packages/loop/src/runtime/capabilities/agents.ts`. Test: `wakes bounded polls on activity, settlement,
+questions, cancellation and timeout` in `packages/supervision/tests/component/registry.test.ts` and
+`waits for new child activity and credits each observed byte range only once` in
+`packages/loop/tests/unit/agents-capability.test.ts`.
+
 ## Purpose
 
 The lead can call `spawn_subagent` to run independent work in a registered profile. An inline call returns the child's result. A background call returns a handle, and the lead can inspect or control that child through four supervision tools. A child receives a self-contained brief, selected turn images when allowed, the shared run budget, and a profile-scoped tool registry. Production: `buildDelegationContribution` in `packages/loop/src/runtime/delegation.ts`, `prepareSpawn` and `runPreparedSubagent` in `packages/loop/src/runtime/subagents/spawn-subagent.ts`. Test: `packages/loop/tests/unit/delegation-handler.test.ts` and `packages/loop/tests/integration/subagent-only-regression.test.ts`.

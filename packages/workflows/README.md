@@ -74,7 +74,7 @@ For `control: manager`, the definition declares `once`, `each(<stage>.<field>)`,
 `all(<stage>.<field>)` stages in any textual order, with optional `replicas: { min, max }`
 (default 1/1, ceiling 8) and fixed profile/accept rules. `workflow_status` pages up to 16
 current candidates at a time; `item_ref` retrieves one candidate. A `workflow_decide` dispatch
-names the stage, gap, source invocation for a sourced stage, and a disposition for every candidate:
+names the stage, gap, optional source invocation (otherwise derived from the current revision), and a disposition for every candidate:
 `items` with replica counts, `skipped` with reasons, `deferred` with gaps, or `covered` with a
 completed prior invocation. The tool reserves the full requested leader count before starting
 waves; dependency failures block dependents. Every invocation returns to the manager checkpoint,
@@ -182,9 +182,9 @@ complete partial catalogue whose contents depend on directory order.
 Clarvis ships `audit`, `implement` and `research` as TypeScript `WorkflowDefinition` values under
 `src/builtin-workflows/`; it does not copy their source into a user's configuration directories.
 Each uses `control: manager`, four selectable stages and at most eight dispatches. Audit offers
-`discover`, `review`, optional `verify` with 2–3 replicas and `gaps`; research offers `frame`,
-`investigate`, optional `verify` with two replicas and `critic`; implement offers `plan`, mutating
-`build` with one replica, `review` sourced from build findings and optional `verify` with two
+`discover`, `review`, optional `verify` with 2–8 replicas and `gaps`; research offers `frame`,
+`investigate`, optional `verify` with 2–8 replicas and `critic`; implement offers `plan`, mutating
+`build` with one replica, `review` sourced from build findings and optional `verify` with 2–8
 replicas. Verification considers the manager-selected findings, not only a leader's
 `needs_verification` suggestion. Its threshold of two refutations does not turn an unmet threshold
 into confirmation. The manager may complete from sufficient evidence, dispatch a focused gap or
@@ -505,3 +505,23 @@ exports. Bun tests and the development typecheck select source without a prior b
 clears the `bun` condition and emits its own JavaScript and declarations under `dist`.
 See [package architecture](../../specs/cross-cutting/package-architecture.md) for ownership and
 [build and CI](../../specs/cross-cutting/build-and-ci.md) for resolution and emit checks.
+
+## Recoverable manager calls
+
+Opening a manager sequence returns its checkpoint, criteria and eligible candidate refs. Invalid
+inspection refs and refused manager decisions return the current checkpoint for correction without
+starting work or consuming the revision. Status accepts omitted, null or blank selectors for an
+overview. Workflow tools tolerate extra fields while validating known arguments and authority.
+Completion advertises `criteria` records with `id`, `evidence_refs` and `explanation`; omitted gap
+and failure arrays mean empty, so known failures still require explicit dispositions. Stop records
+its reason as the remaining gap when no list is supplied. Omitted dispatch replicas use the stage
+minimum. Built-in read-only stages allow 1–8 replicas, verification 2–8, and implementation writers
+exactly one. The Admiral chooses the useful stages, items and replica counts within those ranges.
+Multiple discovery results receive separate work-item id namespaces, including their dependencies,
+so independent planners may reuse local ids. Unreferenced duplicate local ids are disambiguated by
+item position; referenced duplicates remain invalid because their dependencies are ambiguous.
+This does not waive dependencies or allow conflicting writers to run together.
+While a manager stage runs, overview calls wait up to 30 seconds for a checkpoint; `wait_ms: 0`
+returns immediately. Detail and page requests remain immediate. New checkpoints count as progress
+once, and cancellation releases the wait. Invocation counts finalize at settlement; use supervision
+and evidence for live activity. Dispatch candidates appear only when awaiting a manager decision.

@@ -1600,3 +1600,7 @@ saved history readable. A restart without a new controller still waits for autho
 
 The script definitions are in [`package.json`](package.json); test levels and resource ownership are
 defined in [test architecture](../../specs/cross-cutting/test-architecture.md).
+
+Workflow checkpoint details scroll independently of the task list. Use Ctrl+U/Ctrl+D or the mouse
+wheel over the details to read long objectives, invocation coverage and assessments; arrow keys
+continue selecting tasks. Long evidence wraps without shrinking into neighboring rows.

@@ -521,6 +521,49 @@ describe("agents registry — the handle a producer holds", () => {
     expect(registry.poll(handle.id, {})!.output).toContain("second");
   });
 
+  it("wakes bounded polls on activity, settlement, questions, cancellation and timeout", async () => {
+    let expire: (() => void) | undefined;
+    let cancelled = 0;
+    const registry = createAgentRegistry({
+      limits: LIMITS,
+      scheduleTimeout: (callback, ms) => {
+        expect(ms).toBeLessThanOrEqual(30_000);
+        expire = callback;
+        return () => {
+          cancelled++;
+        };
+      },
+    });
+    const handle = registry.register(child("wait").registration)!;
+    let woke = false;
+    const first = registry.waitForUpdate(handle.id, 0, 30_000).then(() => {
+      woke = true;
+    });
+    await Promise.resolve();
+    expect(woke).toBe(false);
+    handle.ingest(leadEvent(1, "new activity"));
+    await first;
+    expect(woke).toBe(true);
+    const offset = registry.poll(handle.id, {})!.next_offset;
+    const question = registry.waitForUpdate(handle.id, offset, 30_000);
+    handle.waiting("elicitation");
+    await question;
+    handle.waiting(null);
+    const controller = new AbortController();
+    const aborted = registry.waitForUpdate(handle.id, offset, 30_000, controller.signal);
+    controller.abort();
+    await aborted;
+    const timeout = registry.waitForUpdate(handle.id, offset, 90_000);
+    expire!();
+    await timeout;
+    const settled = registry.waitForUpdate(handle.id, offset, 30_000);
+    handle.settled({ status: "completed", result: "done" });
+    await settled;
+    expect(cancelled).toBe(5);
+    await registry.waitForUpdate(handle.id, offset, 30_000);
+    await registry.waitForUpdate("unknown", 0, 30_000);
+  });
+
   it("never lets a forwarded iteration count rewind", () => {
     const registry = make();
     const handle = registry.register({ ...child("run_2").registration, kind: "leader" })!;

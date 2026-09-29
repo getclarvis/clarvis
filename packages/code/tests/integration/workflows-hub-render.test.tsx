@@ -551,6 +551,61 @@ test("manager workflow shows awaiting decision and separates sufficient objectiv
   }
 });
 
+test("long manager evidence scrolls independently without hiding task navigation at narrow widths", async () => {
+  const { host, deps, press } = mount({
+    initialExecutionId: "wf-long",
+    get: async () =>
+      detail({
+        sequence: {
+          session_id: "wfseq-1",
+          status: "completed",
+          revision: 4,
+          leaders_started: 1,
+          max_total_leaders: 16,
+          control: "manager",
+          objective: "OBJECTIVE_START " + "Long objective with required validation. ".repeat(30),
+          assessment: {
+            outcome: "sufficient",
+            decisionRevision: 3,
+            criteria: [
+              {
+                id: "delivery",
+                evidenceRefs: ["evidence-1"],
+                explanation: "Verified files and executed checks. ".repeat(100),
+              },
+            ],
+            remainingGaps: [],
+            unresolvedFailures: [],
+          },
+          reason: "CHECKPOINT_END",
+        },
+      }),
+  });
+  const t = await openRender((() => WorkflowsHub(host, deps)) as never, { width: 120, height: 32 });
+  try {
+    const first = await captureUntil(t, "OBJECTIVE_START");
+    expect(first).toContain("Tasks");
+    expect(first).toContain("Coordinator");
+    t.resize(80, 24);
+    await t.renderOnce();
+    let frame = t.captureCharFrame();
+    for (let page = 0; page < 30 && !frame.includes("CHECKPOINT_END"); page++) {
+      press("ctrl+d");
+      await t.renderOnce();
+      frame = t.captureCharFrame();
+      expect(frame).toContain("Tasks");
+      expect(frame).toContain("Coordinator");
+    }
+    expect(frame).toContain("CHECKPOINT_END");
+    expect(frame).not.toContain("OBJECTIVE_START");
+    press("down");
+    press("return");
+    expect(await captureUntil(t, "Workflow result")).toContain("Review authentication");
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
 test("live manager checkpoint supersedes an older persisted assessment", async () => {
   const live: WorkflowActivity = {
     root: "wf-1",

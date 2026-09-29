@@ -3,8 +3,7 @@ import type { WorkflowDefinition } from "../artifact.ts";
 /** The research workflow Clarvis ships without materializing configuration files. */
 export const RESEARCH_WORKFLOW = {
   name: "research",
-  description:
-    "Answer a question from evidence, choosing only useful lines of enquiry and optional verification.",
+  description: "Answer a question from evidence, choosing useful enquiry and verification.",
   args: ["question"],
   control: "manager",
   objective:
@@ -42,6 +41,7 @@ Each needs a short \`title\`, self-contained \`goal\`, read \`files\`, real \`de
 \`mutation: false\`. Avoid duplicate searches. Record unavailable evidence in \`unknowns\`;
 framing does not answer the question.`,
       fanout: 1,
+      replicas: { min: 1, max: 8 },
     },
     {
       id: "investigate",
@@ -53,15 +53,16 @@ framing does not answer the question.`,
 
 {{item.goal}}
 
-It is one part of the question: {{args.question}}
+Question: {{args.question}}
 
 Stay on your line with read-only tools.
 
 Use primary evidence and cite each finding as \`path:line\` or an exact source. Set
 \`needs_verification: true\` for consequential or uncertain claims; calibrate \`confidence\`.
-Record sampled, skipped or unavailable material in \`coverage_gaps\`.
-Do not modify the workspace.`,
+Record unavailable material in \`coverage_gaps\`.
+Do not edit.`,
       fanout: 1,
+      replicas: { min: 1, max: 8 },
     },
     {
       id: "verify",
@@ -81,7 +82,7 @@ Seek counterexamples with read-only tools. Copy the id to \`finding_id\`. Return
 independent support, \`refuted\` for contradiction or \`inconclusive\` for insufficient evidence.
 Cite observations; do not confirm by default or modify the workspace.`,
       fanout: 1,
-      replicas: { min: 2, max: 2 },
+      replicas: { min: 2, max: 8 },
       accept: { kind: "threshold", field: "verdict", value: "refuted", count: 2 },
     },
     {
@@ -96,8 +97,9 @@ Cite observations; do not confirm by default or modify the workspace.`,
 
 Identify which gaps or untested assumptions could change the answer. Inspect them with available
 read-only tools; report newly supported findings with evidence and keep unresolved gaps in
-\`coverage_gaps\`. Explain whether another pass could resolve them. Do not modify the workspace.`,
+\`coverage_gaps\`. Explain whether another pass could resolve them. Do not edit.`,
       fanout: 1,
+      replicas: { min: 1, max: 8 },
     },
   ],
   synthesis: `# Synthesis

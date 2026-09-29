@@ -47,6 +47,44 @@ invocation`, `repeat is another decision with a new gap, never an automatic next
 acceptance rule does not mark the invocation or required stage complete` in
 `packages/workflows/tests/component/manager-sequence.test.ts`.
 
+Workflow tools accept extra fields without assigning them meaning; known arguments still validate.
+The opening response includes the checkpoint. Blank/null inspection selectors request an overview;
+unknown refs and rejected manager decisions return recovery guidance plus current state without
+mutation. Dispatch may omit its source invocation because the required revision already binds it;
+an explicitly mismatched source still refuses. Omitted replicas use the approved minimum. Completion
+advertises its full criterion/evidence shape, and omitted gap/failure arrays default to empty without
+waiving known failure dispositions. Stop defaults its gaps to the reason. Production:
+`buildWorkflowStatusTool`, `buildWorkflowDecideTool`, their handlers and `createRoundCoordinator` in
+`packages/workflows/src/run-round.ts`, and `ManagerSequence` in
+`packages/workflows/src/manager-sequence.ts`. Test: `recovers invalid inspection refs and dispatches
+with checkpoint refs, defaults and extra fields` and `omitted empty assessment lists do not hide a
+failed leader` in `packages/workflows/tests/component/manager-sequence.test.ts`.
+
+A manager overview waits up to 30 seconds for a running stage's checkpoint (`wait_ms: 0` inspects
+immediately); detail/page requests remain immediate. Cancellation releases the wait. A new
+checkpoint observed during the wait counts as progress once; rereading it does not. Running or
+terminal checkpoints expose no currently eligible dispatch candidates. Invocation counters finalize
+at settlement; live activity remains available through supervision and evidence. Production:
+`ManagerSequence.waitForCheckpoint`, `buildWorkflowStatusHandler`, `createRoundCoordinator`. Test:
+`manager status waits for a checkpoint without replaying progress and honors cancellation` in
+`packages/workflows/tests/component/manager-sequence.test.ts`.
+
+Built-in read-only stages admit 1–8 replicas, verification 2–8 and mutating build exactly one.
+The Admiral chooses within these ranges; authored ranges remain authoritative. Production:
+`packages/workflows/src/builtin-workflows/`. Test: `the Admiral chooses read-only replica counts and
+revision-bound sources without duplicating writers` in
+`packages/workflows/tests/component/builtin-manager-adoption.test.ts`.
+
+When multiple discovery results are combined, work-item identifiers and dependencies are scoped to
+their producing result. Independent planners may reuse local ids without creating cross-plan
+dependencies or duplicate-id refusals. Duplicate local ids that no dependency references are
+disambiguated by item position. Referenced duplicate ids and missing dependencies still refuse;
+file conflicts still serialize writers. Raw leader evidence is retained. Production:
+`mergedResults` in `packages/workflows/src/manager-sequence.ts`. Test: `independent discovery replicas
+preserve local dependencies despite colliding work ids` and `discovery repairs unreferenced
+duplicate ids but refuses ambiguous dependencies` in
+`packages/workflows/tests/component/builtin-manager-adoption.test.ts`.
+
 The shipped `audit`, `research` and `implement` use the manager branch rather than fixed rounds.
 Their optional verify stages retain threshold-of-two refutations; a rejected threshold is not
 confirmation. A stage declared mutating stays a writer in wave planning and the leader brief even
@@ -181,15 +219,15 @@ when the workspace ships no workflow documents. It requires `name`; its properti
 of loaded workflow names), `args`, and boolean `explain`.
 
 **`workflow_status`** (`buildWorkflowStatusTool`) — accepts an optional bounded `session_id` and
-`evidence_ref`, `item_ref` and `page`. It returns the active or latest checkpoint, cumulative leader
+`evidence_ref`, `item_ref`, `page` and integer `wait_ms` (0–30000). It returns the active or latest checkpoint, cumulative leader
 usage, and, for a manager sequence, criteria, admitted refs and paged eligible candidates or bounded
 detail for one ref. It never starts work.
 
 **`workflow_decide`** (`buildWorkflowDecideTool`) — requires `session_id`, positive `revision`,
 `decision`, and a bounded non-empty `reason`. Fixed sequences admit `continue | stop` and continue
 only the proposed round. Manager sequences admit `complete | dispatch | stop`; dispatch supplies
-`stage_id`, `gap`, `source_invocation_id` for sourced stages, and `items`/`skipped`/`deferred`/
-`covered` dispositions; complete supplies an assessment, and stop supplies `remaining_gaps`.
+`stage_id`, `gap`, optional `source_invocation_id` for sourced stages, and `items`/`skipped`/`deferred`/
+`covered` dispositions; complete supplies an assessment, and stop optionally supplies `remaining_gaps`.
 Unknown sessions, stale revisions, duplicate decisions, and states other than
 `awaiting_manager` are non-progressing refusals that spawn nothing.
 

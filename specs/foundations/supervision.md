@@ -1,5 +1,15 @@
 # Run-scoped child supervision
 
+`agent_poll` waits up to 30 seconds when caught up, waking on child activity, settlement, a question,
+or parent cancellation; `wait_ms: 0` requests a nonblocking snapshot. New returned activity ranges
+count as progress once per parent; repeated pages and empty polls do not. The registry's bounded
+`waitForUpdate` removes its timer and abort listener after every wake. Production:
+`AgentRegistry.waitForUpdate` in `packages/supervision/src/registry.ts` and `buildHandler` in
+`packages/loop/src/runtime/capabilities/agents.ts`. Test: `wakes bounded polls on activity, settlement,
+questions, cancellation and timeout` in `packages/supervision/tests/component/registry.test.ts` and
+`waits for new child activity and credits each observed byte range only once` in
+`packages/loop/tests/unit/agents-capability.test.ts`.
+
 ## Purpose and ownership
 
 `@clarvis/supervision` owns a run-scoped registry of children, their bounded activity buffers, completion notices, steer queues, and effective limits. `@clarvis/loop` registers sub-agents and `@clarvis/workflows` registers workflow leaders in the same id space. Model-facing tools live in the loop. Production: `createAgentRegistry` in `packages/supervision/src/registry.ts`, `registerBackgroundChild` in `packages/supervision/src/spawn-child.ts`, and `AGENT_REGISTRY_PORT` in `packages/supervision/src/agent-registry-port.ts`. Test: `packages/supervision/tests/component/registry.test.ts` and `packages/supervision/tests/unit/agent-registry-port.test.ts`.

@@ -72,7 +72,7 @@ export function buildRunWorkItemsTool(profiles?: readonly LeaderProfileInfo[]): 
         "files and mutation accurately. A writer with no files is scheduled alone within this batch.",
       items: {
         type: "object",
-        additionalProperties: false,
+        additionalProperties: true,
         properties: {
           id: {
             type: "string",
@@ -144,7 +144,7 @@ export function buildRunWorkItemsTool(profiles?: readonly LeaderProfileInfo[]): 
     description: RUN_WORK_ITEMS_DESCRIPTION,
     inputSchema: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       properties,
       required: ["items"],
     },

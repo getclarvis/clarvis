@@ -4,7 +4,7 @@ import type { WorkflowDefinition } from "../artifact.ts";
 export const AUDIT_WORKFLOW = {
   name: "audit",
   description:
-    "Assess a subject against evidence and coverage; choose only the investigation and verification needed for the requested audit.",
+    "Assess a subject against evidence and coverage; choose useful investigation and verification.",
   args: ["subject"],
   control: "manager",
   objective: "Audit {{args.subject}} with supported findings, honest coverage and explicit limits.",
@@ -40,6 +40,7 @@ Inspect directly. Return independent \`work_items\` with short \`title\`, self-c
 read \`files\`, \`mutation: false\` and real \`dependencies\`. Record unobserved facts in
 \`unknowns\`; do not invent findings.`,
       fanout: 1,
+      replicas: { min: 1, max: 8 },
     },
     {
       id: "review",
@@ -55,6 +56,7 @@ Ground findings in observed evidence, cited as \`path:line\` or an exact source.
 \`needs_verification: true\` for consequential or uncertain claims; calibrate \`confidence\`.
 Record sampled, skipped or unreadable areas in \`coverage_gaps\`.`,
       fanout: 1,
+      replicas: { min: 1, max: 8 },
     },
     {
       id: "verify",
@@ -74,7 +76,7 @@ Seek counterevidence with read-only tools. Copy the id to \`finding_id\`. Return
 independent support, \`refuted\` for contradiction or \`inconclusive\` for insufficient evidence.
 Distinguish source analysis from executed reproduction; do not modify the workspace.`,
       fanout: 1,
-      replicas: { min: 2, max: 3 },
+      replicas: { min: 2, max: 8 },
       accept: { kind: "threshold", field: "verdict", value: "refuted", count: 2 },
     },
     {
@@ -89,8 +91,9 @@ Distinguish source analysis from executed reproduction; do not modify the worksp
 
 Inspect consequential gaps using available read-only tools. Return newly supported findings with
 cited evidence and keep unexamined areas in \`coverage_gaps\`. Explain which remaining gaps affect
-the conclusions. Do not modify the workspace.`,
+the conclusions. Do not edit.`,
       fanout: 1,
+      replicas: { min: 1, max: 8 },
     },
   ],
   synthesis: `# Synthesis

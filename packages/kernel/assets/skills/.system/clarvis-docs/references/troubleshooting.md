@@ -7,11 +7,23 @@
 5. For a write that succeeded but is not effective, check whether the result says refresh pending or reconnect required. A captured run keeps its old skill/resources; a later safe snapshot can see a refreshed catalog. Provider, placement or profile changes may need reconnect.
 6. For a denied file or shell action, distinguish execution authorization from settings validation. Inspect the denial and effective Sandbox policy; configuration metadata has no write exemption. Use the supported approval control for an eligible new attempt. A missing Sandbox backend requires fixing the backend or an explicit allowed Host choice, never an automatic retry on Host. An uncertain outcome requires checking for effects before retrying.
 
-Goal tools, Memory tools, skill reads, `ask_user`, built-in workflow
+Goal tools, Memory tools, skill reads, `ask_user`, workflow tools, built-in workflow
 results and generated workflow titles ignore extra fields. A validation error on these operations
 requires checking the expected fields, their types, bounds and meaning. Extra fields do not grant
 permissions or change session ownership, budgets or evidence. Settings, external tools and custom
 result schemas retain their own validation rules.
+
+An invalid workflow inspection reference returns the current checkpoint; use its returned refs to
+correct the call. Omitted, blank or null selectors request the overview. Refused decisions do not
+consume the revision or start leaders. When waiting for leaders, advance `agent_poll.offset` using
+the returned `next_offset`; caught-up polls wait for activity for up to 30 seconds by default.
+Independent discovery replicas may reuse local work-item ids: the runtime scopes ids and
+dependencies per result. Unreferenced duplicate ids within one plan are disambiguated by item
+position. If a dependency references a duplicated id, reframe with distinct ids; the runtime does
+not guess which predecessor was intended.
+For a running manager stage, `workflow_status` overview waits for a checkpoint for up to 30 seconds;
+`wait_ms: 0` returns immediately. Invocation counts finalize at settlement; inspect individual
+leaders through supervision for live activity. Dispatch candidates appear only at decision points.
 
 Goal Steward reviews are routed by their verdict: `achieved` accepts the report, `needs_work`
 returns work to the main agent, and `needs_evidence` asks that agent for clarification. The optional

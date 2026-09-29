@@ -65,7 +65,7 @@ export function buildRunWorkflowTool(
     description: RUN_WORKFLOW_DESCRIPTION,
     inputSchema: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       required: ["name"],
       properties: {
         name: {

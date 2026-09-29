@@ -4,7 +4,7 @@ import type { WorkflowDefinition } from "../artifact.ts";
 export const IMPLEMENT_WORKFLOW = {
   name: "implement",
   description:
-    "Deliver a change with evidence of required validation, choosing useful implementation and review work explicitly.",
+    "Deliver a change with evidence of required validation, choosing useful work explicitly.",
   args: ["goal"],
   control: "manager",
   objective:
@@ -41,10 +41,11 @@ export const IMPLEMENT_WORKFLOW = {
 
 {{args.goal}}
 
-Read code and workspace instructions. Return separable \`work_items\` with short \`title\`,
+Read code and workspace instructions. Return \`work_items\` with short \`title\`,
 self-contained \`goal\` and validation criteria. Declare read/changed files, \`mutation\` for writes
 and real \`dependencies\`; unscoped writers run alone. Record scope-changing \`unknowns\`.`,
       fanout: 1,
+      replicas: { min: 1, max: 8 },
     },
     {
       id: "build",
@@ -57,13 +58,14 @@ and real \`dependencies\`; unscoped writers run alone. Record scope-changing \`u
 
 {{item.goal}}
 
-The overall goal is: {{args.goal}}
+Overall goal: {{args.goal}}
 
 Respect file scope and existing edits; scheduling does not isolate unrelated work. Report broader
 needs as blockers. Follow workspace conventions and run relevant checks. Record actual commands and
 outcomes, changed files in \`findings\`, unfinished work in \`coverage_gaps\`, and unverified claims
 with \`needs_verification\`. Do not commit, push or rewrite history.`,
       fanout: 1,
+      replicas: { min: 1, max: 1 },
     },
     {
       id: "review",
@@ -71,17 +73,18 @@ with \`needs_verification\`. Do not commit, push or rewrite history.`,
       profile: "explorer",
       over: { kind: "all", source: "build.findings" },
       title: "Review implementation",
-      brief: `Review the change that was just made for this goal:
+      brief: `Review the change for this goal:
 
 {{args.goal}}
 
-What the build leaders reported doing: {{item}}
+Build reports: {{item}}
 
 Check reports against files and diff. Prioritize correctness, invariants, callers and tests. Cite
 findings as \`path:line\` and mark consequential claims \`needs_verification: true\`. Use read-only
 tools; do not assume commands are available. Record unavailable checks and unreviewed scope in
 \`coverage_gaps\`. Report problems; do not fix them.`,
       fanout: 1,
+      replicas: { min: 1, max: 8 },
     },
     {
       id: "verify",
@@ -102,7 +105,7 @@ with independent support, \`refuted\` with contradiction or \`inconclusive\` for
 Distinguish static analysis from reproduction; unavailable checks are not confirmation. Do not
 modify the workspace.`,
       fanout: 1,
-      replicas: { min: 2, max: 2 },
+      replicas: { min: 2, max: 8 },
       accept: { kind: "threshold", field: "verdict", value: "refuted", count: 2 },
     },
   ],

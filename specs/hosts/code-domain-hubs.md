@@ -39,6 +39,13 @@ Test: `keeps objective assessment separate from a failed execution on live proje
 `rehydrates a sufficient objective without erasing an operational failure` in
 [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
 
+Workflow checkpoint prose has a separate bounded scroll viewport. Ctrl+U/Ctrl+D and pointer
+scrolling move its long objective, invocation coverage and assessment without displacing task
+navigation. Wrapped text retains its measured height instead of painting over neighboring rows.
+Production: `WorkflowsHub` in `packages/code/src/views/config/WorkflowsHub.tsx`. Test:
+`long manager evidence scrolls independently without hiding task navigation at narrow widths` in
+`packages/code/tests/integration/workflows-hub-render.test.tsx`.
+
 ## 2. Surface
 
 ### 2.1 Registered commands

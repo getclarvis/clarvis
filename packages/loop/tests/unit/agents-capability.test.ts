@@ -80,6 +80,42 @@ describe("agents capability — activation", () => {
 });
 
 describe("agents capability — the tools", () => {
+  it("waits for new child activity and credits each observed byte range only once", async () => {
+    const { registry, call } = attach();
+    const handle = registry.register(registration("working"))!;
+    let finished = false;
+    const pending = call(AGENT_POLL_TOOL, { id: handle.id }).then((result) => {
+      finished = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    handle.ingest({
+      type: "lead_iteration",
+      iteration: 1,
+      input_tokens: 10,
+      output_tokens: 5,
+      response: "created module",
+      started_at: 0,
+      ended_at: 1,
+      model: "m",
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+      cache_read_ratio: 0,
+    });
+    expect(await pending).toMatchObject({ kind: "result", progress: true });
+    expect(await call(AGENT_POLL_TOOL, { id: handle.id, offset: 0, wait_ms: 0 })).toMatchObject({
+      progress: false,
+    });
+    const offset = registry.poll(handle.id, {})!.next_offset;
+    const settled = call(AGENT_POLL_TOOL, { id: handle.id, offset });
+    handle.settled({ status: "completed", result: "done" });
+    expect(await settled).toMatchObject({ progress: false });
+    expect(await call(AGENT_POLL_TOOL, { id: handle.id, wait_ms: -1 })).toMatchObject({
+      progress: false,
+    });
+  });
+
   it("matches every supervision tool and rejects a non-supervision name", () => {
     const { contribution } = attach();
     const handler = contribution.handlers![0]!;
@@ -131,7 +167,7 @@ describe("agents capability — the tools", () => {
   it("agent_poll returns buffered output and tolerates a non-object argument payload", async () => {
     const { registry, contribution, call, body } = attach();
     const handle = registry.register(registration("n1"))!;
-    expect(body(await call(AGENT_POLL_TOOL, { id: handle.id }))).toContain(handle.id);
+    expect(body(await call(AGENT_POLL_TOOL, { id: handle.id, wait_ms: 0 }))).toContain(handle.id);
 
     const malformed = await contribution.handlers![0]!.handle(
       { id: "c2", name: AGENT_POLL_TOOL, arguments: "not-an-object" },

@@ -1,4 +1,4 @@
-import type { RunEvent, WorkflowObjectiveAssessment } from "@clarvis/protocol";
+import type { RunEvent, WorkflowInvocation, WorkflowObjectiveAssessment } from "@clarvis/protocol";
 
 /** The lifecycle state of a workflow node (manager or leader). */
 export type WorkflowNodeStatus = "running" | "ok" | "error" | "cancelled";
@@ -46,6 +46,7 @@ export interface WorkflowSequenceActivity {
   dispatches?: number;
   maxDispatches?: number;
   assessment?: WorkflowObjectiveAssessment;
+  invocations?: readonly WorkflowInvocation[];
 }
 
 /**
@@ -136,6 +137,7 @@ export function reduceWorkflowProjection(
         ...(event.dispatches === undefined ? {} : { dispatches: event.dispatches }),
         ...(event.max_dispatches === undefined ? {} : { maxDispatches: event.max_dispatches }),
         ...(event.assessment === undefined ? {} : { assessment: event.assessment }),
+        ...(event.invocations === undefined ? {} : { invocations: event.invocations }),
       },
     };
   }

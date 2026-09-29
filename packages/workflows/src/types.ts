@@ -124,6 +124,28 @@ export interface WorkflowSequenceState {
   dispatches?: number;
   maxDispatches?: number;
   assessment?: WorkflowAssessment;
+  /** Bounded materialized decisions, not a replay journal. */
+  invocations?: readonly WorkflowInvocation[];
+}
+
+/** One admitted stage invocation and its concrete candidate coverage. */
+export interface WorkflowInvocation {
+  id: string;
+  stageId: string;
+  sourceInvocationId?: string;
+  gap: string;
+  fingerprint: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  requested: number;
+  started: number;
+  completed: number;
+  coverage: readonly {
+    ref: string;
+    disposition: "selected" | "skipped" | "deferred" | "covered";
+    reason?: string;
+    replicas?: number;
+    status?: string;
+  }[];
 }
 
 /**

@@ -105,6 +105,39 @@ test("keeps objective assessment separate from a failed execution on live projec
   expect(activity?.nodes.get("mgr")?.status).toBe("running");
 });
 
+test("projects bounded invocation coverage from a manager checkpoint", () => {
+  const activity = reduceWorkflowProjection(null, {
+    type: "workflow_sequence_state",
+    at: 2,
+    run_id: "mgr",
+    session_id: "wfseq-1",
+    status: "awaiting_manager",
+    revision: 3,
+    leaders_started: 2,
+    max_total_leaders: 32,
+    control: "manager",
+    invocations: [
+      {
+        id: "wfseq-1-inv-1",
+        stageId: "verify",
+        gap: "check",
+        fingerprint: "a".repeat(64),
+        status: "completed",
+        requested: 2,
+        started: 2,
+        completed: 2,
+        coverage: [
+          { ref: "candidate-1", disposition: "selected", replicas: 2, status: "completed" },
+        ],
+      },
+    ],
+  });
+  expect(activity?.sequence?.invocations?.[0]).toMatchObject({
+    requested: 2,
+    coverage: [{ ref: "candidate-1", status: "completed" }],
+  });
+});
+
 test("keeps authored round context and a terminal failure reason on the live leader", () => {
   let activity = reduceWorkflowProjection(null, {
     ...started("leader-1", "mgr", "verify"),

@@ -275,6 +275,9 @@ for legacy records and workflows that used only ad-hoc leaders.
 
 Manager-controlled sequences add `control: manager`, objective, dispatch count and an optional
 assessment (`not_assessed`, `sufficient` or `insufficient`) to the same checkpoint and live event.
+Their bounded `invocations` carry stage/source identities, the admitted-plan fingerprint, gap,
+requested/started/completed leader counts, and selected/skipped/deferred/covered refs with outcomes.
+The persisted and live projections use the same shape; neither replays a dispatch after restart.
 `WorkflowDetail.status` remains the operational rollup: a sufficient objective may coexist with
 a failed execution, and old records without an assessment project as not assessed.
 

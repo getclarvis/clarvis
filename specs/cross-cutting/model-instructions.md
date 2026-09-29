@@ -80,7 +80,9 @@ Workflow scheduling protects declared conflicts within a batch, not across unrel
 manager's own writes. A checkpoint requires its current revision and an explicit decision; a paused
 sequence is not complete.
 For a manager-controlled authored workflow, the model inspects admitted evidence references and
-decides `complete`, one declared `once` stage with a gap, or `stop`. A user-supplied result may
+decides `complete`, one eligible declared stage with a gap and full candidate dispositions, or
+`stop`. It can request a source invocation and replica count within authored bounds; the host
+validates refs, dependencies and cumulative reservation before running waves. A user-supplied result may
 support a semantic criterion, but cannot prove Clarvis executed a check or satisfy a required
 completed stage. Textual finalization without a decision yields one nudge and then stops without
 assessment; optional failures need explicit dispositions before sufficiency. Production:
@@ -88,6 +90,19 @@ assessment; optional failures need explicit dispositions before sufficiency. Pro
 [`manager-sequence.ts`](../../packages/workflows/src/manager-sequence.ts) and
 [`run-round.ts`](../../packages/workflows/src/run-round.ts). Test: `manager workflow sufficiency` in
 [`manager-sequence.test.ts`](../../packages/workflows/tests/component/manager-sequence.test.ts).
+
+The shipped workflows use this manager decision rather than a compulsory discovery→review→verify
+recipe. `ADMIRAL` in `packages/kernel/src/config/builtin-agents/admiral.ts` directs inspection of
+existing evidence and a blocking gap before completing, choosing the smallest useful dispatch or
+stopping. A leader's `needs_verification` is a suggestion, not a filter on what the manager may
+verify. A manager assertion of a file edit or executed test is not execution evidence.
+Deterministic tests establish available decisions, not a model's judgment; a live comparison with
+fixed baselines has not been qualified. Production: `ADMIRAL` in
+`packages/kernel/src/config/builtin-agents/admiral.ts`, `BUILTIN_WORKFLOWS` in
+`packages/workflows/src/builtin-workflows/index.ts` and `buildWorkflowDecideTool` in
+`packages/workflows/src/run-round.ts`. Test:
+`packages/workflows/tests/component/builtin-manager-adoption.test.ts` and
+`packages/workflows/tests/component/run-workflow.test.ts`.
 
 Built-in verdict briefs supply the exact `finding_id` and distinguish
 static inspection from checks a read-only verifier cannot run. Their acceptance predicate counts
@@ -132,10 +147,10 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
    delegation and finalization component suites exercise the actual gates.
 4. **Built-in workflow verification receives its schema-required identity and preserves uncertainty.**
    Production: `BUILTIN_WORKFLOWS` and `VERDICT_SCHEMA` under `packages/workflows/src/`. Test:
-   `packages/workflows/tests/unit/builtin-workflows.test.ts` interpolates every built-in round,
+   `packages/workflows/tests/unit/builtin-workflows.test.ts` interpolates every built-in stage,
    checks finding identity, read-only limits and synthesis semantics; `schemas.test.ts` and the
    round tests cover validation/aggregation. The full three-definition JSON ceiling is 11,000
-   characters; profiles, round structure, fanout and predicates are not changed to meet that bound.
+   characters; useful briefs, profiles and verdict predicates remain within that bound.
 5. **Cross-field requirements are visible before the first call.** Requesting publication fallback
    does not bypass its human gate. Installed workflow names carry their own required argument keys.
    Production: `buildRunWorkflowTool` in `packages/workflows/src/run-workflow.ts`. Test:

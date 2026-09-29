@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js";
 import { detachObserved } from "#src/core/tasks.ts";
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import type {
@@ -209,6 +209,7 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
       ...(current.dispatches === undefined ? {} : { dispatches: current.dispatches }),
       ...(current.maxDispatches === undefined ? {} : { max_dispatches: current.maxDispatches }),
       ...(current.assessment === undefined ? {} : { assessment: current.assessment }),
+      ...(current.invocations === undefined ? {} : { invocations: current.invocations }),
     };
   };
   const selectedRow = (): WorkflowSummary | undefined =>
@@ -600,6 +601,24 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
           </Show>
           <Show when={sequence()?.control === "manager"}>
             <text wrapMode="word">Objective: {sequence()?.objective}</text>
+            <Show when={(sequence()?.invocations?.length ?? 0) > 0}>
+              <DetailHeading>Stage invocations</DetailHeading>
+              <For each={sequence()?.invocations}>
+                {(invocation) => (
+                  <text wrapMode="word">
+                    {invocation.id} ({invocation.stageId}): {invocation.status}; requested{" "}
+                    {invocation.requested}, started {invocation.started}, completed{" "}
+                    {invocation.completed}. Gap: {invocation.gap}.{" "}
+                    {invocation.coverage
+                      .map(
+                        (item) =>
+                          `${item.ref}: ${item.disposition}${item.status ? `/${item.status}` : ""}${item.reason ? ` (${item.reason})` : ""}`,
+                      )
+                      .join("; ")}
+                  </text>
+                )}
+              </For>
+            </Show>
             <text wrapMode="word">
               Objective assessment: {sequence()?.assessment?.outcome ?? "not_assessed"}; execution:{" "}
               {detail()?.status}

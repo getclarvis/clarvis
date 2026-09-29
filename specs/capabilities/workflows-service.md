@@ -40,21 +40,46 @@ Three concerns sit here:
    via `get`/`list`/`delete`, and the policy that decides whether an incoming `StartRunParams`
    should be routed through that machinery at all.
 
-An authored manager definition uses `control: manager`, objective, criteria, once stages and a
+An authored manager definition uses `control: manager`, objective, criteria, once/each/all stages and a
 1–16 dispatch cap. It cannot mix fixed `rounds` or `repeat`; missing `control` stays fixed.
-Criterion dependencies name declared stages; a dependency requires a completed leader result,
-not merely user-provided evidence. The example under
+The shipped `audit`, `implement` and `research` definitions use this manager branch with three
+objective criteria, four selectable stages and `maxDispatches: 8`. Audit verification has 2–3
+replicas; research and implement verification have two. Verify is optional in all three and can
+select any finding from the source, regardless of its `needs_verification` suggestion. Implement's
+build is mutating with one replica; review is sourced from a completed build invocation. No
+criterion requires discovery, planning or review merely by convention. Existing evidence may
+justify completion with zero leaders, but textual assertions about a file edit or executed check
+are not independent proof. User/workspace-required validation must be evidenced or reported as a
+gap. An authored fixed override replaces the full definition and retains fixed preflight and
+rounds; there is no field-by-field merge. Production: `BUILTIN_WORKFLOWS` and
+`resolveWorkflowDefinitions` in `packages/workflows/src/builtin-workflows/`, `explainWorkflow` in
+`packages/workflows/src/run-workflow.ts`. Test: `packages/workflows/tests/unit/builtin-workflows.test.ts`,
+`packages/workflows/tests/component/builtin-manager-adoption.test.ts` and
+`an authored fixed override retains its fixed preflight and starts its first round` in
+`packages/workflows/tests/component/run-workflow.test.ts`.
+Criterion dependencies name declared stages; a dependency requires an accepted completed
+invocation and completed leader evidence, not merely user-provided evidence. The example under
 [`examples/sufficiency`](../../packages/workflows/examples/sufficiency/WORKFLOW.md) is author-owned,
 not a new built-in. Production: `workflowFrontmatterSchema` and `compileWorkflowDocument` in
-[`artifact.ts`](../../packages/workflows/src/artifact.ts). Test: `loads a manager workflow` and
+[`artifact.ts`](../../packages/workflows/src/artifact.ts). Test: `loads a manager workflow and rejects fixed-round mixing or invalid dependencies` and
 `ships an operational authored manager example` in
 [`artifact.test.ts`](../../packages/workflows/tests/integration/artifact.test.ts).
+
+Manager stages have no textual-order dependency: a sourced stage is eligible only after its named
+source has a completed invocation with an array at the declared field. Unknown sources and cycles
+are rejected at load time. `replicas: {min, max}` defaults to 1/1 and cannot exceed the shared
+fan-out ceiling; mutating stages require 1/1. An item declaring mutation is checked again at
+dispatch. Profile and accept rule are authored, not changed by a decision. Production:
+`compileWorkflowDocument` and `ManagerSequence`. Test: `loads a manager workflow and rejects fixed-round mixing or invalid dependencies` in `artifact.test.ts` and `selects a later declared stage out of order and reserves 2+3 replicas with explicit coverage` in `manager-sequence.test.ts`.
 
 The kernel indexes only the current user message, completed manager tool results and settled
 leader outcomes as per-execution opaque refs, using existing run events and tree records. It flushes
 manager decision checkpoints before emitting their live state. A stored objective assessment does
 not replace `finalWorkflowStatus`'s operational rollup, so `failed` and `sufficient` can coexist.
 Records without a manager assessment project as `not_assessed`; there is no state migration.
+The same checkpoint persists bounded invocation identities and concrete coverage, including
+requested/started/completed leaders, skipped/deferred reasons and failed outcomes. Terminal
+reconciliation preserves this diagnostic state but never replays an interrupted batch.
 Production: `runManagerWorkflow` and `finalWorkflowStatus` in
 [`workflows-service.ts`](../../packages/kernel/src/workflows/workflows-service.ts),
 `boundedWorkflowSequence` in [`workflow-store.ts`](../../packages/kernel/src/workflows/workflow-store.ts).
@@ -91,8 +116,8 @@ definitions remain unavailable; no subset or host bridge substitutes for the wor
 | --- | --- | --- | --- |
 | `WORKFLOW_FILE` | const | `packages/workflows/src/artifact.ts` | `"WORKFLOW.md"` — the required filename |
 | `workflowFrontmatterSchema` | zod schema | `packages/workflows/src/artifact.ts` | Validates the YAML frontmatter; `.loose()` (unknown keys pass) |
-| `WorkflowRound` | interface | `packages/workflows/src/artifact.ts` | One compiled round: `id`, `type`, `profile?`, `over` (a `Selector`), `title`, `brief`, `fanout`, `accept?`, `when?` |
-| `WorkflowDefinition` | discriminated type | `packages/workflows/src/artifact.ts` | fixed rounds/repeat by default, or manager objective/criteria/once stages/max dispatches; common name, args and synthesis |
+| `WorkflowRound` | interface | `packages/workflows/src/artifact.ts` | One compiled round: `id`, `type`, `profile?`, `over` (a `Selector`), `title`, `brief`, `fanout`, `replicas?`, `mutation?`, `accept?`, `when?` |
+| `WorkflowDefinition` | discriminated type | `packages/workflows/src/artifact.ts` | fixed rounds/repeat by default, or manager objective/criteria/once, each or all stages/replica range/max dispatches; common name, args and synthesis |
 | `WorkflowLoadError` | interface | `packages/workflows/src/artifact.ts` | `{ dir, message }` — one failed load |
 | `WorkflowRegistry` | interface | `packages/workflows/src/artifact.ts` | `{ workflows, errors }` — the outcome of a scan |
 | `validateWorkflowDocument(raw, { directory })` | function | `packages/workflows/src/artifact.ts` | Validates prospective bytes with the same compiler as discovery, including existing brief files; throws on any defect |
@@ -219,7 +244,8 @@ Say what was found.
 
 For the manager variant, replace `rounds`/`repeat` with `control: manager`, an `objective`,
 `completion: {criteria: [{id, description, requires_completed_stages?}]}`, `stages` containing
-`over: once` entries, and positive `max_dispatches` no greater than 16. The directory
+`over: once`, `each(<stage>.<field>)` or `all(<stage>.<field>)` entries with optional `replicas`
+range and `mutation`, and positive `max_dispatches` no greater than 16. The directory
 [`examples/sufficiency`](../../packages/workflows/examples/sufficiency/WORKFLOW.md) has a complete
 authorable document and brief. The parser rejects mixed control shapes and unknown criterion
 stage dependencies (`compileWorkflowDocument` in `packages/workflows/src/artifact.ts`; test:
@@ -245,7 +271,7 @@ accepted refutations from rejected thresholds: not refuted is not confirmed. Fai
 implementation can leave partial writes; synthesis must inspect the workspace rather than assume
 rollback. Production: `BUILTIN_WORKFLOWS` under `packages/workflows/src/builtin-workflows/` and
 `VERDICT_SCHEMA` in `packages/workflows/src/schemas.ts`. Test:
-`packages/workflows/tests/unit/builtin-workflows.test.ts` interpolates every built-in round and
+`packages/workflows/tests/unit/builtin-workflows.test.ts` interpolates every built-in stage and
 checks those handoffs plus the 11,000-character serialized definition ceiling. Shared instruction
 ownership is in [`model-instructions.md`](../cross-cutting/model-instructions.md).
 
@@ -321,12 +347,17 @@ interface WorkflowSequenceRecord {
   leaders_started: number;
   max_total_leaders: number;
   reason?: string;
+  control?: "manager"; objective?: string;
+  dispatches?: number; max_dispatches?: number;
+  assessment?: WorkflowObjectiveAssessment;
+  invocations?: readonly WorkflowInvocation[];
 }
 ```
 
 `boundedWorkflowSequence` UTF-8-bounds the session/round identifiers and reason before both live
-assignment and persistence. The sequence is a latest-state projection, not a decision history; each
-transition replaces the prior value.
+assignment and persistence. The sequence carries the latest decision point and a bounded invocation/coverage summary, not
+an executable replay log. Each transition replaces the prior checkpoint while retaining admitted
+invocation summaries.
 
 Disk layout, per owner: `<state-root>/workflows/<ownerSegment(owner)>/<ownerSegment(id)>.json` (the
 full record) and a sibling `<ownerSegment(id)>.summary.json` sidecar

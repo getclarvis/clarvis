@@ -325,6 +325,12 @@ replaces a same-named global or built-in definition; a valid global document rep
 built-in. See [`@clarvis/workflows`](../workflows/README.md#built-ins-and-workflow-documents) for the
 complete document contract.
 
+The shipped `audit`, `implement` and `research` definitions use manager-controlled preflight:
+it previews selectable stages and replica ranges, then opens with no leader. The manager may
+complete with admitted evidence, choose focused work or stop; an authored fixed override still
+previews and starts its first fixed round after approval. The Workflows hub shows invocation
+coverage and sufficiency separately from operational status after reopen.
+
 The onboarding and configuration views can configure providers and secrets, select models, manage
 memory, inspect MCP tool servers, and manage extensions. `/extensions` is the only public extension
 route. It uses the same guided decision pattern as first boot: choose workspace/global selection
@@ -673,7 +679,9 @@ page. The manager and legacy records without a persisted task do not advertise o
 the tree, a fixed `awaiting_manager` checkpoint appears as waiting for the next stage, while an
 authored manager workflow waits for an explicit completion, dispatch or stop decision. Its detail
 shows objective assessment and operational execution status separately, including optional failure
-dispositions; it merges live checkpoints with the persisted view. The live Parallel work section
+dispositions. It lists admitted stage invocations with their gaps, requested/started/completed
+leaders and selected/skipped/deferred/covered candidate refs and outcomes. It merges live checkpoints
+with the persisted view. The live Parallel work section
 shows the same checkpoint even when no leader remains live, so an Admiral decision cannot disappear
 with the last child. Its header and
 leader roster mirror the compact Plan/Agents grammar: settled/total plus active running count, then

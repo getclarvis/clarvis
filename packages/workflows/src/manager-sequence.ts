@@ -1,16 +1,51 @@
 /** Explicit sufficiency control for an authored manager workflow. */
 import { parseTaskTitle } from "@clarvis/capability";
+import { createHash } from "node:crypto";
 import type { ManagerWorkflowDefinition } from "./artifact.ts";
-import { beginDispatch, type DispatchDeps } from "./dispatch.ts";
+import {
+  beginDispatch,
+  type DispatchDeps,
+  type DispatchOutcome,
+  type DispatchUnit,
+} from "./dispatch.ts";
 import { interpolate } from "./interpolate.ts";
 import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
+import { applyAccept, matchesFilter, readPath } from "./rounds.ts";
+import { scheduleWorkItems } from "./schedule.ts";
 import { WORKFLOW_RESULT_SCHEMAS } from "./schemas.ts";
-import type { WorkflowAssessment, WorkflowSequenceState } from "./types.ts";
+import type { WorkflowAssessment, WorkflowInvocation, WorkflowSequenceState } from "./types.ts";
+import { toWorkItem, workItemBrief } from "./work-items.ts";
 
 interface Result {
   text: string;
   progress: boolean;
   error?: true;
+}
+
+interface Candidate {
+  ref: string;
+  item: unknown;
+  index: number;
+}
+interface Materialized {
+  invocation: WorkflowInvocation;
+  value: unknown;
+}
+
+function mergedResults(results: readonly unknown[]): unknown {
+  if (results.length === 1) return results[0];
+  if (results.some((item) => typeof item !== "object" || item === null || Array.isArray(item)))
+    return results;
+  const entries = results as Record<string, unknown>[];
+  return Object.fromEntries(
+    [...new Set(entries.flatMap(Object.keys))].map((key) => {
+      const values = entries.map((item) => item[key]).filter((value) => value !== undefined);
+      return [
+        key,
+        values.every(Array.isArray) ? values.flat() : values.length === 1 ? values[0] : values,
+      ];
+    }),
+  );
 }
 
 /** One manager-owned checkpoint; the enclosing round coordinator owns exclusivity. */
@@ -23,6 +58,7 @@ export class ManagerSequence {
   assessment?: WorkflowAssessment;
   private stageId?: string;
   private readonly completed = new Set<string>();
+  private readonly invocations: Materialized[] = [];
 
   constructor(
     id: string,
@@ -47,6 +83,7 @@ export class ManagerSequence {
       ...(this.stageId === undefined ? {} : { roundId: this.stageId }),
       ...(this.reason === undefined ? {} : { reason: this.reason }),
       ...(this.assessment === undefined ? {} : { assessment: this.assessment }),
+      invocations: this.invocations.map(({ invocation }) => invocation),
     };
   }
 
@@ -71,8 +108,59 @@ export class ManagerSequence {
     };
   }
 
-  statusText(ref?: string): Result {
+  private candidates(
+    stageId: string,
+  ): { items: Candidate[]; source?: Materialized; failedSource: boolean } | null {
+    const stage = this.definition.stages.find((entry) => entry.id === stageId);
+    if (stage === undefined) return null;
+    let source: Materialized | undefined;
+    let failedSource = false;
+    let values: unknown[] = [undefined];
+    if (stage.over.kind !== "once") {
+      const sourceId = stage.over.source.split(".")[0]!;
+      const history = this.invocations.filter(({ invocation }) => invocation.stageId === sourceId);
+      source = history.findLast(({ invocation }) => invocation.status === "completed");
+      if (source === undefined) return null;
+      failedSource = history.at(-1) !== source;
+      const resolved = readPath(source.value, stage.over.source.split(".").slice(1));
+      if (!Array.isArray(resolved) || resolved.length > WORKFLOW_LIMITS.workItems) return null;
+      values =
+        stage.over.kind === "each"
+          ? resolved.filter(
+              (item) =>
+                stage.over.kind === "each" &&
+                (stage.over.where === undefined || matchesFilter(item, stage.over.where)),
+            )
+          : [resolved];
+    }
+    return {
+      items: values.map((item, index) => ({
+        ref: `${this.id}:${String(this.revision)}:${stage.id}:${source?.invocation.id ?? "root"}:${String(index)}`,
+        item,
+        index,
+      })),
+      source,
+      failedSource,
+    };
+  }
+
+  statusText(ref?: string, page = 0, itemRef?: string): Result {
     const evidence = this.deps.ctx.evidence;
+    if (!Number.isInteger(page) || page < 0 || page > 255)
+      return { text: "invalid candidate page.", progress: false, error: true };
+    if (itemRef !== undefined) {
+      for (const stage of this.definition.stages) {
+        const candidate = this.candidates(stage.id)?.items.find((item) => item.ref === itemRef);
+        if (candidate !== undefined) {
+          const detail = JSON.stringify(candidate);
+          return {
+            text: detail.length > 32 * 1024 ? `${detail.slice(0, 32 * 1024)} [truncated]` : detail,
+            progress: false,
+          };
+        }
+      }
+      return { text: "unknown or stale item_ref.", progress: false, error: true };
+    }
     if (ref !== undefined) {
       const item = evidence?.get(ref);
       if (item === undefined)
@@ -106,11 +194,31 @@ export class ManagerSequence {
           runId,
           revision,
         })) ?? [];
+    const eligible = this.definition.stages.flatMap((stage) => {
+      const proposal = this.candidates(stage.id);
+      if (proposal === null) return [];
+      return [
+        {
+          stageId: stage.id,
+          selector: stage.over.kind,
+          replicas: stage.replicas,
+          sourceInvocationId: proposal.source?.invocation.id,
+          failedSource: proposal.failedSource,
+          total: proposal.items.length,
+          page,
+          candidates: proposal.items.slice(page * 16, (page + 1) * 16).map(({ ref, item }) => ({
+            ref,
+            summary: JSON.stringify(item)?.slice(0, 512) ?? "once",
+            origin: proposal.source?.invocation.id ?? "once",
+          })),
+        },
+      ];
+    });
     return {
       text: JSON.stringify({
         ...this.state(),
         criteria: this.definition.completion.criteria,
-        stages: this.definition.stages.map((stage) => stage.id),
+        eligible,
         completedStages: [...this.completed],
         evidence: refs,
         moreEvidence: (evidence?.list().length ?? 0) > 16,
@@ -398,19 +506,280 @@ export class ManagerSequence {
         progress: false,
         error: true,
       };
-    const scope = { args: this.args, state: {} };
-    const title = interpolate(stage.title, scope);
-    const brief = interpolate(stage.brief, scope);
-    if ("error" in title || "error" in brief)
-      return { text: "stage interpolation failed.", progress: false, error: true };
-    const parsed = parseTaskTitle(title.text);
-    if (!parsed.ok || brief.text.length + request.gap.length + 80 > WORKFLOW_LIMITS.textChars)
+    const proposal = this.candidates(stage.id);
+    if (proposal === null || proposal.items.length === 0)
       return {
-        text: "rendered stage exceeds its title or brief limit.",
+        text: "stage source is unavailable or has no candidates.",
+        progress: false,
+        error: true,
+      };
+    if (
+      proposal.source?.invocation.id !== request.source_invocation_id &&
+      stage.over.kind !== "once"
+    )
+      return {
+        text: "source_invocation_id does not match the checkpoint.",
+        progress: false,
+        error: true,
+      };
+    if (proposal.failedSource && request.acknowledge_failed_source !== true)
+      return {
+        text: "a later source invocation failed; acknowledge_failed_source is required.",
+        progress: false,
+        error: true,
+      };
+    const selections = request.items;
+    const skipped = request.skipped ?? [];
+    const deferred = request.deferred ?? [];
+    const covered = request.covered ?? [];
+    if (
+      !Array.isArray(selections) ||
+      !Array.isArray(skipped) ||
+      !Array.isArray(deferred) ||
+      !Array.isArray(covered) ||
+      selections.length === 0 ||
+      selections.length > WORKFLOW_LIMITS.workItems ||
+      skipped.length > WORKFLOW_LIMITS.workItems ||
+      deferred.length > WORKFLOW_LIMITS.workItems ||
+      covered.length > WORKFLOW_LIMITS.workItems
+    )
+      return {
+        text: "dispatch requires bounded selected, skipped and deferred items.",
+        progress: false,
+        error: true,
+      };
+    const entries: { entry: unknown; kind: "selected" | "skipped" | "deferred" | "covered" }[] = [
+      ...selections.map((entry: unknown) => ({ entry, kind: "selected" as const })),
+      ...skipped.map((entry: unknown) => ({ entry, kind: "skipped" as const })),
+      ...deferred.map((entry: unknown) => ({ entry, kind: "deferred" as const })),
+      ...covered.map((entry: unknown) => ({ entry, kind: "covered" as const })),
+    ];
+    const dispositions = new Map<string, WorkflowInvocation["coverage"][number]>();
+    for (const { entry, kind } of entries) {
+      if (typeof entry !== "object" || entry === null)
+        return { text: "invalid disposition.", progress: false, error: true };
+      const record = entry as Record<string, unknown>;
+      const ref = record.item_ref;
+      if (
+        typeof ref !== "string" ||
+        dispositions.has(ref) ||
+        !proposal.items.some((item) => item.ref === ref)
+      )
+        return { text: "duplicate, unknown or stale item_ref.", progress: false, error: true };
+      if (kind === "selected") {
+        const range = stage.replicas ?? { min: 1, max: 1 };
+        if (
+          !Number.isInteger(record.replicas) ||
+          Number(record.replicas) < range.min ||
+          Number(record.replicas) > range.max
+        )
+          return { text: "replicas outside the approved range.", progress: false, error: true };
+        const candidate = proposal.items.find((item) => item.ref === ref)!;
+        if (
+          Number(record.replicas) > 1 &&
+          (stage.mutation === true || toWorkItem(candidate.item)?.mutation === true)
+        )
+          return { text: "mutating items cannot have replicas.", progress: false, error: true };
+        if (stage.accept?.kind === "threshold" && stage.accept.count > Number(record.replicas))
+          return { text: "accept threshold cannot be reached.", progress: false, error: true };
+        dispositions.set(ref, { ref, disposition: kind, replicas: Number(record.replicas) });
+      } else if (kind === "covered") {
+        const previous = this.invocations.find(
+          ({ invocation }) =>
+            invocation.id === record.invocation_id &&
+            invocation.stageId === stage.id &&
+            invocation.sourceInvocationId === proposal.source?.invocation.id,
+        );
+        if (
+          previous === undefined ||
+          !previous.invocation.coverage.some(
+            (entry) =>
+              entry.disposition === "selected" &&
+              entry.status === "completed" &&
+              entry.ref.split(":").slice(-2).join(":") === ref.split(":").slice(-2).join(":"),
+          )
+        )
+          return {
+            text: "covered item needs a completed prior invocation for the same source.",
+            progress: false,
+            error: true,
+          };
+        dispositions.set(ref, {
+          ref,
+          disposition: kind,
+          reason: previous.invocation.id,
+          status: "completed",
+        });
+      } else {
+        const reason = kind === "skipped" ? record.reason : record.gap;
+        if (!isBoundedWorkflowString(reason, 1_024) || reason.trim().length === 0)
+          return { text: "skip reason or deferred gap is required.", progress: false, error: true };
+        dispositions.set(ref, { ref, disposition: kind, reason });
+      }
+    }
+    if (dispositions.size !== proposal.items.length)
+      return {
+        text: "every current candidate needs a disposition; inspect all pages.",
+        progress: false,
+        error: true,
+      };
+    const selected = proposal.items.filter(
+      (item) => dispositions.get(item.ref)?.disposition === "selected",
+    );
+    const repeated = selected.some((item) =>
+      this.invocations.some(
+        ({ invocation }) =>
+          invocation.stageId === stage.id &&
+          invocation.gap === request.gap &&
+          invocation.coverage.some(
+            (entry) =>
+              entry.disposition === "selected" &&
+              entry.status === "completed" &&
+              entry.ref.split(":").slice(-2).join(":") === item.ref.split(":").slice(-2).join(":"),
+          ),
+      ),
+    );
+    if (repeated)
+      return { text: "completed items need a new gap to repeat.", progress: false, error: true };
+    const works = selected.map((item) => {
+      const work = toWorkItem(item.item);
+      return work === null ? null : { ...work, mutation: stage.mutation === true || work.mutation };
+    });
+    const priorCovered = this.invocations.flatMap(({ invocation }) =>
+      invocation.coverage.filter(
+        (entry) =>
+          entry.disposition === "selected" &&
+          entry.status === "completed" &&
+          invocation.sourceInvocationId === proposal.source?.invocation.id,
+      ),
+    );
+    const sourceWorks = proposal.items.map((item) => toWorkItem(item.item));
+    const ids = sourceWorks.filter((item) => item !== null).map((item) => item.id);
+    if (new Set(ids).size !== ids.length)
+      return { text: "source has duplicate work item ids.", progress: false, error: true };
+    if (works.some((item) => item !== null) && works.some((item) => item === null))
+      return { text: "mixed work item shapes are not schedulable.", progress: false, error: true };
+    const scheduled = works.every((item) => item !== null) && stage.over.kind === "each";
+    const byId = new Map(selected.map((item, index) => [works[index]?.id, item]));
+    const completedId = (id: string): boolean =>
+      sourceWorks.some(
+        (item, index) =>
+          item?.id === id &&
+          priorCovered.some(
+            (entry) =>
+              entry.ref.split(":").slice(-2).join(":") ===
+              proposal.items[index]!.ref.split(":").slice(-2).join(":"),
+          ),
+      );
+    if (
+      scheduled &&
+      works.some((item) => item?.dependencies.some((id) => !byId.has(id) && !completedId(id)))
+    )
+      return {
+        text: "selected work item skips an unmet dependency.",
+        progress: false,
+        error: true,
+      };
+    const schedule = scheduled
+      ? scheduleWorkItems(
+          works
+            .filter((item) => item !== null)
+            .map((item) => ({
+              ...item,
+              dependencies: item.dependencies.filter((id) => byId.has(id)),
+            })),
+        )
+      : null;
+    if (schedule !== null && !schedule.ok)
+      return { text: schedule.message, progress: false, error: true };
+    const invocationId = `${this.id}-inv-${String(this.dispatches + 1)}`;
+    const state = Object.fromEntries(
+      this.invocations
+        .filter(({ invocation }) => invocation.status === "completed")
+        .map(({ invocation, value }) => [invocation.stageId, value]),
+    );
+    const units = new Map<string, DispatchUnit[]>();
+    for (const item of selected) {
+      const scope = { args: this.args, item: item.item, state };
+      const title = interpolate(stage.title, scope);
+      const brief = interpolate(stage.brief, scope);
+      if ("error" in title || "error" in brief)
+        return { text: "stage interpolation failed.", progress: false, error: true };
+      const parsed = parseTaskTitle(title.text);
+      const work = works[selected.indexOf(item)] ?? null;
+      const rendered = work === null ? brief.text : workItemBrief(work, brief.text);
+      if (
+        !parsed.ok ||
+        rendered.length + String(request.gap).length + 80 > WORKFLOW_LIMITS.textChars
+      )
+        return {
+          text: "rendered stage exceeds title or brief limit.",
+          progress: false,
+          error: true,
+        };
+      const replicas = dispositions.get(item.ref)!.replicas!;
+      units.set(
+        item.ref,
+        Array.from({ length: replicas }, (_, replica) => ({
+          key: `${invocationId}[${String(item.index)}]#${String(replica + 1)}`,
+          title: parsed.title,
+          brief: `${rendered}\n\nManager-identified gap (task scope only): ${String(request.gap)}`,
+          roundId: stage.id,
+          pass: this.dispatches,
+          itemIndex: item.index,
+          replica,
+          replicaCount: replicas,
+          ...(stage.profile === undefined ? {} : { profile: stage.profile }),
+          ...(stage.type === "free" ? {} : { expectSchema: WORKFLOW_RESULT_SCHEMAS[stage.type] }),
+        })),
+      );
+    }
+    const waves =
+      schedule !== null && schedule.ok
+        ? schedule.waves.map((wave) =>
+            wave.items.flatMap((work) => units.get(byId.get(work.id)!.ref)!),
+          )
+        : [selected.flatMap((item) => units.get(item.ref)!)];
+    const total = [...units.values()].reduce((count, group) => count + group.length, 0);
+    const [head] = waves;
+    const fingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          invocationId,
+          sourceInvocationId: proposal.source?.invocation.id,
+          coverage: [...dispositions.values()],
+          waves,
+        }),
+      )
+      .digest("hex");
+    let session;
+    try {
+      session = beginDispatch(this.deps, head!, total);
+    } catch {
+      session = null;
+    }
+    if (session === null)
+      return {
+        text: "batch admission refused; checkpoint unchanged and no leader started.",
         progress: false,
         error: true,
       };
     const prior = this.state();
+    const invocation: WorkflowInvocation = {
+      id: invocationId,
+      stageId: stage.id,
+      gap: request.gap,
+      fingerprint,
+      ...(proposal.source === undefined
+        ? {}
+        : { sourceInvocationId: proposal.source.invocation.id }),
+      status: "running",
+      requested: total,
+      started: 0,
+      completed: 0,
+      coverage: proposal.items.map((item) => dispositions.get(item.ref)!),
+    };
+    this.invocations.push({ invocation, value: undefined });
     this.status = "running_round";
     this.stageId = stage.id;
     this.dispatches++;
@@ -419,66 +788,124 @@ export class ManagerSequence {
     try {
       this.commit();
     } catch {
+      this.invocations.pop();
       this.restore(prior);
-      return {
-        text: "checkpoint save failed; no leader registered.",
-        progress: false,
-        error: true,
-      };
-    }
-    const unit = {
-      key: `${stage.id}[${String(this.dispatches)}]`,
-      title: parsed.title,
-      brief: `${brief.text}\n\nManager-identified gap (task scope only): ${request.gap}`,
-      roundId: stage.id,
-      pass: 0,
-      ...(stage.profile === undefined ? {} : { profile: stage.profile }),
-      ...(stage.type === "free" ? {} : { expectSchema: WORKFLOW_RESULT_SCHEMAS[stage.type] }),
-    };
-    let session;
-    try {
-      session = beginDispatch(this.deps, [unit]);
-    } catch {
-      session = null;
-    }
-    if (session === null) {
-      this.restore(prior);
-      try {
-        this.commit();
-      } catch {
-        return {
-          text: "dispatch registration and rollback save failed; no leader started.",
-          progress: false,
-          error: true,
-        };
-      }
-      return {
-        text: "leader registration refused; same revision remains available.",
-        progress: false,
-        error: true,
-      };
+      session.end("checkpoint save failed");
+      return { text: "checkpoint save failed; no leader started.", progress: false, error: true };
     }
     const run = (async (): Promise<void> => {
       let summary = "";
       try {
-        const [outcome] = await session.run();
-        if (outcome !== undefined) {
-          const evidence = this.deps.ctx.evidence;
-          evidence?.addLeader(
+        const outcomes: DispatchOutcome[] = [];
+        const statuses = new Map<string, string>();
+        for (const [index, wave] of waves.entries()) {
+          if (index > 0) session.advance(wave);
+          const batch = await session.run((unit) => {
+            const work = works.find((candidate, at) => selected[at]?.index === unit.itemIndex);
+            const blocked = work?.dependencies.find(
+              (id) => byId.has(id) && statuses.get(id) !== "completed",
+            );
+            return blocked === undefined
+              ? null
+              : { blocked: `dependency '${blocked}' did not complete` };
+          });
+          outcomes.push(...batch);
+          for (const item of selected) {
+            const work = toWorkItem(item.item);
+            if (work === null || !wave.some((unit) => unit.itemIndex === item.index)) continue;
+            const group = batch.filter((outcome) =>
+              units.get(item.ref)?.some((unit) => unit.key === outcome.key),
+            );
+            statuses.set(
+              work.id,
+              group.length > 0 && group.every((outcome) => outcome.status === "completed")
+                ? "completed"
+                : "failed",
+            );
+          }
+          if (session.cancelled() || this.deps.ctx.signal.aborted) break;
+        }
+        for (const outcome of outcomes)
+          this.deps.ctx.evidence?.addLeader(
             stage.id,
-            outcome.runId ?? unit.key,
+            outcome.runId ?? outcome.key,
             outcome.status,
             outcome.result,
             this.revision,
           );
-          if (outcome.status === "completed") this.completed.add(stage.id);
-          summary = `stage '${stage.id}' ${outcome.status}`;
-        }
+        const coverage = invocation.coverage.map((entry) => {
+          if (entry.disposition !== "selected") return entry;
+          const item = selected.find((candidate) => candidate.ref === entry.ref)!;
+          const group = outcomes.filter((outcome) =>
+            units.get(item.ref)?.some((unit) => unit.key === outcome.key),
+          );
+          const complete =
+            group.length === entry.replicas &&
+            group.every((outcome) => outcome.status === "completed");
+          const accepted =
+            stage.accept === undefined ||
+            applyAccept(
+              stage.accept,
+              group.map((outcome) => (outcome.status === "completed" ? outcome.result : undefined)),
+            ).accepted;
+          return { ...entry, status: !complete ? "failed" : accepted ? "completed" : "rejected" };
+        });
+        const results = selected.flatMap((item) =>
+          outcomes
+            .filter((outcome) => units.get(item.ref)?.some((unit) => unit.key === outcome.key))
+            .filter((outcome) => outcome.status === "completed")
+            .map((outcome) => outcome.result),
+        );
+        const value =
+          stage.accept === undefined
+            ? mergedResults(results)
+            : {
+                accepted: selected
+                  .filter(
+                    (item) =>
+                      coverage.find((entry) => entry.ref === item.ref)?.status === "completed",
+                  )
+                  .map((item) => item.item),
+                rejected: selected
+                  .filter(
+                    (item) =>
+                      coverage.find((entry) => entry.ref === item.ref)?.status !== "completed",
+                  )
+                  .map((item) => item.item),
+              };
+        this.invocations[this.invocations.length - 1] = {
+          invocation: {
+            ...invocation,
+            coverage,
+            status:
+              session.cancelled() || this.deps.ctx.signal.aborted
+                ? "cancelled"
+                : outcomes.length !== total ||
+                    coverage.some(
+                      (entry) => entry.disposition === "selected" && entry.status !== "completed",
+                    )
+                  ? "failed"
+                  : "completed",
+            started: outcomes.filter((outcome) => outcome.runId !== undefined).length,
+            completed: outcomes.filter((outcome) => outcome.status === "completed").length,
+          },
+          value: structuredClone(value),
+        };
+        if (this.invocations.at(-1)?.invocation.status === "completed")
+          this.completed.add(stage.id);
         this.status = "awaiting_manager";
+        summary = `stage '${stage.id}' finished: ${String(outcomes.length)}/${String(total)} outcomes`;
         this.reason = summary;
         this.revision++;
         this.commit();
       } catch (error) {
+        const current = this.invocations.at(-1);
+        if (current?.invocation.id === invocationId && current.invocation.status === "running") {
+          this.invocations[this.invocations.length - 1] = {
+            ...current,
+            invocation: { ...current.invocation, status: "failed" },
+          };
+        }
         this.status = "failed";
         this.reason = error instanceof Error ? error.message : String(error);
         this.revision++;
@@ -494,7 +921,7 @@ export class ManagerSequence {
     })();
     this.deps.agents.adopt(session.anchorId, run);
     return {
-      text: `dispatched stage '${stage.id}' as ${session.anchorId}. Await its result, inspect workflow_status, then decide again.`,
+      text: `dispatched ${String(total)} leaders for stage '${stage.id}' as ${session.anchorId}. Inspect workflow_status after settlement.`,
       progress: true,
     };
   }

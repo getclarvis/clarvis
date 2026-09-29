@@ -9,7 +9,7 @@ import type { JsonSchema, Pagination, Page, Timestamp } from "./common.ts";
 import type { PlanRef, PlanRetention, PlanStatus, PlanTaskDto } from "./plans.ts";
 import type { MemoryIngestDetail } from "./memory.ts";
 import type { ExtensionProfileRunRef } from "./extension-profiles.ts";
-import type { WorkflowObjectiveAssessment } from "./workflows.ts";
+import type { WorkflowInvocation, WorkflowObjectiveAssessment } from "./workflows.ts";
 
 /** Speaker role on a message. */
 export type Role = "user" | "assistant";
@@ -692,6 +692,7 @@ export type RunEvent =
       dispatches?: number;
       max_dispatches?: number;
       assessment?: WorkflowObjectiveAssessment;
+      invocations?: readonly WorkflowInvocation[];
     }
   | {
       /**

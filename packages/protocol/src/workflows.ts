@@ -22,6 +22,26 @@ export type WorkflowSequenceStatus =
   "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
 
 /** Latest durable checkpoint for a round sequence. */
+export interface WorkflowInvocation {
+  id: string;
+  stageId: string;
+  sourceInvocationId?: string;
+  gap: string;
+  fingerprint: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  requested: number;
+  started: number;
+  completed: number;
+  coverage: readonly {
+    ref: string;
+    disposition: "selected" | "skipped" | "deferred" | "covered";
+    reason?: string;
+    replicas?: number;
+    status?: string;
+  }[];
+}
+
+/** Latest durable checkpoint for a round sequence. */
 export interface WorkflowSequence {
   session_id: string;
   status: WorkflowSequenceStatus;
@@ -38,6 +58,7 @@ export interface WorkflowSequence {
   dispatches?: number;
   max_dispatches?: number;
   assessment?: WorkflowObjectiveAssessment;
+  invocations?: readonly WorkflowInvocation[];
 }
 
 /** Manager judgment, independent of the aggregate operational status. */

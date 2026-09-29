@@ -605,6 +605,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
               ...(state.dispatches === undefined ? {} : { dispatches: state.dispatches }),
               ...(state.maxDispatches === undefined ? {} : { max_dispatches: state.maxDispatches }),
               ...(state.assessment === undefined ? {} : { assessment: state.assessment }),
+              ...(state.invocations === undefined ? {} : { invocations: state.invocations }),
             });
             record.sequence = sequence;
             persist();
@@ -814,6 +815,7 @@ function terminalWorkflowSequence(
     ...(sequence.dispatches === undefined ? {} : { dispatches: sequence.dispatches }),
     ...(sequence.max_dispatches === undefined ? {} : { max_dispatches: sequence.max_dispatches }),
     ...(sequence.assessment === undefined ? {} : { assessment: sequence.assessment }),
+    ...(sequence.invocations === undefined ? {} : { invocations: sequence.invocations }),
   });
 }
 

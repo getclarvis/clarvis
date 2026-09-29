@@ -126,9 +126,15 @@ const controlledWorkflowFrontmatterSchema = z.discriminatedUnion("control", [
       stages: z
         .array(
           roundSchema.extend({
-            over: z.literal("once"),
+            over: pathSchema,
             fanout: z.literal(1).optional(),
-            accept: z.never().optional(),
+            replicas: z
+              .object({
+                min: z.number().int().positive().max(WORKFLOW_LIMITS.fanout),
+                max: z.number().int().positive().max(WORKFLOW_LIMITS.fanout),
+              })
+              .optional(),
+            mutation: z.boolean().optional(),
             when: z.never().optional(),
           }),
         )
@@ -161,6 +167,8 @@ export interface WorkflowRound {
   /** The brief template, read from the `briefs/` file the document named. */
   brief: string;
   fanout: number;
+  replicas?: { min: number; max: number };
+  mutation?: boolean;
   accept?: AcceptRule;
   when?: string;
 }
@@ -356,7 +364,7 @@ function compileWorkflowDocument(
   const ids = new Set<string>();
   const args = front.args ?? [];
   const rounds = (front.control === "manager" ? front.stages : front.rounds).map(
-    (round): WorkflowRound => {
+    (round, index): WorkflowRound => {
       if (ids.has(round.id)) throw new Error(`two rounds share the id '${round.id}'`);
       ids.add(round.id);
       const over = parseSelector(round.over);
@@ -385,6 +393,12 @@ function compileWorkflowDocument(
         title: round.title,
         brief,
         fanout: round.fanout ?? 1,
+        ...(front.control === "manager"
+          ? { replicas: front.stages[index]!.replicas ?? { min: 1, max: 1 } }
+          : {}),
+        ...(front.control === "manager" && front.stages[index]!.mutation === true
+          ? { mutation: true }
+          : {}),
         ...(round.profile === undefined ? {} : { profile: round.profile }),
         ...(accept === undefined ? {} : { accept }),
         ...(round.when === undefined ? {} : { when: round.when }),
@@ -399,6 +413,23 @@ function compileWorkflowDocument(
     );
   }
   if (front.control === "manager") {
+    for (const stage of rounds) {
+      const range = stage.replicas!;
+      if (range.min > range.max) throw new Error(`stage '${stage.id}' has inverted replicas range`);
+      if (stage.mutation && range.max !== 1)
+        throw new Error(`mutating stage '${stage.id}' requires replicas 1/1`);
+      if (stage.over.kind === "once") continue;
+      const source = stage.over.source.split(".")[0]!;
+      if (!ids.has(source) || source === stage.id)
+        throw new Error(`stage '${stage.id}' names unknown or cyclic source '${source}'`);
+    }
+    const visit = (id: string, path: Set<string>): void => {
+      if (path.has(id)) throw new Error(`stage '${id}' has a cyclic source`);
+      const stage = rounds.find((entry) => entry.id === id)!;
+      if (stage.over.kind === "once") return;
+      visit(stage.over.source.split(".")[0]!, new Set([...path, id]));
+    };
+    for (const stage of rounds) visit(stage.id, new Set());
     const criterionIds = new Set<string>();
     for (const criterion of front.completion.criteria) {
       if (criterionIds.has(criterion.id))

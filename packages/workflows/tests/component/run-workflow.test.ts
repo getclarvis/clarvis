@@ -11,6 +11,7 @@ import { createComputeClock, ElicitTimeoutError } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry } from "@clarvis/supervision";
 import type { WorkflowDefinition } from "#src/artifact.ts";
+import { BUILTIN_WORKFLOWS, resolveWorkflowDefinitions } from "#src/builtin-workflows/index.ts";
 import { createWorkflowsCapability } from "#src/capability.ts";
 import { WORKFLOW_LIMITS } from "#src/limits.ts";
 import { RUN_WORKFLOW_TOOL_NAME } from "#src/run-workflow.ts";
@@ -170,6 +171,39 @@ async function harness(
 }
 
 describe("run_workflow — the tool exists only when there is something to run", () => {
+  test("each shipped manager workflow previews optional stages and opens without a leader", async () => {
+    for (const workflow of BUILTIN_WORKFLOWS) {
+      const h = await harness([workflow], 16, undefined, "run");
+      const args = Object.fromEntries(workflow.args.map((name) => [name, "fixture scope"]));
+      const preview = await h.handle({ name: workflow.name, explain: true });
+      expect(preview.text).toContain("Selectable stages (optional until chosen)");
+      expect(preview.text).toContain("replicas 2–");
+      expect(preview.text).toContain("Maximum dispatches: 8");
+      expect(h.reviews).toHaveLength(0);
+      expect((await h.handle({ name: workflow.name, args })).text).toContain(
+        "awaiting_manager; no leader was started",
+      );
+      expect(h.reviews[0]?.message).toContain("replicas 2–");
+      expect(h.briefs).toHaveLength(0);
+    }
+  });
+
+  test("an authored fixed override retains its fixed preflight and starts its first round", async () => {
+    const fixed = WORKFLOW_DEFINITIONS[0]!;
+    const h = await harness(
+      resolveWorkflowDefinitions([fixed]),
+      16,
+      async () => completed({ work_items: [] }),
+      "run",
+    );
+    const result = await h.handle({ name: "audit", args: { subject: "fixture scope" } });
+    expect(result.progress).toBe(true);
+    expect(h.reviews[0]?.message).toContain("discover (discovery): 1 leader");
+    await h.run.settle();
+    expect(h.briefs).toHaveLength(1);
+    expect(h.briefs[0]).toContain("Map fixture scope");
+  });
+
   test("approved manager definition opens at a checkpoint without starting a leader", async () => {
     const manager: WorkflowDefinition = {
       name: "sufficiency",

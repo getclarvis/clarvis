@@ -46,12 +46,20 @@ describe("built-in workflows", () => {
       mutation: false,
     };
     for (const workflow of BUILTIN_WORKFLOWS) {
+      expect(workflow.control).toBe("manager");
+      if (workflow.control !== "manager") throw new Error("built-in is not manager-controlled");
+      expect(workflow.rounds).toEqual([]);
+      expect(workflow.repeat).toBeUndefined();
+      expect(workflow.maxDispatches).toBe(8);
+      expect(workflow.completion.criteria.length).toBeLessThanOrEqual(6);
+      expect(new Set(workflow.completion.criteria.map((criterion) => criterion.id)).size).toBe(
+        workflow.completion.criteria.length,
+      );
       const args = Object.fromEntries(workflow.args.map((name) => [name, "bounded test goal"]));
-      for (const round of workflow.rounds) {
+      for (const round of workflow.stages) {
         const rendered = interpolate(round.brief, {
           args,
           item: round.type === "verdict" ? finding : round.over.kind === "all" ? ["gap"] : item,
-          state: { build: { findings: [finding] } },
         });
         expect(rendered).not.toHaveProperty("error");
         if (!("text" in rendered)) throw new Error(rendered.error);
@@ -69,22 +77,31 @@ describe("built-in workflows", () => {
     }
     const implement = BUILTIN_WORKFLOWS.find((workflow) => workflow.name === "implement")!;
     expect(implement.synthesis.replace(/\s+/g, " ")).toContain("failure does not roll back writes");
-    expect(implement.rounds.find((round) => round.id === "review")!.brief).toContain(
-      "could not run",
+    if (implement.control !== "manager") throw new Error("implement is not manager-controlled");
+    expect(implement.stages.find((round) => round.id === "review")!.brief).toContain(
+      "unavailable checks",
     );
+    expect(implement.stages.find((round) => round.id === "build")?.mutation).toBe(true);
+    expect(implement.stages.find((round) => round.id === "review")?.over).toEqual({
+      kind: "all",
+      source: "build.findings",
+    });
   });
 
   test("ships the complete catalogue as code with resolved prompts", () => {
     expect(BUILTIN_WORKFLOW_NAMES).toEqual(["audit", "implement", "research"]);
     expect(BUILTIN_WORKFLOWS.map((workflow) => workflow.name)).toEqual([...BUILTIN_WORKFLOW_NAMES]);
     for (const workflow of BUILTIN_WORKFLOWS) {
+      if (workflow.control !== "manager") throw new Error("built-in is not manager-controlled");
       expect(workflow.dir).toBe(`builtin:${workflow.name}`);
       expect(workflow.args.length).toBeGreaterThan(0);
       expect(workflow.synthesis.length).toBeGreaterThan(0);
-      for (const round of workflow.rounds) expect(round.brief.length).toBeGreaterThan(0);
-      for (const round of workflow.rounds.filter((round) => round.type === "verdict")) {
-        expect(round.fanout).toBeGreaterThan(1);
+      for (const round of workflow.stages) expect(round.brief.length).toBeGreaterThan(0);
+      for (const round of workflow.stages.filter((round) => round.type === "verdict")) {
+        expect(round.replicas?.min).toBe(2);
         expect(round.accept?.value).toBe("refuted");
+        expect(round.over.kind).toBe("each");
+        if (round.over.kind === "each") expect(round.over.where).toBeUndefined();
       }
     }
   });

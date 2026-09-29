@@ -471,6 +471,27 @@ test("manager workflow shows awaiting decision and separates sufficient objectiv
     objective: "Answer with evidence",
     dispatches: 0,
     max_dispatches: 2,
+    invocations: [
+      {
+        id: "wfseq-1-inv-1",
+        stageId: "inspect",
+        gap: "check the answer",
+        fingerprint: "a".repeat(64),
+        status: "completed" as const,
+        requested: 2,
+        started: 2,
+        completed: 2,
+        coverage: [
+          {
+            ref: "candidate-A",
+            disposition: "selected" as const,
+            replicas: 2,
+            status: "completed",
+          },
+          { ref: "candidate-B", disposition: "deferred" as const, reason: "needs more data" },
+        ],
+      },
+    ],
   };
   const { host, deps } = mount({
     initialExecutionId: "wf-1",
@@ -481,6 +502,9 @@ test("manager workflow shows awaiting decision and separates sufficient objectiv
     const frame = await captureUntil(t, "Waiting for manager decision");
     expect(frame).toContain("Objective: Answer with evidence");
     expect(frame).toContain("not_assessed");
+    expect(frame).toContain("requested 2, started 2, completed 2");
+    expect(frame).toContain("candidate-A: selected/completed");
+    expect(frame).toContain("candidate-B: deferred (needs more data)");
   } finally {
     t.renderer.destroy();
   }

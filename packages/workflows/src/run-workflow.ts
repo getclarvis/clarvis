@@ -43,7 +43,8 @@ type WorkflowReviewDecision = "run" | "declined" | "dismissed" | "no_response" |
 const RUN_WORKFLOW_DESCRIPTION =
   "Run an installed workflow by name. explain:true previews its structure and cost without starting " +
   "work. Human preflight is required. Fixed control starts its first round after approval; manager " +
-  "control opens awaiting workflow_decide with no leader. Later work is never implicit.";
+  "control opens awaiting workflow_decide with no leader: assess existing evidence, complete, " +
+  "dispatch selected work for a gap, or stop. Later work is never implicit.";
 
 /**
  * Build the `run_workflow` tool.
@@ -88,7 +89,7 @@ export function buildRunWorkflowTool(
         explain: {
           type: "boolean",
           description:
-            "OPTIONAL — describe the rounds and the fan-out cost without running anything.",
+            "OPTIONAL — preview fixed rounds or manager-selectable stages and replica ranges without running anything.",
         },
       },
     },
@@ -150,8 +151,15 @@ function toRoundCall(
  *   inventing a number would be worse than the uncertainty it hides.
  */
 export function explainWorkflow(workflow: WorkflowDefinition): string {
-  if (workflow.control === "manager")
-    return `${workflow.name}: ${workflow.description}\nObjective: ${workflow.objective}\nCriteria: ${workflow.completion.criteria.map((c) => `${c.id}: ${c.description}`).join("; ")}\nSelectable once stages: ${workflow.stages.map((s) => s.id).join(", ")}\nMaximum dispatches: ${String(workflow.maxDispatches)}. No leader starts on opening; manager decides complete, dispatch or stop.`;
+  if (workflow.control === "manager") {
+    const stages = workflow.stages.map((stage) => {
+      const selector =
+        stage.over.kind === "once" ? "once" : `${stage.over.kind}(${stage.over.source})`;
+      const replicas = stage.replicas ?? { min: 1, max: 1 };
+      return `  ${stage.id} (${stage.type}): ${selector}, replicas ${String(replicas.min)}–${String(replicas.max)}${stage.mutation === true ? ", mutating" : ""}`;
+    });
+    return `${workflow.name}: ${workflow.description}\nObjective: ${workflow.objective}\nCriteria: ${workflow.completion.criteria.map((c) => `${c.id}: ${c.description}`).join("; ")}\nSelectable stages (optional until chosen):\n${stages.join("\n")}\nMaximum dispatches: ${String(workflow.maxDispatches)}. Actual items and total cost depend on manager decisions and source results. No leader starts on opening; manager decides complete, dispatch or stop.`;
+  }
   const lines = workflow.rounds.map((round) => {
     const shape =
       round.over.kind === "once"

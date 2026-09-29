@@ -93,6 +93,43 @@ Summarize the decision.
     expect(() =>
       validateWorkflowDocument(document.replace("[inspect]", "[unknown]"), { directory: dir }),
     ).toThrow(/unknown stage/u);
+    const dependent = document.replace(
+      "max_dispatches: 2",
+      `  - id: verify
+    type: verdict
+    over: each(inspect.findings)
+    title: Verify
+    brief: briefs/one.md
+    replicas: { min: 2, max: 3 }
+max_dispatches: 2`,
+    );
+    expect(validateWorkflowDocument(dependent, { directory: dir })).toMatchObject({
+      stages: [{ id: "inspect" }, { id: "verify", replicas: { min: 2, max: 3 } }],
+    });
+    expect(() =>
+      validateWorkflowDocument(dependent.replace("inspect.findings", "missing.findings"), {
+        directory: dir,
+      }),
+    ).toThrow(/unknown or cyclic source/u);
+    expect(() =>
+      validateWorkflowDocument(dependent.replace("inspect.findings", "verify.findings"), {
+        directory: dir,
+      }),
+    ).toThrow(/unknown or cyclic source/u);
+    expect(() =>
+      validateWorkflowDocument(dependent.replace("min: 2, max: 3", "min: 4, max: 3"), {
+        directory: dir,
+      }),
+    ).toThrow(/inverted replicas/u);
+    expect(() =>
+      validateWorkflowDocument(
+        dependent.replace(
+          "replicas: { min: 2, max: 3 }",
+          "mutation: true\n    replicas: { min: 1, max: 2 }",
+        ),
+        { directory: dir },
+      ),
+    ).toThrow(/requires replicas 1\/1/u);
   });
   test("loads frontmatter, resolves the selector and reads the brief off disk", () => {
     const { dir } = write("probe", MINIMAL);

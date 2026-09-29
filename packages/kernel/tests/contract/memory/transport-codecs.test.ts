@@ -632,6 +632,33 @@ describe("remote run codec", () => {
     expect(decodeRunEvent({ ...event, revision: -1 })).toBeNull();
     expect(decodeRunEvent({ ...event, next_pass: 0.5 })).toBeNull();
     expect(decodeRunEvent({ ...event, leaders_started: 33 })).toBeNull();
+    const withInvocation = {
+      ...event,
+      invocations: [
+        {
+          id: "wfseq-1-inv-1",
+          stageId: "verify",
+          gap: "check",
+          fingerprint: "a".repeat(64),
+          status: "completed",
+          requested: 2,
+          started: 2,
+          completed: 2,
+          coverage: [
+            { ref: "candidate-A", disposition: "selected", replicas: 2, status: "completed" },
+          ],
+        },
+      ],
+    } as const;
+    expect(decodeRunEvent(withInvocation)).toEqual(withInvocation);
+    expect(
+      decodeRunEvent({
+        ...withInvocation,
+        invocations: [
+          { ...withInvocation.invocations[0], coverage: [{ ref: "x", disposition: "invented" }] },
+        ],
+      }),
+    ).toBeNull();
   });
 
   it("round-trips a manager assessment without conflating it with execution status", () => {

@@ -7,14 +7,35 @@ Standalone skills use `SKILL.md`; plugins may contribute skills and other capabi
 A `WORKFLOW.md` without `control` keeps fixed `rounds` and optional `repeat`. For an authored
 manager-controlled workflow, use `control: manager`, `objective`, `completion.criteria` (1–16
 entries with unique `id` and `description`, optionally `requires_completed_stages`), `stages`
-(1–16 declared `once` entries with `id`, `type`, `title` and relative `brief`), and
-`max_dispatches` (1–16). Do not combine these with `rounds` or `repeat`; built-ins remain fixed.
+(1–16 declared `once`, `each(<stage>.<field>)` or `all(<stage>.<field>)` entries with `id`,
+`type`, `title` and relative `brief`, optionally `replicas: { min, max }` up to 8), and
+`max_dispatches` (1–16). Do not combine these with `rounds` or `repeat`. The shipped `audit`,
+`implement` and `research` workflows use manager control with an eight-dispatch limit. Their
+preflight previews selectable stages and replica ranges: audit verify admits 2–3 replicas,
+research and implement verify admit two; implement build is mutating with one. These are options,
+not a required discovery→review→verify sequence. An operator-authored same-name fixed document
+replaces the complete built-in definition and keeps its fixed preflight and rounds.
 `run_workflow` still asks for one human preflight, but approval opens at `awaiting_manager`
-without starting a leader. Inspect `workflow_status` for criteria and admitted evidence refs;
-pass `evidence_ref` to read bounded detail. `workflow_decide` with current `session_id`,
+without starting a leader. Inspect `workflow_status` for criteria, admitted evidence refs and
+eligible candidates (up to 16 per `page`); pass `evidence_ref` or `item_ref` for bounded detail.
+`workflow_decide` with current `session_id`,
 `revision`, `reason` and `decision: complete` needs one evidence-backed assessment per criterion
-and a disposition for each known leader failure. `dispatch` supplies a declared `stage_id` and
-`gap` for one leader; `stop` supplies `remaining_gaps` and does not claim sufficiency. Evidence
+and a disposition for each known leader failure. `dispatch` supplies a declared `stage_id`, `gap`,
+`source_invocation_id` for sourced stages, and every current candidate as selected `items`
+(`item_ref`, `replicas`), `skipped` (`item_ref`, `reason`), `deferred` (`item_ref`, `gap`) or
+`covered` (`item_ref`, completed `invocation_id`). A failed later source attempt requires
+`acknowledge_failed_source: true` to reuse an earlier completed result. The approved replica range,
+profile, accept rule, dependencies and cumulative leader budget are enforced before starting any
+part of the batch. `stop` supplies `remaining_gaps` and does not claim sufficiency. Evidence
 provided by the user is not proof that Clarvis ran a test. A failed optional leader remains in
 the operational record even if the manager judges the objective sufficient. Invalid or stale
-decisions do not start work; after the dispatch cap, complete or stop remains possible.
+decisions do not start work; after the dispatch cap, complete or stop remains possible. Repeating
+completed items needs a new gap; no stage or repeat starts automatically.
+Before dispatch, check the objective and admitted evidence. Complete without a leader only when
+that evidence actually supports the deliverable and any required validation. An assertion that a
+file changed or a test passed is not proof of its execution. If a blocking gap is treatable,
+select justified items/replicas and account for every candidate; otherwise stop with limitations.
+A leader's `needs_verification` suggestion does not prevent choosing another consequential finding.
+For verdict stages, `accepted` means the refutation threshold matched; `rejected` is not
+confirmation. Failed or partial implementation needs inspection of its effects before a sufficient
+claim. Deterministic tests do not establish how a particular model will judge these cases.

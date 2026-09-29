@@ -23,7 +23,9 @@ repository in front of you.
   does not imply provider endorsement of Clarvis.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, run the packaged
   `audit`, `implement`, and `research` workflows, or author a manager-controlled workflow that
-  explicitly judges evidence before completing or dispatching a declared stage.
+  explicitly judges evidence before completing or dispatching selected items and replicas of a
+  declared stage. The shipped `audit`, `implement` and `research` workflows use this explicit
+  sufficiency checkpoint; operator-authored fixed workflows retain their authored sequence.
 - **Tool use:** Shell and file tools use Sandbox by default, with explicit Host selection and
   manual or automatic review for eligible permissions. Workspace trust still governs
   activation of workspace configuration.

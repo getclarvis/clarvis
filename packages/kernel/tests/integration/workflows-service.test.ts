@@ -228,6 +228,27 @@ describe("WorkflowStore (file-backed)", () => {
       objective: "Answer",
       dispatches: 1,
       max_dispatches: 2,
+      invocations: [
+        {
+          id: "wfseq-1-inv-1",
+          stageId: "inspect",
+          gap: "verify",
+          fingerprint: "a".repeat(64),
+          status: "completed",
+          requested: 2,
+          started: 2,
+          completed: 2,
+          coverage: [
+            {
+              ref: "wfseq-1:1:inspect:root:0",
+              disposition: "selected",
+              replicas: 2,
+              status: "completed",
+            },
+            { ref: "wfseq-1:1:inspect:root:1", disposition: "skipped", reason: "out of scope" },
+          ],
+        },
+      ],
       assessment: {
         outcome: "sufficient",
         decisionRevision: 2,
@@ -250,6 +271,7 @@ describe("WorkflowStore (file-backed)", () => {
     expect(loaded?.status).toBe("failed");
     expect(loaded?.sequence?.assessment?.outcome).toBe("sufficient");
     expect(loaded?.sequence?.assessment?.unresolvedFailures).toHaveLength(1);
+    expect(loaded?.sequence?.invocations?.[0]?.coverage).toHaveLength(2);
   });
 
   it("pages a large catalog from bounded sidecars without parsing workflow bodies", async () => {
@@ -851,7 +873,11 @@ Report the cited answer.
                     revision: 1,
                     decision: "dispatch",
                     reason: "the answer needs inspection",
-                    dispatch: { stage_id: "inspect", gap: "verify the answer" },
+                    dispatch: {
+                      stage_id: "inspect",
+                      gap: "verify the answer",
+                      items: [{ item_ref: "wfseq-1:1:inspect:root:0", replicas: 1 }],
+                    },
                   },
                 },
               ],

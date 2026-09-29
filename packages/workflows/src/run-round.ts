@@ -86,7 +86,8 @@ export function buildWorkflowStatusTool(): NamespacedTool {
     toolName: WORKFLOW_STATUS_TOOL_NAME,
     description:
       "Inspect the active or named workflow sequence, criteria, admitted evidence refs and cumulative " +
-      "capacity. Pass evidence_ref for bounded detail. This tool never starts work.",
+      "capacity and eligible stage candidates. Page candidates or pass item_ref/evidence_ref for " +
+      "bounded detail. This tool never starts work.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -98,6 +99,8 @@ export function buildWorkflowStatusTool(): NamespacedTool {
           description: "OPTIONAL — omit to inspect the active or most recent sequence.",
         },
         evidence_ref: { type: "string", minLength: 1, maxLength: WORKFLOW_LIMITS.identifierChars },
+        page: { type: "integer", minimum: 0, maximum: 255 },
+        item_ref: { type: "string", minLength: 1, maxLength: WORKFLOW_LIMITS.pathChars },
       },
     },
   };
@@ -113,7 +116,8 @@ export function buildWorkflowDecideTool(): NamespacedTool {
     description:
       "At an awaiting_manager checkpoint, use continue/stop for fixed sequences or complete/dispatch/stop " +
       "for manager workflows. Supply revision and reason; complete needs an evidence-backed assessment, " +
-      "dispatch needs a declared stage_id and gap. Stale decisions never spawn a leader.",
+      "dispatch needs a declared stage_id, gap and full candidate dispositions with justified " +
+      "replicas. Sufficient needs evidence for required validation; stale decisions spawn nothing.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -136,7 +140,55 @@ export function buildWorkflowDecideTool(): NamespacedTool {
           type: "object",
           additionalProperties: false,
           required: ["stage_id", "gap"],
-          properties: { stage_id: { type: "string" }, gap: { type: "string" } },
+          properties: {
+            stage_id: { type: "string" },
+            gap: { type: "string" },
+            source_invocation_id: { type: "string" },
+            acknowledge_failed_source: { type: "boolean" },
+            items: {
+              type: "array",
+              maxItems: WORKFLOW_LIMITS.workItems,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["item_ref", "replicas"],
+                properties: {
+                  item_ref: { type: "string" },
+                  replicas: { type: "integer", minimum: 1, maximum: WORKFLOW_LIMITS.fanout },
+                },
+              },
+            },
+            skipped: {
+              type: "array",
+              maxItems: WORKFLOW_LIMITS.workItems,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["item_ref", "reason"],
+                properties: { item_ref: { type: "string" }, reason: { type: "string" } },
+              },
+            },
+            deferred: {
+              type: "array",
+              maxItems: WORKFLOW_LIMITS.workItems,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["item_ref", "gap"],
+                properties: { item_ref: { type: "string" }, gap: { type: "string" } },
+              },
+            },
+            covered: {
+              type: "array",
+              maxItems: WORKFLOW_LIMITS.workItems,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["item_ref", "invocation_id"],
+                properties: { item_ref: { type: "string" }, invocation_id: { type: "string" } },
+              },
+            },
+          },
         },
         assessment: { type: "object" },
         remaining_gaps: { type: "array", items: { type: "string" } },
@@ -1174,7 +1226,12 @@ export interface RoundCoordinator {
     definition: ManagerWorkflowDefinition,
     args: Record<string, unknown>,
   ): { text: string } | { error: string };
-  status(sessionId?: string, evidenceRef?: string): CoordinatorResult;
+  status(
+    sessionId?: string,
+    evidenceRef?: string,
+    page?: number,
+    itemRef?: string,
+  ): CoordinatorResult;
   decide(
     decision: WorkflowDecision | (Record<string, unknown> & { sessionId: string }),
   ): CoordinatorResult;
@@ -1569,9 +1626,9 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
       latestId = sequence.id;
       return { text: opened.text };
     },
-    status(sessionId, evidenceRef) {
+    status(sessionId, evidenceRef, page, itemRef) {
       const manager = managers.get(sessionId ?? activeId ?? latestId ?? "");
-      if (manager !== undefined) return manager.statusText(evidenceRef);
+      if (manager !== undefined) return manager.statusText(evidenceRef, page, itemRef);
       const sequence = find(sessionId);
       if (sequence === undefined) {
         return {
@@ -1730,9 +1787,22 @@ export function buildWorkflowStatusHandler(coordinator: RoundCoordinator): ToolH
         return Promise.resolve(
           controlVerdict(WORKFLOW_STATUS_TOOL_NAME, "invalid evidence_ref.", false),
         );
+      const page = (raw as Record<string, unknown>).page;
+      const itemRef = (raw as Record<string, unknown>).item_ref;
+      if (
+        (page !== undefined &&
+          (!Number.isInteger(page) || Number(page) < 0 || Number(page) > 255)) ||
+        (itemRef !== undefined &&
+          (!isBoundedWorkflowString(itemRef, WORKFLOW_LIMITS.pathChars) || itemRef.length === 0))
+      )
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_STATUS_TOOL_NAME, "invalid page or item_ref.", false),
+        );
       const result = coordinator.status(
         typeof sessionId === "string" ? sessionId : undefined,
         typeof ref === "string" ? ref : undefined,
+        typeof page === "number" ? page : undefined,
+        typeof itemRef === "string" ? itemRef : undefined,
       );
       return Promise.resolve(
         controlVerdict(WORKFLOW_STATUS_TOOL_NAME, result.text, result.progress),

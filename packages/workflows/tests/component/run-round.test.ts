@@ -481,6 +481,8 @@ describe("run_round — Admiral checkpoints", () => {
       ["not-an-object", "expected an object"],
       [{ session_id: "" }, "bounded non-empty string"],
       [{ evidence_ref: "" }, "invalid evidence_ref"],
+      [{ page: -1 }, "invalid page or item_ref"],
+      [{ item_ref: "" }, "invalid page or item_ref"],
     ];
     for (const [args, expected] of statusCases) {
       expect((await h.status(args as Record<string, unknown>)).text).toContain(expected);

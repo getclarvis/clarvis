@@ -646,8 +646,11 @@ before runs.start returns", "drops a buffered question the kernel settles before
 attaches", "keeps a buffered question when the settlement names another run").
 
 **ELI-08.** A workflow preflight has no implicit affirmative path. The TUI begins with no selected
-decision; the wire schema places `cancel` before `run`; only an explicitly submitted `run` starts the
-first round, while decline, cancel, timeout and an absent channel spawn no leader. The model-facing
+decision; the wire schema places `cancel` before `run`; only an explicitly submitted `run` starts a
+fixed first round or opens a manager checkpoint with zero leaders. The shipped `audit`, `implement`
+and `research` definitions preview selectable stages and replica ranges before this approval;
+an authored fixed override previews its fixed cost. Decline, cancel, timeout and an absent channel
+spawn no leader. The model-facing
 tool result keeps explicit decline, dismissal, invalid accepted content and no-response timeout
 distinct. The call passes the manager run's effective `elicit_wait_ms`; every outcome logs
 `workflow.review_resolved` with `waited_ms`, and a genuine timeout additionally emits
@@ -656,8 +659,9 @@ Production: `packages/code/src/views/ElicitBlock.tsx` (`initialValues` call) and
 `buildRunWorkflowHandler` in `packages/workflows/src/run-workflow.ts`.
 Test: `packages/code/tests/integration/elicit-block-render.test.tsx` (`a workflow_review is an
 explicit preflight with a safe before-start promise`) and
-`packages/workflows/tests/component/run-workflow.test.ts` (declined,
-unavailable and timed-out preflights start nothing).
+`packages/workflows/tests/component/run-workflow.test.ts` (`each shipped manager workflow previews
+optional stages and opens without a leader`, `an authored fixed override retains its fixed preflight
+and starts its first round`, and declined/unavailable/timed-out preflights start nothing).
 
 **ELI-09.** A decision window applies only to a question whose params are marked `origin: "model"`
 and whose `kind` is `"ask_user"`, and only when the run declared a positive

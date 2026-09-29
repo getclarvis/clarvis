@@ -392,8 +392,11 @@ live `status` mapped `running→running`, `ok→completed`, `cancelled→cancell
 100 cells. The tree shows the workflow title, lifecycle, completed/total and running task counts,
 then task titles and their statuses. The manager is presented once as Coordinator. Internal node
 IDs, profiles, round/item/replica coordinates, revision and leader-budget counters, the Monitor
-badge, generic purpose text and last-refresh timestamps are not displayed. A pending manager
-decision reads "Waiting for the next stage"; a sequence reason remains visible.
+badge, generic purpose text and last-refresh timestamps are not displayed in the task roster.
+An authored manager checkpoint separately shows stage invocation IDs and candidate refs with
+their coverage/outcomes, gap and requested/started/completed counts. A pending fixed sequence
+reads "Waiting for the next stage"; a manager-controlled one reads "Waiting for manager decision".
+The sequence reason remains visible and assessment is separate from execution status.
 Production: `WorkflowsHub` in `packages/code/src/views/config/WorkflowsHub.tsx`.
 Test: `packages/code/tests/integration/workflows-hub-render.test.tsx` (live tree, pending stage,
 direct open and narrow layouts).

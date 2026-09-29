@@ -173,11 +173,9 @@ does not continuously observe work or inject background corrections. A not-achie
 concrete correction to the same run; failure or inconclusive review prevents completion. The domain
 owns the fixed schema, request policy, settings, review state and idempotent usage reducer; the Kernel
 owns the bounded completion call, evidence projection, fencing and durable settlement.
-Formulation and Steward output schemas declare an explicit object root and retain their exclusive
-variants for local validation. The LLM adapter projects root variants into an object for providers.
-Steward responses accept and discard unknown fields at the decision and assessment levels; known
-fields and semantic targets still require valid values. The input JSON Schema permits those extras
-so they reach the normalizing parser instead of failing at `submit_result`.
+Formulation retains its object-root schema with exclusive variants. Steward output advertises a
+simple object with the operation's verdict choices and optional commentary. The private gate owns
+verdict validation; auxiliary fields cannot reject an otherwise recognized verdict.
 `goals.agent.steward` selects the optional model and finite allowance independently of the work budget.
 Private `continue_from` history preserves compatible prompt prefixes across evaluations and checkpoints.
 The Steward never receives repository instructions such as `AGENTS.md` or `CLARVIS.md` and has no
@@ -190,8 +188,11 @@ its normal tools. Technical interruption is persisted with a typed cause rather 
 including `usage_unknown`, which is not a transport fault: the evaluation answered, possibly with a
 valid `achieved`, but its consumption could not be determined and a Goal cannot be concluded on a
 review the host cannot charge.
-The host checks semantic targets
-before accepting output and allows one bounded schema-correction nudge inside the same evaluation.
+The host selects definition or completion review. The model returns only `verdict` and an optional
+`message`; the verdict alone determines acceptance, further work or a request for clarification.
+Commentary is trimmed and bounded, with host guidance for absent, blank or non-text values. Extra
+fields are ignored. Only a missing, unknown or wrong-operation verdict receives one bounded
+correction; a repeated invalid verdict is `invalid_output`, never a transport fault.
 A review whose consumption was measured leaves the goal continuable by one bounded successor stage,
 which re-establishes the result and is reviewed again; a review the host could not charge
 (`usage_unknown`) never admits one, because the goal cannot continue on an evaluation the host cannot

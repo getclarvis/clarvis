@@ -141,39 +141,8 @@ export async function createGoalFileHostFixture(
                     name: "submit_result",
                     arguments:
                       frame.mode === "definition"
-                        ? {
-                            decision: "definition",
-                            verdict: "accept_definition",
-                            summary: "Definition is faithful",
-                          }
-                        : {
-                            decision: "completion",
-                            verdict: "achieved",
-                            summary: "Synthetic result observed",
-                            assessments: [
-                              {
-                                scope: "definition",
-                                verdict: "satisfied",
-                                rationale: "Definition matches",
-                                evidence_ids: [],
-                              },
-                              {
-                                scope: "objective",
-                                verdict: "satisfied",
-                                rationale: "Result observed",
-                                evidence_ids: [],
-                              },
-                              ...(frame.definition?.criteria ?? [])
-                                .filter((criterion) => criterion.kind === "qualitative")
-                                .map((criterion) => ({
-                                  scope: "criterion",
-                                  criterion_id: criterion.id,
-                                  verdict: "satisfied",
-                                  rationale: "Criterion observed",
-                                  evidence_ids: [],
-                                })),
-                            ],
-                          },
+                        ? { verdict: "accept_definition", message: "Definition is faithful" }
+                        : { verdict: "achieved", message: "Synthetic result observed" },
                   };
           const usage = { input: 1000 + index * 10, output: 10, cached: 500 };
           if ("status" in result)

@@ -7,8 +7,15 @@
 5. For a write that succeeded but is not effective, check whether the result says refresh pending or reconnect required. A captured run keeps its old skill/resources; a later safe snapshot can see a refreshed catalog. Provider, placement or profile changes may need reconnect.
 6. For a denied file or shell action, distinguish execution authorization from settings validation. Inspect the denial and effective Sandbox policy; configuration metadata has no write exemption. Use the supported approval control for an eligible new attempt. A missing Sandbox backend requires fixing the backend or an explicit allowed Host choice, never an automatic retry on Host. An uncertain outcome requires checking for effects before retrying.
 
-Goal tools and internal review responses, Memory tools, skill reads, `ask_user`, built-in workflow
+Goal tools, Memory tools, skill reads, `ask_user`, built-in workflow
 results and generated workflow titles ignore extra fields. A validation error on these operations
 requires checking the expected fields, their types, bounds and meaning. Extra fields do not grant
 permissions or change session ownership, budgets or evidence. Settings, external tools and custom
 result schemas retain their own validation rules.
+
+Goal Steward reviews are routed by their verdict: `achieved` accepts the report, `needs_work`
+returns work to the main agent, and `needs_evidence` asks that agent for clarification. The optional
+message explains the decision; missing or unusable commentary receives generic guidance. Extra
+fields and auxiliary assessments do not block a recognized verdict. A missing or unsupported verdict
+gets one correction; repeated invalid output is reported as an unusable result, not a transit failure.
+Cancellation, changed Goal state, required human acceptance and consumption limits remain host checks.

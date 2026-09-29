@@ -216,14 +216,10 @@ export function createGoalStewardCoordinator(
     });
     options.changed();
     const validate = async (value: unknown) => {
-      const result = validateGoalStewardResult(
-        value,
-        mode,
-        before.goal.criteria.filter((item) => item.kind === "qualitative").map((item) => item.id),
-      );
-      if (result.decision === "definition")
-        throw new Error("Goal Steward returned a definition decision during work review");
-      return result;
+      const result = validateGoalStewardResult(value, mode);
+      if (result.verdict === "accept_definition" || result.verdict === "revise_definition")
+        throw new Error("Goal Steward returned a definition verdict during work review");
+      return { ...result, verdict: result.verdict };
     };
     let usage: GoalUsage = { kind: "unknown" };
     let accounting: PerAgentUsage[] | undefined;
@@ -238,6 +234,7 @@ export function createGoalStewardCoordinator(
     ]);
     try {
       const outcome = await runtime.run({
+        mode,
         execution_id: executionId,
         session_id: options.binding.session_id,
         continue_from: predecessor,
@@ -270,11 +267,9 @@ export function createGoalStewardCoordinator(
         candidate_digest: stewardDigest(before.goal.candidate),
         final_attempt_digest: stewardDigest(attempt),
         decision: result.verdict,
-        summary: result.summary,
-        ...("next_step" in result ? { next_step: result.next_step } : {}),
-        ...(result.verdict === "needs_evidence" && result.next_step !== undefined
-          ? { question: result.next_step }
-          : {}),
+        summary: result.message,
+        ...(result.verdict === "achieved" ? {} : { next_step: result.message }),
+        ...(result.verdict === "needs_evidence" ? { question: result.message } : {}),
         ...(pendingQuestion === undefined
           ? {}
           : { answer: before.goal.candidate?.summary ?? pendingQuestion.question }),

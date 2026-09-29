@@ -57,7 +57,12 @@ For controlled-provider variants of Goal (`CMD-29`), Memory (`CAP-07`, `CAP-08`)
 (`EXT-01`–`EXT-09`) and workflow journeys, include an otherwise valid model response with
 extra fields. The operation should complete normally; extra identity, budget or permission fields
 must not change authority. For workflow titles and `ask_user`, extra commentary must not consume
-a correction or prevent the question from reaching the operator. Invalid known fields still fail.
+a correction or prevent the question from reaching the operator. Invalid known fields still fail, except for advisory Steward commentary.
+For Goal completion reviews, exercise `achieved` with absent/non-text commentary and irrelevant
+assessment fields: completion must proceed without a format-correction turn. Exercise `needs_work`
+and `needs_evidence` with and without a message: the main agent receives the supplied explanation
+or generic guidance and can complete after another review. Missing or unknown verdicts get one
+correction; repeated invalid output must be named as an unusable result, never a transit failure.
 The corresponding package regression tests establish parser and handler behavior; a PTY journey
 establishes only the selected visible interaction.
 

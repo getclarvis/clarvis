@@ -1,17 +1,36 @@
-import { z } from "zod";
 import type { RunRequest } from "@clarvis/capability";
 import { GOAL_STEWARD_PROMPT } from "./steward-prompt.ts";
 import {
-  goalStewardResultSchema,
+  type GoalStewardMode,
   type GoalStewardRunInput,
   type GoalStewardRuntime,
 } from "./steward-types.ts";
 
 export const GOAL_STEWARD_INSTANCE = "goal-steward";
-export const goalStewardOutputSchema: Record<string, unknown> = {
-  ...z.toJSONSchema(goalStewardResultSchema, { target: "draft-7", io: "input" }),
-  type: "object",
-};
+/**
+ * Advertise only the operation's verdicts and optional commentary.
+ *
+ * @remarks The private result gate owns verdict validation and its one correction.
+ *   Permissive property shapes let missing or malformed verdicts reach that gate
+ *   instead of entering the generic loop's schema-rejection path. Commentary is
+ *   advisory and must never prevent a recognized verdict from reaching settlement.
+ */
+export function goalStewardOutputSchema(mode: GoalStewardMode): Record<string, unknown> {
+  const choices =
+    mode === "definition"
+      ? "accept_definition, revise_definition"
+      : "achieved, needs_work, needs_evidence";
+  return {
+    type: "object",
+    properties: {
+      verdict: { description: `Required decision. Choose exactly one of: ${choices}.` },
+      message: {
+        description:
+          "Optional text: explain acceptance, the work to do, or the specific question to answer.",
+      },
+    },
+  };
+}
 
 /** Stable profile, catalog and identity; only a new frame and execution id vary. */
 export function buildGoalStewardRequest(
@@ -59,7 +78,7 @@ export function buildGoalStewardRequest(
       total_token_limit: input.budget.max_net_tokens,
       timeout_ms: input.budget.timeout_ms,
     },
-    output_schema: goalStewardOutputSchema,
+    output_schema: goalStewardOutputSchema(input.mode),
     prompt_cache_ttl: input.prompt_cache_ttl,
     elicit_wait_ms: 0,
   };

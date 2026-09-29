@@ -289,17 +289,12 @@ Before completion, the host revalidates normative source digests and the current
 host/human evidence. `createGoalStewardCoordinator` owns one finite tool-free evaluation at a time
 through `createStewardExecutionRuntime`. It fences semantic output
 and returns internal corrections or a final verdict to the Goal capability. A private result gate
-validates the Steward's decision shape and semantic targets before accepting its output, allowing one
-corrective nudge within the same evaluation budget; a second invalid result fails closed.
+accepts the host-selected operation's `verdict` and normalizes optional `message` commentary.
+`achieved`, `needs_work` and `needs_evidence` alone route completion reviews. A missing, unknown or
+wrong-operation verdict gets one corrective nudge; a second invalid verdict is `invalid_output`.
 Workflow title generation also ignores extra response fields and returns only the validated title.
-
-For an authored manager-controlled workflow, the kernel admits the current user message and
-completed manager tool results as opaque evidence refs, and attaches a leader's run identity and
-status when it settles. It flushes accepted decision checkpoints through the workflow store before
-the live state event announces them. The stored objective assessment remains distinct from the
-aggregate operational status; a failed optional leader is not erased by a sufficient judgment.
-Unknown fields in Steward decisions and assessments are discarded before semantic validation;
-extra commentary alone does not reject an otherwise valid review.
+Unknown response fields are discarded, including auxiliary assessments. Missing, blank or non-text
+commentary gets host guidance; long commentary is bounded without rejecting the verdict.
 Observations reserve evaluation slots for completion, and prior observation failures do not
 reclassify later inconclusive verdicts. Its private frame is the conversational projection in
 `buildStewardConversationFrame`: Goal contract, original operator request, later corrections, the
@@ -1058,6 +1053,12 @@ gone. If the manager is cancelled, fails or is crash-reconciled while that seque
 `running_round` or `awaiting_manager`, the terminal snapshot closes it as `cancelled` or `failed`,
 increments its revision and removes the impossible next-round proposal. A defensive completed exit
 closes the same impossible state as `stopped`. Legacy and ad-hoc-only records simply omit the field.
+
+For an authored manager-controlled workflow, the kernel admits the current user message and
+completed manager tool results as opaque evidence refs, and attaches a leader's run identity and
+status when it settles. It flushes accepted decision checkpoints through the workflow store before
+the live state event announces them. The stored objective assessment remains distinct from the
+aggregate operational status; a failed optional leader is not erased by a sufficient judgment.
 
 Executable workflow definitions are resolved separately for every manager run. The kernel starts
 with the `audit`, `implement` and `research` definitions exported by `@clarvis/workflows`, then applies

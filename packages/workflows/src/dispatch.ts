@@ -87,6 +87,8 @@ export type DispatchStatus =
 /** The outcome of one unit, including the leader's structured result. */
 export interface DispatchOutcome {
   key: string;
+  /** Reserved run identity, including a leader that failed before execution. */
+  runId?: string;
   status: DispatchStatus;
   /** The leader's own result — structured when `expectSchema` was set. */
   result: unknown;
@@ -726,7 +728,7 @@ async function runOne(
   sessionLogger: Logger,
 ): Promise<DispatchOutcome> {
   const { unit, runId, spawn } = entry;
-  if (spawn === null) return { key: unit.key, status: "unregistered", result: undefined };
+  if (spawn === null) return { key: unit.key, runId, status: "unregistered", result: undefined };
 
   const { handle, controller, steerQueue } = spawn;
   const correlation = {
@@ -747,7 +749,7 @@ async function runOne(
   };
   const skip = (status: DispatchStatus, text: string): DispatchOutcome => {
     finish(settleWith("failed", text));
-    return { key: unit.key, status, result: undefined };
+    return { key: unit.key, runId, status, result: undefined };
   };
 
   const blocked = gate?.(unit);
@@ -769,7 +771,7 @@ async function runOne(
     await deps.ctx.semaphore.acquire(unitCtx.signal);
   } catch {
     finish(settleWith("stopped", `'${unit.key}' was cancelled while waiting for a slot`));
-    return { key: unit.key, status: "cancelled", result: undefined };
+    return { key: unit.key, runId, status: "cancelled", result: undefined };
   }
 
   let reservation: WorkflowReservation | null = null;
@@ -777,7 +779,7 @@ async function runOne(
   try {
     if (unitCtx.signal.aborted) {
       finish(settleWith("stopped", `'${unit.key}' was cancelled before it started`));
-      return { key: unit.key, status: "cancelled", result: undefined };
+      return { key: unit.key, runId, status: "cancelled", result: undefined };
     }
 
     const exhausted = `'${unit.key}' was not run: the token budget was exhausted`;
@@ -850,6 +852,7 @@ async function runOne(
     );
     return {
       key: unit.key,
+      runId,
       status: ok ? "completed" : cancelled ? "cancelled" : "failed",
       result: result.result,
     };
@@ -878,7 +881,7 @@ async function runOne(
       );
     }
     finish(settleWith("failed", `'${unit.key}' error: ${message}`));
-    return { key: unit.key, status: "failed", result: undefined };
+    return { key: unit.key, runId, status: "failed", result: undefined };
   } finally {
     region?.leave();
     reservation?.release();

@@ -345,6 +345,62 @@ const RUN_EVENT_SCHEMAS = {
       leaders_started: nonnegativeInteger,
       max_total_leaders: positiveInteger,
       reason: text.optional(),
+      control: z.literal("manager").optional(),
+      objective: text.optional(),
+      dispatches: nonnegativeInteger.optional(),
+      max_dispatches: positiveInteger.optional(),
+      invocations: z
+        .array(
+          z
+            .object({
+              id: text,
+              stageId: text,
+              sourceInvocationId: text.optional(),
+              gap: text,
+              fingerprint: text,
+              status: z.enum(["running", "completed", "failed", "cancelled"]),
+              requested: nonnegativeInteger,
+              started: nonnegativeInteger,
+              completed: nonnegativeInteger,
+              coverage: z
+                .array(
+                  z
+                    .object({
+                      ref: text,
+                      disposition: z.enum(["selected", "skipped", "deferred", "covered"]),
+                      reason: text.optional(),
+                      replicas: positiveInteger.optional(),
+                      status: text.optional(),
+                    })
+                    .strict(),
+                )
+                .max(64),
+            })
+            .strict(),
+        )
+        .max(16)
+        .optional(),
+      assessment: z
+        .object({
+          outcome: z.enum(["not_assessed", "sufficient", "insufficient"]),
+          decisionRevision: nonnegativeInteger,
+          criteria: z.array(
+            z.object({ id: text, evidenceRefs: z.array(text), explanation: text }).strict(),
+          ),
+          remainingGaps: z.array(text),
+          unresolvedFailures: z.array(
+            z
+              .object({
+                runId: text,
+                disposition: z.enum(["resolved", "non_blocking"]),
+                explanation: text,
+                evidenceRefs: z.array(text),
+              })
+              .strict(),
+          ),
+        })
+        .strict()
+        .optional(),
     })
     .strict()
     .refine((event) => event.leaders_started <= event.max_total_leaders),

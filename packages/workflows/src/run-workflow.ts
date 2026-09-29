@@ -23,6 +23,7 @@ import type {
 } from "@clarvis/capability";
 import { elicitWithClockPause } from "@clarvis/capability";
 import type { WorkflowDefinition } from "./artifact.ts";
+import { interpolate } from "./interpolate.ts";
 import type { DispatchDeps } from "./dispatch.ts";
 import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
 import { workflowLogger } from "./log.ts";
@@ -40,9 +41,10 @@ export const RUN_WORKFLOW_TOOL_NAME = "run_workflow";
 type WorkflowReviewDecision = "run" | "declined" | "dismissed" | "no_response" | "invalid_response";
 
 const RUN_WORKFLOW_DESCRIPTION =
-  "Run an installed round sequence by name. explain:true previews its structure and leader-count " +
-  "formula without starting work; data-dependent fan-out is not known yet. Otherwise, human " +
-  "preflight is required before the first round starts. Later rounds require workflow_decide.";
+  "Run an installed workflow by name. explain:true previews its structure and cost without starting " +
+  "work. Human preflight is required. Fixed control starts its first round after approval; manager " +
+  "control opens awaiting workflow_decide with no leader: assess existing evidence, complete, " +
+  "dispatch selected work for a gap, or stop. Later work is never implicit.";
 
 /**
  * Build the `run_workflow` tool.
@@ -63,7 +65,7 @@ export function buildRunWorkflowTool(
     description: RUN_WORKFLOW_DESCRIPTION,
     inputSchema: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       required: ["name"],
       properties: {
         name: {
@@ -87,7 +89,7 @@ export function buildRunWorkflowTool(
         explain: {
           type: "boolean",
           description:
-            "OPTIONAL — describe the rounds and the fan-out cost without running anything.",
+            "OPTIONAL — preview fixed rounds or manager-selectable stages and replica ranges without running anything.",
         },
       },
     },
@@ -149,6 +151,15 @@ function toRoundCall(
  *   inventing a number would be worse than the uncertainty it hides.
  */
 export function explainWorkflow(workflow: WorkflowDefinition): string {
+  if (workflow.control === "manager") {
+    const stages = workflow.stages.map((stage) => {
+      const selector =
+        stage.over.kind === "once" ? "once" : `${stage.over.kind}(${stage.over.source})`;
+      const replicas = stage.replicas ?? { min: 1, max: 1 };
+      return `  ${stage.id} (${stage.type}): ${selector}, replicas ${String(replicas.min)}–${String(replicas.max)}${stage.mutation === true ? ", mutating" : ""}`;
+    });
+    return `${workflow.name}: ${workflow.description}\nObjective: ${workflow.objective}\nCriteria: ${workflow.completion.criteria.map((c) => `${c.id}: ${c.description}`).join("; ")}\nSelectable stages (optional until chosen):\n${stages.join("\n")}\nMaximum dispatches: ${String(workflow.maxDispatches)}. Actual items and total cost depend on manager decisions and source results. No leader starts on opening; manager decides complete, dispatch or stop.`;
+  }
   const lines = workflow.rounds.map((round) => {
     const shape =
       round.over.kind === "once"
@@ -258,8 +269,22 @@ export function buildRunWorkflowHandler(
       }
       if (parsed.explain) return verdict(explainWorkflow(workflow), false);
 
-      const compiled = toRoundCall(workflow, parsed.args);
-      if ("error" in compiled) return verdict(compiled.error, false);
+      const compiled =
+        workflow.control === "manager" ? undefined : toRoundCall(workflow, parsed.args);
+      if (compiled !== undefined && "error" in compiled) return verdict(compiled.error, false);
+      if (workflow.control === "manager") {
+        const missing = workflow.args.filter((name) => parsed.args[name] === undefined);
+        if (missing.length > 0)
+          return verdict(`workflow '${workflow.name}' needs args: ${missing.join(", ")}`, false);
+      }
+      let approvedWorkflow = workflow;
+      if (workflow.control === "manager") {
+        const objective = interpolate(workflow.objective, { args: parsed.args });
+        if ("error" in objective) return verdict(`objective: ${objective.error}`, false);
+        if (objective.text.length > WORKFLOW_LIMITS.textChars)
+          return verdict("rendered objective exceeds the workflow text limit", false);
+        approvedWorkflow = { ...workflow, objective: objective.text };
+      }
       if (elicit === undefined || clock === undefined) {
         return verdict(
           `workflow '${workflow.name}' was not started because no interactive approval channel is available. Use explain: true to inspect it.`,
@@ -276,7 +301,7 @@ export function buildRunWorkflowHandler(
               kind: "workflow_review",
               message:
                 `Review this workflow before it starts. No leader has been launched yet.\n\n` +
-                explainWorkflow(workflow),
+                explainWorkflow(approvedWorkflow),
               requestedSchema: {
                 type: "object",
                 properties: {
@@ -315,8 +340,17 @@ export function buildRunWorkflowHandler(
       if (decision !== "run") {
         return verdict(describeReviewRefusal(workflow.name, decision), false);
       }
-      const started = startRounds(deps, compiled.call, coordinator);
+      const started =
+        approvedWorkflow.control === "manager"
+          ? coordinator?.startManager(deps, approvedWorkflow, parsed.args)
+          : startRounds(deps, compiled!.call, coordinator);
+      if (started === undefined) return verdict("manager coordinator unavailable", false);
       if ("error" in started) return verdict(started.error, false);
+      if (workflow.control === "manager")
+        return verdict(
+          `running workflow '${workflow.name}'. ${started.text}\n\nSynthesize only after an explicit decision:\n${workflow.synthesis}`,
+          true,
+        );
       return verdict(
         `running workflow '${workflow.name}'. ${started.text}\n\n` +
           "At every checkpoint, decide whether the evidence justifies the proposed next round; " +

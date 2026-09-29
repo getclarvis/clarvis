@@ -79,23 +79,82 @@ const repeatSchema = z.object({
 });
 
 /** The frontmatter contract of a `WORKFLOW.md`. */
-export const workflowFrontmatterSchema = z
-  .object({
-    name: z
-      .string()
-      .trim()
-      .min(1, "name is required")
-      .max(WORKFLOW_LIMITS.identifierChars)
-      .regex(/^[A-Za-z0-9._-]+$/u, "name must not contain path separators or whitespace"),
-    description: textSchema,
-    args: z.array(identifierSchema).max(WORKFLOW_LIMITS.args).optional(),
-    rounds: z
-      .array(roundSchema)
-      .min(1, "a workflow needs at least one round")
-      .max(WORKFLOW_LIMITS.rounds),
-    repeat: repeatSchema.optional(),
-  })
-  .loose();
+const commonFrontmatter = {
+  name: z
+    .string()
+    .trim()
+    .min(1, "name is required")
+    .max(WORKFLOW_LIMITS.identifierChars)
+    .regex(/^[A-Za-z0-9._-]+$/u, "name must not contain path separators or whitespace"),
+  description: textSchema,
+  args: z.array(identifierSchema).max(WORKFLOW_LIMITS.args).optional(),
+};
+
+/** The frontmatter contract of a `WORKFLOW.md`. */
+const controlledWorkflowFrontmatterSchema = z.discriminatedUnion("control", [
+  z
+    .object({
+      ...commonFrontmatter,
+      control: z.literal("fixed").default("fixed"),
+      rounds: z
+        .array(roundSchema)
+        .min(1, "a workflow needs at least one round")
+        .max(WORKFLOW_LIMITS.rounds),
+      repeat: repeatSchema.optional(),
+    })
+    .loose(),
+  z
+    .object({
+      ...commonFrontmatter,
+      control: z.literal("manager"),
+      objective: textSchema,
+      completion: z.object({
+        criteria: z
+          .array(
+            z.object({
+              id: identifierSchema.regex(/^[A-Za-z0-9._-]+$/u),
+              description: textSchema,
+              requires_completed_stages: z
+                .array(identifierSchema)
+                .max(WORKFLOW_LIMITS.rounds)
+                .optional(),
+            }),
+          )
+          .min(1)
+          .max(16),
+      }),
+      stages: z
+        .array(
+          roundSchema.extend({
+            over: pathSchema,
+            fanout: z.literal(1).optional(),
+            replicas: z
+              .object({
+                min: z.number().int().positive().max(WORKFLOW_LIMITS.fanout),
+                max: z.number().int().positive().max(WORKFLOW_LIMITS.fanout),
+              })
+              .optional(),
+            mutation: z.boolean().optional(),
+            when: z.never().optional(),
+          }),
+        )
+        .min(1)
+        .max(WORKFLOW_LIMITS.rounds),
+      max_dispatches: z.number().int().positive().max(16),
+      rounds: z.never().optional(),
+      repeat: z.never().optional(),
+    })
+    .loose(),
+]);
+
+/** Omitted control is the original fixed-round document shape. */
+export const workflowFrontmatterSchema = z.preprocess(
+  (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value) && !("control" in value)
+      ? { ...value, control: "fixed" }
+      : value,
+  controlledWorkflowFrontmatterSchema,
+);
 
 /** One round of a loaded workflow, with its selector and brief already resolved. */
 export interface WorkflowRound {
@@ -108,22 +167,50 @@ export interface WorkflowRound {
   /** The brief template, read from the `briefs/` file the document named. */
   brief: string;
   fanout: number;
+  replicas?: { min: number; max: number };
+  mutation?: boolean;
   accept?: AcceptRule;
   when?: string;
 }
 
 /** A loaded, validated workflow. */
-export interface WorkflowDefinition {
+interface WorkflowDefinitionBase {
   name: string;
   description: string;
   args: readonly string[];
   rounds: readonly WorkflowRound[];
-  repeat?: RepeatSpec;
   /** The Markdown body: the synthesis brief handed back at the end. */
   synthesis: string;
   /** Where it was loaded from, for diagnostics. */
   dir: string;
 }
+
+/** Authored objective and bounded, manager-selectable stages. */
+export interface ManagerWorkflowDefinition extends WorkflowDefinitionBase {
+  control: "manager";
+  objective: string;
+  completion: {
+    criteria: readonly {
+      id: string;
+      description: string;
+      requires_completed_stages?: readonly string[];
+    }[];
+  };
+  stages: readonly WorkflowRound[];
+  maxDispatches: number;
+  rounds: readonly WorkflowRound[];
+  repeat?: undefined;
+}
+
+/** A loaded workflow: legacy definitions default to fixed control. */
+export type WorkflowDefinition =
+  | ManagerWorkflowDefinition
+  | (WorkflowDefinitionBase & {
+      control?: "fixed";
+      rounds: readonly WorkflowRound[];
+      repeat?: RepeatSpec;
+      stages?: never;
+    });
 
 /** A workflow that could not be loaded, and why. */
 export interface WorkflowLoadError {
@@ -276,46 +363,95 @@ function compileWorkflowDocument(
 
   const ids = new Set<string>();
   const args = front.args ?? [];
-  const rounds = front.rounds.map((round): WorkflowRound => {
-    if (ids.has(round.id)) throw new Error(`two rounds share the id '${round.id}'`);
-    ids.add(round.id);
-    const over = parseSelector(round.over);
-    if (over === null) throw new Error(`round '${round.id}': '${round.over}' is not a selector`);
-    let accept: AcceptRule | undefined;
-    if (round.accept !== undefined) {
-      const rule = parseAcceptRule(round.accept);
-      if (rule === null) {
-        throw new Error(`round '${round.id}': '${round.accept}' is not an accept rule`);
+  const rounds = (front.control === "manager" ? front.stages : front.rounds).map(
+    (round, index): WorkflowRound => {
+      if (ids.has(round.id)) throw new Error(`two rounds share the id '${round.id}'`);
+      ids.add(round.id);
+      const over = parseSelector(round.over);
+      if (over === null) throw new Error(`round '${round.id}': '${round.over}' is not a selector`);
+      let accept: AcceptRule | undefined;
+      if (round.accept !== undefined) {
+        const rule = parseAcceptRule(round.accept);
+        if (rule === null) {
+          throw new Error(`round '${round.id}': '${round.accept}' is not an accept rule`);
+        }
+        accept = rule;
       }
-      accept = rule;
-    }
-    const brief = readBrief(dir, round.brief, round.id, catalogBudget);
-    for (const reference of placeholders(brief)) {
-      const [root, key] = reference.split(".");
-      if (root === "args" && (key === undefined || !args.includes(key))) {
-        throw new Error(
-          `round '${round.id}': brief references {{${reference}}}, which is not a declared arg`,
-        );
+      const brief = readBrief(dir, round.brief, round.id, catalogBudget);
+      for (const reference of placeholders(brief)) {
+        const [root, key] = reference.split(".");
+        if (root === "args" && (key === undefined || !args.includes(key))) {
+          throw new Error(
+            `round '${round.id}': brief references {{${reference}}}, which is not a declared arg`,
+          );
+        }
       }
-    }
-    return {
-      id: round.id,
-      type: round.type,
-      over,
-      title: round.title,
-      brief,
-      fanout: round.fanout ?? 1,
-      ...(round.profile === undefined ? {} : { profile: round.profile }),
-      ...(accept === undefined ? {} : { accept }),
-      ...(round.when === undefined ? {} : { when: round.when }),
-    };
-  });
+      return {
+        id: round.id,
+        type: round.type,
+        over,
+        title: round.title,
+        brief,
+        fanout: round.fanout ?? 1,
+        ...(front.control === "manager"
+          ? { replicas: front.stages[index]!.replicas ?? { min: 1, max: 1 } }
+          : {}),
+        ...(front.control === "manager" && front.stages[index]!.mutation === true
+          ? { mutation: true }
+          : {}),
+        ...(round.profile === undefined ? {} : { profile: round.profile }),
+        ...(accept === undefined ? {} : { accept }),
+        ...(round.when === undefined ? {} : { when: round.when }),
+      };
+    },
+  );
 
   const first = rounds[0]!;
-  if (first.over.kind !== "once") {
+  if (front.control === "fixed" && first.over.kind !== "once") {
     throw new Error(
       `round '${first.id}' runs first and must be 'once': there is no earlier round to consume`,
     );
+  }
+  if (front.control === "manager") {
+    for (const stage of rounds) {
+      const range = stage.replicas!;
+      if (range.min > range.max) throw new Error(`stage '${stage.id}' has inverted replicas range`);
+      if (stage.mutation && range.max !== 1)
+        throw new Error(`mutating stage '${stage.id}' requires replicas 1/1`);
+      if (stage.over.kind === "once") continue;
+      const source = stage.over.source.split(".")[0]!;
+      if (!ids.has(source) || source === stage.id)
+        throw new Error(`stage '${stage.id}' names unknown or cyclic source '${source}'`);
+    }
+    const visit = (id: string, path: Set<string>): void => {
+      if (path.has(id)) throw new Error(`stage '${id}' has a cyclic source`);
+      const stage = rounds.find((entry) => entry.id === id)!;
+      if (stage.over.kind === "once") return;
+      visit(stage.over.source.split(".")[0]!, new Set([...path, id]));
+    };
+    for (const stage of rounds) visit(stage.id, new Set());
+    const criterionIds = new Set<string>();
+    for (const criterion of front.completion.criteria) {
+      if (criterionIds.has(criterion.id))
+        throw new Error(`two criteria share the id '${criterion.id}'`);
+      criterionIds.add(criterion.id);
+      const unknown = criterion.requires_completed_stages?.find((id) => !ids.has(id));
+      if (unknown !== undefined)
+        throw new Error(`criterion '${criterion.id}' names unknown stage '${unknown}'`);
+    }
+    return {
+      name: front.name,
+      description: front.description,
+      args,
+      rounds: [],
+      control: "manager",
+      objective: front.objective,
+      completion: front.completion,
+      stages: rounds,
+      maxDispatches: front.max_dispatches,
+      synthesis: body,
+      dir,
+    };
   }
   if (front.repeat !== undefined) {
     const unknown = front.repeat.rounds.find((id) => !ids.has(id));

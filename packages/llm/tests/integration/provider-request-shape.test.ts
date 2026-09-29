@@ -383,6 +383,7 @@ describe("native provider SDK sentinels", () => {
         { kind: "openai-codex", promptCache: "explicit" },
         {
           model: "future-responses-model",
+          tools: [readTool],
           maxOutputTokens: 4096,
           reasoningEffort: "high",
           promptCacheKey: "conversation-1",
@@ -395,6 +396,9 @@ describe("native provider SDK sentinels", () => {
     expect(calls[0]!.headers.authorization).toBe("Bearer subscription-token");
     expect(calls[0]!.raw).not.toContain("subscription-placeholder-never-sent");
     expect(calls[0]!.body.store).toBe(false);
+    expect(calls[0]!.body.tools).toEqual([
+      expect.objectContaining({ name: "fs_read", strict: false, parameters: readTool.inputSchema }),
+    ]);
     expect(calls[0]!.body.max_output_tokens).toBeUndefined();
     expect(calls[0]!.body.reasoning).toMatchObject({ effort: "high" });
     expect(calls[0]!.body.prompt_cache_key).toBe("conversation-1");

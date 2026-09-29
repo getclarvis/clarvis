@@ -28,6 +28,24 @@ All three views reach their data through `@clarvis/protocol` service interfaces 
 workflows/runs services, never the local filesystem, so a remote kernel needs no change"
 (`packages/code/src/views/config/WorkflowsHub.tsx`).
 
+The Workflows tree reads the same `WorkflowSequence` for live events and stored details. For
+manager-controlled documents it labels the decision checkpoint and displays the objective
+assessment separately from the execution status and leader failures. A sufficient judgment does
+not recolor a failed operational run as successful. Production: `reduceWorkflowProjection` in
+[`workflow-projection.ts`](../../packages/code/src/adapters/workflow-projection.ts) and
+`WorkflowsHub` in [`WorkflowsHub.tsx`](../../packages/code/src/views/config/WorkflowsHub.tsx).
+Test: `keeps objective assessment separate from a failed execution on live projection` in
+[`workflow-projection.test.ts`](../../packages/code/tests/unit/workflow-projection.test.ts), and
+`rehydrates a sufficient objective without erasing an operational failure` in
+[`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
+
+Workflow checkpoint prose has a separate bounded scroll viewport. Ctrl+U/Ctrl+D and pointer
+scrolling move its long objective, invocation coverage and assessment without displacing task
+navigation. Wrapped text retains its measured height instead of painting over neighboring rows.
+Production: `WorkflowsHub` in `packages/code/src/views/config/WorkflowsHub.tsx`. Test:
+`long manager evidence scrolls independently without hiding task navigation at narrow widths` in
+`packages/code/tests/integration/workflows-hub-render.test.tsx`.
+
 ## 2. Surface
 
 ### 2.1 Registered commands
@@ -381,8 +399,11 @@ live `status` mapped `running→running`, `ok→completed`, `cancelled→cancell
 100 cells. The tree shows the workflow title, lifecycle, completed/total and running task counts,
 then task titles and their statuses. The manager is presented once as Coordinator. Internal node
 IDs, profiles, round/item/replica coordinates, revision and leader-budget counters, the Monitor
-badge, generic purpose text and last-refresh timestamps are not displayed. A pending manager
-decision reads "Waiting for the next stage"; a sequence reason remains visible.
+badge, generic purpose text and last-refresh timestamps are not displayed in the task roster.
+An authored manager checkpoint separately shows stage invocation IDs and candidate refs with
+their coverage/outcomes, gap and requested/started/completed counts. A pending fixed sequence
+reads "Waiting for the next stage"; a manager-controlled one reads "Waiting for manager decision".
+The sequence reason remains visible and assessment is separate from execution status.
 Production: `WorkflowsHub` in `packages/code/src/views/config/WorkflowsHub.tsx`.
 Test: `packages/code/tests/integration/workflows-hub-render.test.tsx` (live tree, pending stage,
 direct open and narrow layouts).

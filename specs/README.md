@@ -117,9 +117,9 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`memory-store.md`](capabilities/memory-store.md) | The Markdown wiki (`PROFILE.md` → `TOPIC.md` → `MEMORY.md`): the store port and its adapters, the atomic batch engine and journal, revisions, deterministic reindex, and BM25F search | `memory`, `paths` |
 | [`memory-capability.md`](capabilities/memory-capability.md) | The seam from wiki to run: the `<memory>` seed block, the seven tools, the entry-agent-only write policy, the settings block and the kernel control plane | `memory`, `kernel` |
 | [`memory-indexer.md`](capabilities/memory-indexer.md) | Turning a finished run into something the wiki knows: the durable enqueue, the background drain with leases and retry budgets, and the isolated versus continuation index passes | `memory`, `kernel` |
-| [`workflows-scheduling.md`](capabilities/workflows-scheduling.md) | Manager-to-leader fan-out: the four spawn tools, wave scheduling and write-conflict separation, round barriers, the FIFO concurrency semaphore and the tree-wide token ledger | `workflows` |
+| [`workflows-scheduling.md`](capabilities/workflows-scheduling.md) | Manager-to-leader fan-out, fixed rounds and adaptive stage/candidate/replica decisions, full-batch admission, coverage, wave scheduling and write-conflict separation, the FIFO concurrency semaphore and the tree-wide token ledger | `workflows` |
 | [`worktrees.md`](capabilities/worktrees.md) | Explicit CLI-created Git worktrees, isolation, reopen and exit cleanup | `code`, `paths` |
-| [`workflows-service.md`](capabilities/workflows-service.md) | The non-live half: code-backed built-ins, optional `WORKFLOW.md` overrides, the three reusable result schemas, and the kernel's persisted workflow tree and routing | `workflows`, `kernel`, `code` |
+| [`workflows-service.md`](capabilities/workflows-service.md) | Authored fixed/manager definitions, manager-controlled built-in adoption, selector/replica validation, result schemas, host evidence and persisted invocation/coverage tree, objective assessment and routing | `workflows`, `kernel`, `code` |
 
 ### `hosts/` — the kernel, protocol and terminal UI
 

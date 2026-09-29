@@ -1054,11 +1054,25 @@ gone. If the manager is cancelled, fails or is crash-reconciled while that seque
 increments its revision and removes the impossible next-round proposal. A defensive completed exit
 closes the same impossible state as `stopped`. Legacy and ad-hoc-only records simply omit the field.
 
+For an authored manager-controlled workflow, the kernel admits the current user message and
+completed manager tool results as opaque evidence refs, and attaches a leader's run identity and
+status when it settles. It flushes accepted decision checkpoints through the workflow store before
+the live state event announces them. The stored objective assessment remains distinct from the
+aggregate operational status; a failed optional leader is not erased by a sufficient judgment.
+Each manager dispatch also persists bounded invocation identity, source, gap, planned fingerprint,
+requested/started/completed counts and per-candidate coverage. The same projection is emitted live
+and rehydrated by `WorkflowsService.get`; a host restart never replays unfinished work.
+
 Executable workflow definitions are resolved separately for every manager run. The kernel starts
 with the `audit`, `implement` and `research` definitions exported by `@clarvis/workflows`, then applies
 valid global and workspace documents by name. Effective precedence is
 `workspace > global > built-in`; a malformed document is logged and leaves the lower-precedence
 definition available. The kernel never materializes a built-in as a user-owned file.
+The shipped definitions are manager-controlled: after preflight, Admiral inspects admitted
+evidence, then completes, dispatches focused work or stops with gaps. A stage's presence does not
+require execution. The preflight shows replica ranges; actual user/workspace-required validation
+needs evidence rather than a textual claim. Deterministic tests of this runtime do not qualify
+model judgment on a live provider.
 
 Workflow leaders are isolated auxiliary runs. Their requests force both planning and memory off,
 and their engine deps exclude the memory capability. The manager keeps the ordinary primary-run

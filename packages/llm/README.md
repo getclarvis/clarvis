@@ -19,7 +19,9 @@ Provider adaptation, decorators, error classification, and the lazy entry split 
 specified in [`cross-cutting/prompt-cache.md`](../../specs/cross-cutting/prompt-cache.md).
 The model-facing tool schema keeps an object root and field constraints. Root unions expose their
 combined fields and shared requirements to the model; conditional root keywords stay in the
-dispatch validator, which checks every call before execution.
+dispatch validator, which checks every call before execution. Tools explicitly use non-strict
+provider generation so optional fields remain optional and open objects remain open; the complete
+local schema still validates arguments before dispatch.
 Kernel-owned ChatGPT/Grok subscription request authority is specified in
 [`hosts/subscription-providers.md`](../../specs/hosts/subscription-providers.md).
 

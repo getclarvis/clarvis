@@ -39,6 +39,8 @@ import {
   type DispatchUnit,
 } from "./dispatch.ts";
 import { interpolate } from "./interpolate.ts";
+import type { ManagerWorkflowDefinition } from "./artifact.ts";
+import { ManagerSequence } from "./manager-sequence.ts";
 import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
 import { faultFields, workflowLogger } from "./log.ts";
 import { reportScheduleDerived, reportScheduleRefused } from "./schedule-log.ts";
@@ -83,17 +85,38 @@ export function buildWorkflowStatusTool(): NamespacedTool {
     mcpName: "",
     toolName: WORKFLOW_STATUS_TOOL_NAME,
     description:
-      "Inspect the active or named workflow round sequence: its revision, current state, proposed " +
-      "next round, and cumulative leader capacity. This tool never starts work.",
+      "Inspect the active or named workflow sequence, criteria, admitted evidence refs and cumulative " +
+      "capacity and eligible stage candidates. Page candidates or pass item_ref/evidence_ref for " +
+      "bounded detail using only refs returned here. Start with {session_id} or {}: omit optional " +
+      "refs rather than inventing placeholders. A running manager overview waits up to 30 seconds " +
+      "for a checkpoint; wait_ms:0 returns immediately. This tool never starts work; use workflow_decide to act.",
     inputSchema: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       properties: {
         session_id: {
-          type: "string",
-          minLength: 1,
+          type: ["string", "null"],
           maxLength: WORKFLOW_LIMITS.identifierChars,
           description: "OPTIONAL — omit to inspect the active or most recent sequence.",
+        },
+        evidence_ref: {
+          type: ["string", "null"],
+          maxLength: WORKFLOW_LIMITS.identifierChars,
+          description: "Optional evidence ref copied from a checkpoint; omit/null for overview.",
+        },
+        page: { type: ["integer", "null"], minimum: 0, maximum: 255 },
+        wait_ms: {
+          type: "integer",
+          minimum: 0,
+          maximum: 30_000,
+          description:
+            "Manager overview wait for the running stage; defaults to 30000. Detail requests return immediately.",
+        },
+        item_ref: {
+          type: ["string", "null"],
+          maxLength: WORKFLOW_LIMITS.pathChars,
+          description:
+            "Optional candidate ref copied from eligible candidates; omit/null for overview.",
         },
       },
     },
@@ -108,12 +131,13 @@ export function buildWorkflowDecideTool(): NamespacedTool {
     mcpName: "",
     toolName: WORKFLOW_DECIDE_TOOL_NAME,
     description:
-      "At an awaiting_manager checkpoint, explicitly continue exactly the proposed next round or " +
-      "stop the sequence. Supply the revision returned by workflow_status; stale or duplicate " +
-      "decisions are refused before any leader is spawned.",
+      "At an awaiting_manager checkpoint, use continue/stop for fixed sequences or complete/dispatch/stop " +
+      "for manager workflows. Supply revision and reason; complete needs an evidence-backed assessment, " +
+      "dispatch needs a declared stage_id, gap and full candidate dispositions with justified " +
+      "replicas. Sufficient needs evidence for required validation; stale decisions spawn nothing.",
     inputSchema: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       required: ["session_id", "revision", "decision", "reason"],
       properties: {
         session_id: {
@@ -122,12 +146,140 @@ export function buildWorkflowDecideTool(): NamespacedTool {
           maxLength: WORKFLOW_LIMITS.identifierChars,
         },
         revision: { type: "integer", minimum: 1 },
-        decision: { enum: ["continue", "stop"] },
+        decision: { enum: ["continue", "complete", "dispatch", "stop"] },
         reason: {
           type: "string",
           minLength: 1,
-          maxLength: WORKFLOW_LIMITS.textChars,
+          maxLength: 1024,
           description: "Why another round is needed, or why the sequence should stop now.",
+        },
+        dispatch: {
+          type: "object",
+          additionalProperties: true,
+          required: ["stage_id", "gap"],
+          properties: {
+            stage_id: {
+              type: "string",
+              description: "Copy an eligible stageId from the checkpoint.",
+            },
+            gap: { type: "string", minLength: 1, maxLength: 1024 },
+            source_invocation_id: {
+              type: ["string", "null"],
+              description:
+                "Optional checkpoint sourceInvocationId; omission uses the revision-bound source.",
+            },
+            acknowledge_failed_source: { type: "boolean" },
+            items: {
+              type: "array",
+              maxItems: WORKFLOW_LIMITS.workItems,
+              items: {
+                type: "object",
+                additionalProperties: true,
+                required: ["item_ref"],
+                properties: {
+                  item_ref: { type: "string" },
+                  replicas: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: WORKFLOW_LIMITS.fanout,
+                    description:
+                      "Choose within the stage's replicas range; omission uses its minimum. Mutating items require 1.",
+                  },
+                },
+              },
+            },
+            skipped: {
+              type: "array",
+              maxItems: WORKFLOW_LIMITS.workItems,
+              items: {
+                type: "object",
+                additionalProperties: true,
+                required: ["item_ref", "reason"],
+                properties: { item_ref: { type: "string" }, reason: { type: "string" } },
+              },
+            },
+            deferred: {
+              type: "array",
+              maxItems: WORKFLOW_LIMITS.workItems,
+              items: {
+                type: "object",
+                additionalProperties: true,
+                required: ["item_ref", "gap"],
+                properties: { item_ref: { type: "string" }, gap: { type: "string" } },
+              },
+            },
+            covered: {
+              type: "array",
+              maxItems: WORKFLOW_LIMITS.workItems,
+              items: {
+                type: "object",
+                additionalProperties: true,
+                required: ["item_ref", "invocation_id"],
+                properties: { item_ref: { type: "string" }, invocation_id: { type: "string" } },
+              },
+            },
+          },
+        },
+        assessment: {
+          type: "object",
+          additionalProperties: true,
+          required: ["criteria"],
+          description:
+            "For complete only. Support each checkpoint criterion with admitted evidence. Omitted gap/failure lists mean empty, never inferred success.",
+          properties: {
+            criteria: {
+              type: "array",
+              maxItems: 16,
+              items: {
+                type: "object",
+                additionalProperties: true,
+                required: ["id", "evidence_refs", "explanation"],
+                properties: {
+                  id: { type: "string", description: "Exact id from checkpoint criteria." },
+                  evidence_refs: {
+                    type: "array",
+                    minItems: 1,
+                    maxItems: 16,
+                    items: { type: "string" },
+                  },
+                  explanation: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: WORKFLOW_LIMITS.textChars,
+                  },
+                },
+              },
+            },
+            remaining_gaps: {
+              type: "array",
+              maxItems: 16,
+              items: { type: "string", maxLength: WORKFLOW_LIMITS.textChars },
+            },
+            unresolved_failures: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: true,
+                required: ["run_id", "disposition", "explanation", "evidence_refs"],
+                properties: {
+                  run_id: { type: "string" },
+                  disposition: { enum: ["resolved", "non_blocking"] },
+                  explanation: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: WORKFLOW_LIMITS.textChars,
+                  },
+                  evidence_refs: { type: "array", maxItems: 16, items: { type: "string" } },
+                },
+              },
+            },
+          },
+        },
+        remaining_gaps: {
+          type: "array",
+          maxItems: 16,
+          items: { type: "string", maxLength: 1024 },
+          description: "For stop; omission records reason as the remaining gap.",
         },
       },
     },
@@ -266,7 +418,7 @@ export function buildRunRoundTool(profiles?: readonly LeaderProfileInfo[]): Name
     description: RUN_ROUND_DESCRIPTION,
     inputSchema: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       required: ["rounds"],
       properties: {
         rounds: {
@@ -275,14 +427,14 @@ export function buildRunRoundTool(profiles?: readonly LeaderProfileInfo[]): Name
           maxItems: WORKFLOW_LIMITS.rounds,
           items: {
             type: "object",
-            additionalProperties: false,
+            additionalProperties: true,
             required: ["id", "type", "over", "title", "brief"],
             properties: round,
           },
         },
         repeat: {
           type: "object",
-          additionalProperties: false,
+          additionalProperties: true,
           required: ["rounds", "dedupe_by", "max_rounds"],
           description:
             "Propose repeat passes, each requiring workflow_decide. Deduplication uses everything " +
@@ -1157,9 +1309,23 @@ interface WorkflowDecision {
 
 /** Per-manager authority over authored round boundaries. */
 export interface RoundCoordinator {
+  /** Bounded wait for the running manager stage to reach a new checkpoint. */
+  waitForCheckpoint(sessionId: string | undefined, timeoutMs: number): Promise<boolean>;
   start(deps: DispatchDeps, call: RoundCall): { text: string } | { error: string };
-  status(sessionId?: string): CoordinatorResult;
-  decide(decision: WorkflowDecision): CoordinatorResult;
+  startManager(
+    deps: DispatchDeps,
+    definition: ManagerWorkflowDefinition,
+    args: Record<string, unknown>,
+  ): { text: string } | { error: string };
+  status(
+    sessionId?: string,
+    evidenceRef?: string,
+    page?: number,
+    itemRef?: string,
+  ): CoordinatorResult;
+  decide(
+    decision: WorkflowDecision | (Record<string, unknown> & { sessionId: string }),
+  ): CoordinatorResult;
   finalizeGate(): FinalizeGate;
 }
 
@@ -1202,6 +1368,7 @@ async function drainRound(
 /** Build the one coordinator shared by every workflow tool on a manager run. */
 export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
   const sequences = new Map<string, RoundSequence>();
+  const managers = new Map<string, ManagerSequence>();
   let activeId: string | undefined;
   let latestId: string | undefined;
   let nextId = 0;
@@ -1501,6 +1668,8 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
 
   const coordinator: RoundCoordinator = {
     start(deps, call) {
+      if (activeId !== undefined && managers.has(activeId))
+        return { error: `sequence '${activeId}' is awaiting manager; decide it first.` };
       const boundsError = roundCallBoundsError(call);
       if (boundsError !== null) return { error: boundsError };
       const active = activeId === undefined ? undefined : sequences.get(activeId);
@@ -1537,7 +1706,24 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
       latestId = sequence.id;
       return { text: result.text };
     },
-    status(sessionId) {
+    startManager(deps, definition, args) {
+      if (activeId !== undefined)
+        return { error: `sequence '${activeId}' is active; decide it first.` };
+      const sequence = new ManagerSequence(`wfseq-${String(++nextId)}`, definition, deps, args);
+      const opened = sequence.open();
+      if (opened.error === true) return { error: opened.text };
+      managers.set(sequence.id, sequence);
+      activeId = sequence.id;
+      latestId = sequence.id;
+      return { text: opened.text };
+    },
+    waitForCheckpoint(sessionId, timeoutMs) {
+      const manager = managers.get(sessionId ?? activeId ?? latestId ?? "");
+      return manager?.waitForCheckpoint(timeoutMs) ?? Promise.resolve(false);
+    },
+    status(sessionId, evidenceRef, page, itemRef) {
+      const manager = managers.get(sessionId ?? activeId ?? latestId ?? "");
+      if (manager !== undefined) return manager.statusText(evidenceRef, page, itemRef);
       const sequence = find(sessionId);
       if (sequence === undefined) {
         return {
@@ -1561,6 +1747,24 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
       };
     },
     decide(decision) {
+      const manager = managers.get(decision.sessionId);
+      if (manager !== undefined) {
+        const result = manager.decide(decision as unknown as Record<string, unknown>);
+        if (result.progress && (manager.status === "completed" || manager.status === "stopped"))
+          activeId = undefined;
+        return result.error === true
+          ? {
+              ...result,
+              text: `${result.text}\nNo decision was applied. Current checkpoint: ${manager.statusText().text}`,
+            }
+          : result;
+      }
+      if (decision.decision !== "continue" && decision.decision !== "stop")
+        return {
+          text: "only fixed sequences accept continue or stop.",
+          progress: false,
+          error: true,
+        };
       const sequence = sequences.get(decision.sessionId);
       if (sequence === undefined) {
         return { text: `unknown sequence '${decision.sessionId}'.`, progress: false, error: true };
@@ -1583,12 +1787,12 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
       }
       if (decision.decision === "stop") {
         return {
-          text: terminal(sequence, "stopped", `Admiral stopped it: ${decision.reason}`),
+          text: terminal(sequence, "stopped", `Admiral stopped it: ${String(decision.reason)}`),
           progress: true,
         };
       }
       const priorReason = sequence.reason;
-      sequence.reason = `Admiral continued it: ${decision.reason}`;
+      sequence.reason = `Admiral continued it: ${String(decision.reason)}`;
       const launched = launch(sequence, sequence.next, false);
       if (launched.error === true && sequence.status === "awaiting_manager") {
         sequence.reason = priorReason;
@@ -1598,10 +1802,29 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
     finalizeGate(): FinalizeGate {
       return {
         fastAcceptOk: () => {
+          if (activeId !== undefined && managers.get(activeId)?.status === "awaiting_manager")
+            return false;
           const sequence = activeId === undefined ? undefined : sequences.get(activeId);
           return sequence?.status !== "awaiting_manager";
         },
         check(): Promise<GateOutcome> {
+          const manager = activeId === undefined ? undefined : managers.get(activeId);
+          if (manager?.status === "awaiting_manager") {
+            const key = `${manager.id}:${String(manager.revision)}`;
+            if (finalizeNudge !== key) {
+              finalizeNudge = key;
+              return Promise.resolve({
+                kind: "nudge",
+                note: `Manager sequence '${manager.id}' awaits revision ${String(manager.revision)}. Inspect workflow_status and decide complete, dispatch or stop. Finalizing again stops without assessment.`,
+              });
+            }
+            manager.status = "stopped";
+            manager.reason = "manager finalized without a decision; objective not assessed";
+            manager.revision++;
+            ctx.onSequenceState?.(manager.state());
+            activeId = undefined;
+            return Promise.resolve({ kind: "pass" });
+          }
           const sequence = activeId === undefined ? undefined : sequences.get(activeId);
           if (sequence === undefined || sequence.status !== "awaiting_manager") {
             return Promise.resolve({ kind: "pass" });
@@ -1635,14 +1858,18 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
 export function buildWorkflowStatusHandler(coordinator: RoundCoordinator): ToolHandler {
   return {
     matches: (call) => call.name === WORKFLOW_STATUS_TOOL_NAME,
-    handle(call): Promise<HandlerVerdict> {
+    async handle(call): Promise<HandlerVerdict> {
       const raw = call.arguments;
       if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
         return Promise.resolve(
           controlVerdict(WORKFLOW_STATUS_TOOL_NAME, "expected an object.", false),
         );
       }
-      const sessionId = (raw as Record<string, unknown>).session_id;
+      const optionalRef = (value: unknown): unknown =>
+        value === null || (typeof value === "string" && value.trim().length === 0)
+          ? undefined
+          : value;
+      const sessionId = optionalRef((raw as Record<string, unknown>).session_id);
       if (
         sessionId !== undefined &&
         (!isBoundedWorkflowString(sessionId, WORKFLOW_LIMITS.identifierChars) ||
@@ -1656,9 +1883,47 @@ export function buildWorkflowStatusHandler(coordinator: RoundCoordinator): ToolH
           ),
         );
       }
-      const result = coordinator.status(typeof sessionId === "string" ? sessionId : undefined);
+      const ref = optionalRef((raw as Record<string, unknown>).evidence_ref);
+      if (
+        ref !== undefined &&
+        (!isBoundedWorkflowString(ref, WORKFLOW_LIMITS.identifierChars) || ref.length === 0)
+      )
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_STATUS_TOOL_NAME, "invalid evidence_ref.", false),
+        );
+      const page = (raw as Record<string, unknown>).page ?? undefined;
+      const waitMs = (raw as Record<string, unknown>).wait_ms ?? 30_000;
+      if (typeof waitMs !== "number" || !Number.isInteger(waitMs) || waitMs < 0 || waitMs > 30_000)
+        return controlVerdict(
+          WORKFLOW_STATUS_TOOL_NAME,
+          "invalid wait_ms: expected integer 0–30000.",
+          false,
+        );
+      const itemRef = optionalRef((raw as Record<string, unknown>).item_ref);
+      if (
+        (page !== undefined &&
+          (!Number.isInteger(page) || Number(page) < 0 || Number(page) > 255)) ||
+        (itemRef !== undefined &&
+          (!isBoundedWorkflowString(itemRef, WORKFLOW_LIMITS.pathChars) || itemRef.length === 0))
+      )
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_STATUS_TOOL_NAME, "invalid page or item_ref.", false),
+        );
+      const changed =
+        ref === undefined && itemRef === undefined && page === undefined
+          ? await coordinator.waitForCheckpoint(
+              typeof sessionId === "string" ? sessionId : undefined,
+              waitMs,
+            )
+          : false;
+      const result = coordinator.status(
+        typeof sessionId === "string" ? sessionId : undefined,
+        typeof ref === "string" ? ref : undefined,
+        typeof page === "number" ? page : undefined,
+        typeof itemRef === "string" ? itemRef : undefined,
+      );
       return Promise.resolve(
-        controlVerdict(WORKFLOW_STATUS_TOOL_NAME, result.text, result.progress),
+        controlVerdict(WORKFLOW_STATUS_TOOL_NAME, result.text, result.progress || changed),
       );
     },
   };
@@ -1693,11 +1958,14 @@ export function buildWorkflowDecideHandler(coordinator: RoundCoordinator): ToolH
           ),
         );
       }
-      if (record.decision !== "continue" && record.decision !== "stop") {
+      if (!["continue", "stop", "complete", "dispatch"].includes(String(record.decision)))
         return Promise.resolve(
-          controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, "'decision' must be continue or stop.", false),
+          controlVerdict(
+            WORKFLOW_DECIDE_TOOL_NAME,
+            "'decision' must be continue or stop (fixed), or complete, dispatch or stop (manager).",
+            false,
+          ),
         );
-      }
       if (
         !isBoundedWorkflowString(record.reason, WORKFLOW_LIMITS.textChars) ||
         record.reason.trim().length === 0
@@ -1711,6 +1979,9 @@ export function buildWorkflowDecideHandler(coordinator: RoundCoordinator): ToolH
         revision: Number(record.revision),
         decision: record.decision,
         reason: record.reason,
+        ...(record.dispatch === undefined ? {} : { dispatch: record.dispatch }),
+        ...(record.assessment === undefined ? {} : { assessment: record.assessment }),
+        ...(record.remaining_gaps === undefined ? {} : { remaining_gaps: record.remaining_gaps }),
       });
       return Promise.resolve(
         controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, result.text, result.progress),

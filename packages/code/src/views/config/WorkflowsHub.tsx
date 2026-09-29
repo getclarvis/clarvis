@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js";
 import { detachObserved } from "#src/core/tasks.ts";
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import type {
@@ -124,6 +124,7 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
   const [treeSel, setTreeSel] = createSignal(0);
   const [loadError, setLoadError] = createSignal("");
   let nodeScrollEl: ScrollBoxRenderable | undefined;
+  let checkpointScrollEl: ScrollBoxRenderable | undefined;
   const shortTitle = (value: string): string =>
     (value.split("\n").find((line) => line.trim()) ?? value).trim().replace(/\s+/g, " ");
 
@@ -189,6 +190,29 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
   };
   const treeNodes = (): WorkflowNode[] =>
     mergeTreeNodes(detail()?.nodes ?? [], detail()?.execution_id);
+  const sequence = (): WorkflowDetail["sequence"] => {
+    const persisted = detail()?.sequence;
+    const live = deps.live?.();
+    if (!live || live.root !== detail()?.execution_id || live.sequence === undefined)
+      return persisted;
+    const current = live.sequence;
+    if (persisted !== undefined && persisted.revision > current.revision) return persisted;
+    return {
+      session_id: current.sessionId,
+      status: current.status,
+      revision: current.revision,
+      leaders_started: current.leadersStarted,
+      max_total_leaders: current.maxTotalLeaders,
+      ...(current.roundId === undefined ? {} : { round_id: current.roundId }),
+      ...(current.reason === undefined ? {} : { reason: current.reason }),
+      ...(current.control === undefined ? {} : { control: current.control }),
+      ...(current.objective === undefined ? {} : { objective: current.objective }),
+      ...(current.dispatches === undefined ? {} : { dispatches: current.dispatches }),
+      ...(current.maxDispatches === undefined ? {} : { max_dispatches: current.maxDispatches }),
+      ...(current.assessment === undefined ? {} : { assessment: current.assessment }),
+      ...(current.invocations === undefined ? {} : { invocations: current.invocations }),
+    };
+  };
   const selectedRow = (): WorkflowSummary | undefined =>
     listItems()[clampListIndex(listSel(), listItems().length)];
   const selectedNode = (): WorkflowNode | undefined =>
@@ -439,10 +463,18 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
       };
     }
     if (inTree()) {
+      const checkpointScroll = [
+        { key: "ctrl+u", label: "details up", run: () => checkpointScrollEl?.scrollBy(-8) },
+        { key: "ctrl+d", label: "details down", run: () => checkpointScrollEl?.scrollBy(8) },
+      ];
       if (treeNodes().length === 0)
         return {
           ...close,
-          verbs: [...(close.verbs ?? []), { key: "r", label: "refresh", run: refreshTree }],
+          verbs: [
+            ...(close.verbs ?? []),
+            ...checkpointScroll,
+            { key: "r", label: "refresh", run: refreshTree },
+          ],
         };
       return {
         nav: {
@@ -453,6 +485,7 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
         },
         verbs: [
           ...(close.verbs ?? []),
+          ...checkpointScroll,
           { key: "r", label: "refresh", run: refreshTree },
           {
             id: "ui.workflow.task.open",
@@ -569,14 +602,76 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
           >
             {progress()}
           </text>
-          <Show when={detail()?.sequence?.status === "awaiting_manager"}>
-            <text fg={tokens.warn}>Waiting for the next stage</text>
-          </Show>
-          <Show when={detail()?.sequence?.reason}>
-            <text fg={tokens.warn} wrapMode="word">
-              {detail()?.sequence?.reason}
-            </text>
-          </Show>
+          <scrollbox
+            ref={(el: ScrollBoxRenderable) => (checkpointScrollEl = el)}
+            maxHeight="60%"
+            minHeight={0}
+            flexShrink={1}
+            paddingRight={SCROLLBOX_TABLE_GUTTER}
+            verticalScrollbarOptions={scrollbarOptions()}
+          >
+            <box flexDirection="column" flexShrink={0}>
+              <Show when={sequence()?.status === "awaiting_manager"}>
+                <text flexShrink={0} fg={tokens.warn}>
+                  {sequence()?.control === "manager"
+                    ? "Waiting for manager decision"
+                    : "Waiting for the next stage"}
+                </text>
+              </Show>
+              <Show when={sequence()?.control === "manager"}>
+                <text flexShrink={0} wrapMode="word">
+                  Objective: {sequence()?.objective}
+                </text>
+                <Show when={(sequence()?.invocations?.length ?? 0) > 0}>
+                  <DetailHeading>Stage invocations</DetailHeading>
+                  <For each={sequence()?.invocations}>
+                    {(invocation) => (
+                      <text flexShrink={0} wrapMode="word">
+                        {invocation.id} ({invocation.stageId}): {invocation.status}; requested{" "}
+                        {invocation.requested}, started {invocation.started}, completed{" "}
+                        {invocation.completed}. Gap: {invocation.gap}.{" "}
+                        {invocation.coverage
+                          .map(
+                            (item) =>
+                              `${item.ref}: ${item.disposition}${item.status ? `/${item.status}` : ""}${item.reason ? ` (${item.reason})` : ""}`,
+                          )
+                          .join("; ")}
+                      </text>
+                    )}
+                  </For>
+                </Show>
+                <text flexShrink={0} wrapMode="word">
+                  Objective assessment: {sequence()?.assessment?.outcome ?? "not_assessed"};
+                  execution: {detail()?.status}
+                </text>
+                <Show when={sequence()?.assessment}>
+                  <text flexShrink={0} wrapMode="word">
+                    Criteria:{" "}
+                    {sequence()
+                      ?.assessment?.criteria.map(
+                        (criterion) =>
+                          `${criterion.id} [${criterion.evidenceRefs.join(", ")}] ${criterion.explanation}`,
+                      )
+                      .join("; ")}
+                  </text>
+                  <text flexShrink={0} wrapMode="word">
+                    Failure dispositions:{" "}
+                    {sequence()
+                      ?.assessment?.unresolvedFailures.map(
+                        (failure) =>
+                          `${failure.runId}: ${failure.disposition} - ${failure.explanation}`,
+                      )
+                      .join("; ") || "none"}
+                  </text>
+                </Show>
+              </Show>
+              <Show when={sequence()?.reason}>
+                <text flexShrink={0} fg={tokens.warn} wrapMode="word">
+                  {sequence()?.reason}
+                </text>
+              </Show>
+            </box>
+          </scrollbox>
           <DetailHeading>Tasks</DetailHeading>
           <SelectableList<WorkflowNode>
             each={treeNodes}

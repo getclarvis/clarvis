@@ -83,7 +83,7 @@ export function buildRunLeaderTool(profiles?: readonly LeaderProfileInfo[]): Nam
     description: RUN_LEADER_DESCRIPTION,
     inputSchema: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       properties,
       required: ["title", "prompt"],
     },

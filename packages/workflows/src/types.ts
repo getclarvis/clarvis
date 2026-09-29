@@ -81,6 +81,32 @@ export interface WorkflowRunDeps {
 export type WorkflowSequenceStatus =
   "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
 
+/** A host-admitted evidence item, never a manager-supplied assertion of tool execution. */
+export interface WorkflowEvidence {
+  ref: string;
+  origin: "user" | "tool" | "leader";
+  status: string;
+  summary: string;
+  detail: string;
+  stageId?: string;
+  runId?: string;
+  revision?: number;
+}
+
+/** Explicit semantic judgment, separate from the operational run status. */
+export interface WorkflowAssessment {
+  outcome: "not_assessed" | "sufficient" | "insufficient";
+  decisionRevision: number;
+  criteria: readonly { id: string; evidenceRefs: readonly string[]; explanation: string }[];
+  remainingGaps: readonly string[];
+  unresolvedFailures: readonly {
+    runId: string;
+    disposition: "resolved" | "non_blocking";
+    explanation: string;
+    evidenceRefs: readonly string[];
+  }[];
+}
+
 /** Latest persisted/live checkpoint of a round sequence. */
 export interface WorkflowSequenceState {
   sessionId: string;
@@ -93,6 +119,33 @@ export interface WorkflowSequenceState {
   leadersStarted: number;
   maxTotalLeaders: number;
   reason?: string;
+  control?: "manager";
+  objective?: string;
+  dispatches?: number;
+  maxDispatches?: number;
+  assessment?: WorkflowAssessment;
+  /** Bounded materialized decisions, not a replay journal. */
+  invocations?: readonly WorkflowInvocation[];
+}
+
+/** One admitted stage invocation and its concrete candidate coverage. */
+export interface WorkflowInvocation {
+  id: string;
+  stageId: string;
+  sourceInvocationId?: string;
+  gap: string;
+  fingerprint: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  requested: number;
+  started: number;
+  completed: number;
+  coverage: readonly {
+    ref: string;
+    disposition: "selected" | "skipped" | "deferred" | "covered";
+    reason?: string;
+    replicas?: number;
+    status?: string;
+  }[];
 }
 
 /**
@@ -148,6 +201,20 @@ export interface WorkflowCtx {
   onBudgetExhausted?: () => void;
   /** Publishes the latest round-sequence checkpoint to the owning host. */
   onSequenceState?: (state: WorkflowSequenceState) => void;
+  /** Synchronous canonical checkpoint flush; errors refuse the decision before effects. */
+  flushSequenceState?: () => void;
+  /** Narrow, host-owned evidence index for this manager execution. */
+  evidence?: {
+    list(): readonly WorkflowEvidence[];
+    get(ref: string): WorkflowEvidence | undefined;
+    addLeader(
+      stageId: string,
+      runId: string,
+      status: string,
+      result: unknown,
+      revision: number,
+    ): void;
+  };
   /**
    * Supplies a leader's own steer channel, so its manager can redirect it
    * mid-flight through `agent_steer`.

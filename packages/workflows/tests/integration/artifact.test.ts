@@ -49,6 +49,88 @@ Say what was found.
 `;
 
 describe("loadWorkflow", () => {
+  test("ships an operational authored manager example", () => {
+    const workflow = loadWorkflow(join(import.meta.dir, "../../examples/sufficiency"));
+    expect(workflow.control).toBe("manager");
+    if (workflow.control !== "manager") throw new Error("expected manager example");
+    expect(workflow.stages[0]?.brief).toContain("{{args.question}}");
+  });
+  test("loads a manager workflow and rejects fixed-round mixing or invalid dependencies", () => {
+    const document = `---
+name: probe
+description: Decide whether the answer suffices.
+control: manager
+objective: Answer the question.
+completion:
+  criteria:
+    - id: supported
+      description: The answer has evidence.
+      requires_completed_stages: [inspect]
+stages:
+  - id: inspect
+    type: findings
+    profile: explorer
+    over: once
+    title: Inspect the gap
+    brief: briefs/one.md
+max_dispatches: 2
+---
+Summarize the decision.
+`;
+    const { dir } = write("probe", document);
+    expect(loadWorkflow(dir)).toMatchObject({
+      control: "manager",
+      maxDispatches: 2,
+      stages: [{ id: "inspect" }],
+      rounds: [],
+    });
+    expect(() =>
+      validateWorkflowDocument(
+        document.replace("max_dispatches: 2", "max_dispatches: 2\nrounds: []"),
+        { directory: dir },
+      ),
+    ).toThrow();
+    expect(() =>
+      validateWorkflowDocument(document.replace("[inspect]", "[unknown]"), { directory: dir }),
+    ).toThrow(/unknown stage/u);
+    const dependent = document.replace(
+      "max_dispatches: 2",
+      `  - id: verify
+    type: verdict
+    over: each(inspect.findings)
+    title: Verify
+    brief: briefs/one.md
+    replicas: { min: 2, max: 3 }
+max_dispatches: 2`,
+    );
+    expect(validateWorkflowDocument(dependent, { directory: dir })).toMatchObject({
+      stages: [{ id: "inspect" }, { id: "verify", replicas: { min: 2, max: 3 } }],
+    });
+    expect(() =>
+      validateWorkflowDocument(dependent.replace("inspect.findings", "missing.findings"), {
+        directory: dir,
+      }),
+    ).toThrow(/unknown or cyclic source/u);
+    expect(() =>
+      validateWorkflowDocument(dependent.replace("inspect.findings", "verify.findings"), {
+        directory: dir,
+      }),
+    ).toThrow(/unknown or cyclic source/u);
+    expect(() =>
+      validateWorkflowDocument(dependent.replace("min: 2, max: 3", "min: 4, max: 3"), {
+        directory: dir,
+      }),
+    ).toThrow(/inverted replicas/u);
+    expect(() =>
+      validateWorkflowDocument(
+        dependent.replace(
+          "replicas: { min: 2, max: 3 }",
+          "mutation: true\n    replicas: { min: 1, max: 2 }",
+        ),
+        { directory: dir },
+      ),
+    ).toThrow(/requires replicas 1\/1/u);
+  });
   test("loads frontmatter, resolves the selector and reads the brief off disk", () => {
     const { dir } = write("probe", MINIMAL);
     const workflow = loadWorkflow(dir);

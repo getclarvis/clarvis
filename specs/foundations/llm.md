@@ -166,7 +166,11 @@ gives the reason for the two keys: "spreading one object onto the SDK call would
 constraints. Root unions expose their combined properties and common required fields; root
 combinators and conditionals are omitted from the published schema because some provider APIs reject
 them before a call begins. The complete declared schema remains the authority for local dispatch
-validation before any handler executes. Production:
+validation before any handler executes. `toAiSdkTools` explicitly sets `strict: false`, preserving
+optional fields and open objects instead of allowing a Responses endpoint to require invented
+values. This does not disable local validation. The subscription wire is pinned in
+`packages/llm/tests/integration/provider-request-shape.test.ts` (`pins ChatGPT subscription Responses,
+removes the dummy key, stores no response, and omits its rejected output cap`). Production:
 `packages/llm/src/ai-sdk/request-options.ts` (`providerToolSchema`, `toAiSdkTools`) and
 `packages/tools/src/core.ts` (`dispatch`). Test:
 `packages/llm/tests/unit/ai-sdk-modules.test.ts` (`publishes object-root tool schemas while keeping

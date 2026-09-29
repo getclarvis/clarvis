@@ -460,6 +460,195 @@ test("the persisted tree names an awaiting-Admiral checkpoint and proposed round
   t.renderer.destroy();
 });
 
+test("manager workflow shows awaiting decision and separates sufficient objective from failed execution", async () => {
+  const sequence = {
+    session_id: "wfseq-1",
+    status: "awaiting_manager" as const,
+    revision: 1,
+    leaders_started: 0,
+    max_total_leaders: 2,
+    control: "manager" as const,
+    objective: "Answer with evidence",
+    dispatches: 0,
+    max_dispatches: 2,
+    invocations: [
+      {
+        id: "wfseq-1-inv-1",
+        stageId: "inspect",
+        gap: "check the answer",
+        fingerprint: "a".repeat(64),
+        status: "completed" as const,
+        requested: 2,
+        started: 2,
+        completed: 2,
+        coverage: [
+          {
+            ref: "candidate-A",
+            disposition: "selected" as const,
+            replicas: 2,
+            status: "completed",
+          },
+          { ref: "candidate-B", disposition: "deferred" as const, reason: "needs more data" },
+        ],
+      },
+    ],
+  };
+  const { host, deps } = mount({
+    initialExecutionId: "wf-1",
+    get: async () => detail({ status: "running", nodes: [node()], sequence }),
+  });
+  const t = await openRender((() => WorkflowsHub(host, deps)) as never, { width: 110, height: 30 });
+  try {
+    const frame = await captureUntil(t, "Waiting for manager decision");
+    expect(frame).toContain("Objective: Answer with evidence");
+    expect(frame).toContain("not_assessed");
+    expect(frame).toContain("requested 2, started 2, completed 2");
+    expect(frame).toContain("candidate-A: selected/completed");
+    expect(frame).toContain("candidate-B: deferred (needs more data)");
+  } finally {
+    t.renderer.destroy();
+  }
+
+  const { host: completedHost, deps: completedDeps } = mount({
+    initialExecutionId: "wf-2",
+    get: async () =>
+      detail({
+        execution_id: "wf-2",
+        status: "failed",
+        nodes: [node({ status: "failed" })],
+        sequence: {
+          ...sequence,
+          status: "completed",
+          revision: 2,
+          assessment: {
+            outcome: "sufficient",
+            decisionRevision: 1,
+            criteria: [{ id: "supported", evidenceRefs: ["evidence-1"], explanation: "Grounded" }],
+            remainingGaps: [],
+            unresolvedFailures: [
+              {
+                runId: "leader-1",
+                disposition: "non_blocking",
+                explanation: "Optional check failed",
+                evidenceRefs: [],
+              },
+            ],
+          },
+        },
+      }),
+  });
+  const settled = await openRender((() => WorkflowsHub(completedHost, completedDeps)) as never, {
+    width: 110,
+    height: 30,
+  });
+  try {
+    const frame = await captureUntil(settled, "Objective assessment: sufficient");
+    expect(frame).toContain("execution: failed");
+    expect(frame).toContain("supported [evidence-1] Grounded");
+    expect(frame).toContain("leader-1: non_blocking - Optional check failed");
+  } finally {
+    settled.renderer.destroy();
+  }
+});
+
+test("long manager evidence scrolls independently without hiding task navigation at narrow widths", async () => {
+  const { host, deps, press } = mount({
+    initialExecutionId: "wf-long",
+    get: async () =>
+      detail({
+        sequence: {
+          session_id: "wfseq-1",
+          status: "completed",
+          revision: 4,
+          leaders_started: 1,
+          max_total_leaders: 16,
+          control: "manager",
+          objective: "OBJECTIVE_START " + "Long objective with required validation. ".repeat(30),
+          assessment: {
+            outcome: "sufficient",
+            decisionRevision: 3,
+            criteria: [
+              {
+                id: "delivery",
+                evidenceRefs: ["evidence-1"],
+                explanation: "Verified files and executed checks. ".repeat(100),
+              },
+            ],
+            remainingGaps: [],
+            unresolvedFailures: [],
+          },
+          reason: "CHECKPOINT_END",
+        },
+      }),
+  });
+  const t = await openRender((() => WorkflowsHub(host, deps)) as never, { width: 120, height: 32 });
+  try {
+    const first = await captureUntil(t, "OBJECTIVE_START");
+    expect(first).toContain("Tasks");
+    expect(first).toContain("Coordinator");
+    t.resize(80, 24);
+    await t.renderOnce();
+    let frame = t.captureCharFrame();
+    for (let page = 0; page < 30 && !frame.includes("CHECKPOINT_END"); page++) {
+      press("ctrl+d");
+      await t.renderOnce();
+      frame = t.captureCharFrame();
+      expect(frame).toContain("Tasks");
+      expect(frame).toContain("Coordinator");
+    }
+    expect(frame).toContain("CHECKPOINT_END");
+    expect(frame).not.toContain("OBJECTIVE_START");
+    press("down");
+    press("return");
+    expect(await captureUntil(t, "Workflow result")).toContain("Review authentication");
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
+test("live manager checkpoint supersedes an older persisted assessment", async () => {
+  const live: WorkflowActivity = {
+    root: "wf-1",
+    nodes: new Map(),
+    sequence: {
+      sessionId: "wfseq-1",
+      status: "awaiting_manager",
+      revision: 3,
+      leadersStarted: 1,
+      maxTotalLeaders: 2,
+      control: "manager",
+      objective: "Reassess the answer",
+      dispatches: 1,
+      maxDispatches: 2,
+      reason: "optional check settled",
+    },
+  };
+  const { host, deps } = mount({
+    initialExecutionId: "wf-1",
+    live: () => live,
+    get: async () =>
+      detail({
+        execution_id: "wf-1",
+        status: "running",
+        sequence: {
+          session_id: "wfseq-1",
+          status: "running_round",
+          revision: 2,
+          leaders_started: 1,
+          max_total_leaders: 2,
+        },
+      }),
+  });
+  const t = await openRender((() => WorkflowsHub(host, deps)) as never, { width: 110, height: 30 });
+  try {
+    const frame = await captureUntil(t, "Waiting for manager decision");
+    expect(frame).toContain("Reassess the answer");
+    expect(frame).toContain("optional check settled");
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
 test("the 80-column workflow tree stacks metadata and keeps Back visible", async () => {
   const { host, press, deps } = mount({ rows: [summary({ execution_id: "wf-1" })] });
   const t = await openRender((() => WorkflowsHub(host, deps)) as never, {

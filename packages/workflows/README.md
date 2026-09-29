@@ -34,6 +34,10 @@ predicate counts **refutations**: a rejected refutation threshold means not refu
 Synthesis retains uncertainty and inspects partial writes after failed or stopped implementation.
 Scheduling protects declared file conflicts within a batch, not against unrelated concurrent work.
 The three built-in definitions have an 11,000-character serialized regression ceiling.
+They open a manager checkpoint after preflight, not a compulsory first round. Their criteria ask
+for the requested result, coverage and required validation rather than an obligatory sequence.
+An admitted context ref can support a zero-leader completion only if it actually proves those
+requirements; textual claims do not prove file edits or executed checks.
 
 ## Entry points
 
@@ -51,20 +55,32 @@ canonical owner-scoped host state. The root entry exposes `workflowContextOf`,
 
 In ascending order of how much structure they assume:
 
-| Tool              | Effect                                                              |
-| ----------------- | ------------------------------------------------------------------- |
-| `run_leader`      | starts one ad-hoc leader                                            |
-| `run_work_items`  | starts a whole decomposition, scheduled into internal waves         |
-| `run_round`       | starts the first round of a manager-controlled round sequence       |
-| `workflow_status` | inspects the active or latest sequence without starting work        |
-| `workflow_decide` | explicitly continues its exact proposed round or stops the sequence |
-| `run_workflow`    | reviews, then starts a built-in or operator-authored round sequence |
+| Tool              | Effect                                                                     |
+| ----------------- | -------------------------------------------------------------------------- |
+| `run_leader`      | starts one ad-hoc leader                                                   |
+| `run_work_items`  | starts a whole decomposition, scheduled into internal waves                |
+| `run_round`       | starts the first round of a manager-controlled round sequence              |
+| `workflow_status` | inspects the active or latest sequence without starting work               |
+| `workflow_decide` | continues/stops fixed rounds or completes/dispatches/stops manager control |
+| `run_workflow`    | reviews, then starts fixed rounds or opens an authored manager checkpoint  |
 
 `run_workflow` is **not contributed at all** when the host supplies no definitions, so the model never
 sees a tool whose only argument has no legal value. Clarvis's kernel always supplies the built-in
 `audit`, `implement` and `research` definitions, plus any valid operator overrides. Its
-`explain: true` prints the rounds and what the fan-out costs without running anything — and says
+`explain: true` prints the fixed rounds or manager criteria/stages without running anything — and says
 plainly that an `each` round's cost is not knowable in advance rather than inventing a number.
+
+For `control: manager`, the definition declares `once`, `each(<stage>.<field>)`, or
+`all(<stage>.<field>)` stages in any textual order, with optional `replicas: { min, max }`
+(default 1/1, ceiling 8) and fixed profile/accept rules. `workflow_status` pages up to 16
+current candidates at a time; `item_ref` retrieves one candidate. A `workflow_decide` dispatch
+names the stage, gap, optional source invocation (otherwise derived from the current revision), and a disposition for every candidate:
+`items` with replica counts, `skipped` with reasons, `deferred` with gaps, or `covered` with a
+completed prior invocation. The tool reserves the full requested leader count before starting
+waves; dependency failures block dependents. Every invocation returns to the manager checkpoint,
+including the last one. A repeat is another explicit decision with a new gap, never a counter-driven
+continuation. The checkpoint records requested/started/completed leaders and per-ref coverage;
+the manager still assesses sufficiency separately from operational status.
 
 ## Scheduling is derived from data, not re-decided by the model
 
@@ -165,13 +181,24 @@ complete partial catalogue whose contents depend on directory order.
 
 Clarvis ships `audit`, `implement` and `research` as TypeScript `WorkflowDefinition` values under
 `src/builtin-workflows/`; it does not copy their source into a user's configuration directories.
+Each uses `control: manager`, four selectable stages and at most eight dispatches. Audit offers
+`discover`, `review`, optional `verify` with 2–8 replicas and `gaps`; research offers `frame`,
+`investigate`, optional `verify` with 2–8 replicas and `critic`; implement offers `plan`, mutating
+`build` with one replica, `review` sourced from build findings and optional `verify` with 2–8
+replicas. Verification considers the manager-selected findings, not only a leader's
+`needs_verification` suggestion. Its threshold of two refutations does not turn an unmet threshold
+into confirmation. The manager may complete from sufficient evidence, dispatch a focused gap or
+stop with limitations; none of the stages is started merely because it exists. The preflight
+displays the ranges and the actual cost depends on selected items. Deterministic tests cover the
+runtime decisions; model judgment on a live provider has not been qualified by those tests.
 `resolveWorkflowDefinitions` starts with that catalogue and replaces a definition only when a valid
 operator-authored workflow has the same name.
 
 An optional `<root>/<name>/WORKFLOW.md` mirrors `SKILL.md` exactly (`src/artifact.ts`): YAML
 frontmatter validated by zod, plus a Markdown body that is the synthesis brief. The kernel loads the
 global root first and the workspace root second, so precedence is `workspace > global > built-in`.
-An override replaces the complete definition; it is not merged round by round. A malformed document
+An override replaces the complete definition; it is not merged with manager fields. An authored
+fixed override keeps its fixed preflight and rounds. A malformed document
 is diagnosed and contributes no override, leaving a same-named built-in available.
 
 `validateWorkflowDocument(raw, { directory })` compiles prospective `WORKFLOW.md` bytes through the
@@ -179,6 +206,19 @@ same bounds, schema, name, selector, acceptance, repetition and brief rules as t
 The referenced briefs must already exist below `directory`. Configuration consumers use this
 validation when loading an authored workflow; ordinary file tools can write the document before
 it is validated.
+
+An authored document may opt into `control: manager` with `objective`, 1–16
+`completion.criteria` (unique `id`, `description`, optional `requires_completed_stages`),
+1–16 `stages` with `over: once`, `each(...)` or `all(...)`, and `max_dispatches` from 1 to 16. Omission of `control`
+keeps fixed rounds/repeat semantics. Manager documents cannot mix in `rounds` or `repeat`;
+they open at `awaiting_manager` without a leader after the usual human preflight.
+`workflow_status` lists admitted context/tool/leader evidence refs and pages eligible candidates;
+`evidence_ref` and `item_ref` retrieve bounded detail. `workflow_decide` accepts `complete` with an
+evidence-backed assessment, `dispatch` with a declared `stage_id`, bounded `gap`, source invocation
+and a disposition for every candidate, or `stop` with `remaining_gaps`. A completed objective is
+distinct from failed optional execution.
+The [authored example](examples/sufficiency/WORKFLOW.md) can be copied into a workflow root
+under the directory name `sufficiency`; it is not a built-in.
 
 The ordinary file tools can create a workflow, its brief and a separate skill launcher;
 an ordinary manager turn loads and executes them under the workflow's own preflight. Workflows are
@@ -465,3 +505,23 @@ exports. Bun tests and the development typecheck select source without a prior b
 clears the `bun` condition and emits its own JavaScript and declarations under `dist`.
 See [package architecture](../../specs/cross-cutting/package-architecture.md) for ownership and
 [build and CI](../../specs/cross-cutting/build-and-ci.md) for resolution and emit checks.
+
+## Recoverable manager calls
+
+Opening a manager sequence returns its checkpoint, criteria and eligible candidate refs. Invalid
+inspection refs and refused manager decisions return the current checkpoint for correction without
+starting work or consuming the revision. Status accepts omitted, null or blank selectors for an
+overview. Workflow tools tolerate extra fields while validating known arguments and authority.
+Completion advertises `criteria` records with `id`, `evidence_refs` and `explanation`; omitted gap
+and failure arrays mean empty, so known failures still require explicit dispositions. Stop records
+its reason as the remaining gap when no list is supplied. Omitted dispatch replicas use the stage
+minimum. Built-in read-only stages allow 1–8 replicas, verification 2–8, and implementation writers
+exactly one. The Admiral chooses the useful stages, items and replica counts within those ranges.
+Multiple discovery results receive separate work-item id namespaces, including their dependencies,
+so independent planners may reuse local ids. Unreferenced duplicate local ids are disambiguated by
+item position; referenced duplicates remain invalid because their dependencies are ambiguous.
+This does not waive dependencies or allow conflicting writers to run together.
+While a manager stage runs, overview calls wait up to 30 seconds for a checkpoint; `wait_ms: 0`
+returns immediately. Detail and page requests remain immediate. New checkpoints count as progress
+once, and cancellation releases the wait. Invocation counts finalize at settlement; use supervision
+and evidence for live activity. Dispatch candidates appear only when awaiting a manager decision.

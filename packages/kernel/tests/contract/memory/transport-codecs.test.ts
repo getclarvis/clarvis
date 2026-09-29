@@ -632,6 +632,68 @@ describe("remote run codec", () => {
     expect(decodeRunEvent({ ...event, revision: -1 })).toBeNull();
     expect(decodeRunEvent({ ...event, next_pass: 0.5 })).toBeNull();
     expect(decodeRunEvent({ ...event, leaders_started: 33 })).toBeNull();
+    const withInvocation = {
+      ...event,
+      invocations: [
+        {
+          id: "wfseq-1-inv-1",
+          stageId: "verify",
+          gap: "check",
+          fingerprint: "a".repeat(64),
+          status: "completed",
+          requested: 2,
+          started: 2,
+          completed: 2,
+          coverage: [
+            { ref: "candidate-A", disposition: "selected", replicas: 2, status: "completed" },
+          ],
+        },
+      ],
+    } as const;
+    expect(decodeRunEvent(withInvocation)).toEqual(withInvocation);
+    expect(
+      decodeRunEvent({
+        ...withInvocation,
+        invocations: [
+          { ...withInvocation.invocations[0], coverage: [{ ref: "x", disposition: "invented" }] },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("round-trips a manager assessment without conflating it with execution status", () => {
+    const event = {
+      type: "workflow_sequence_state",
+      at: 17,
+      run_id: "manager",
+      session_id: "wfseq-2",
+      status: "completed",
+      revision: 3,
+      leaders_started: 1,
+      max_total_leaders: 32,
+      control: "manager",
+      objective: "Answer",
+      dispatches: 1,
+      max_dispatches: 2,
+      assessment: {
+        outcome: "sufficient",
+        decisionRevision: 2,
+        criteria: [{ id: "answer", evidenceRefs: ["evidence-1"], explanation: "Supported" }],
+        remainingGaps: [],
+        unresolvedFailures: [
+          {
+            runId: "leader-1",
+            disposition: "non_blocking",
+            explanation: "Optional failure",
+            evidenceRefs: [],
+          },
+        ],
+      },
+    } as const;
+    expect(decodeRunEvent(event)).toEqual(event);
+    expect(
+      decodeRunEvent({ ...event, assessment: { ...event.assessment, outcome: "unverified" } }),
+    ).toBeNull();
   });
 
   it("settles the result independently and keeps accepting events until stream_end", async () => {

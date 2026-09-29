@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { setImmediate } from "node:timers";
 import { globalPaths, ownerSegment, writeFileAtomicSync } from "@clarvis/paths";
 import { kernelError } from "../core/errors.ts";
+import type { WorkflowInvocation, WorkflowObjectiveAssessment } from "@clarvis/protocol";
 
 /** One node of a workflow tree as persisted: the manager (root) or a leader. */
 export interface WorkflowEdge {
@@ -38,6 +39,12 @@ export interface WorkflowSequenceRecord {
   leaders_started: number;
   max_total_leaders: number;
   reason?: string;
+  control?: "manager";
+  objective?: string;
+  dispatches?: number;
+  max_dispatches?: number;
+  assessment?: WorkflowObjectiveAssessment;
+  invocations?: readonly WorkflowInvocation[];
 }
 
 /**
@@ -233,6 +240,12 @@ export function boundedWorkflowSequence(sequence: WorkflowSequenceRecord): Workf
             "sequence reason",
           ),
         }),
+    ...(sequence.control === undefined ? {} : { control: sequence.control }),
+    ...(sequence.objective === undefined ? {} : { objective: sequence.objective }),
+    ...(sequence.dispatches === undefined ? {} : { dispatches: sequence.dispatches }),
+    ...(sequence.max_dispatches === undefined ? {} : { max_dispatches: sequence.max_dispatches }),
+    ...(sequence.assessment === undefined ? {} : { assessment: sequence.assessment }),
+    ...(sequence.invocations === undefined ? {} : { invocations: sequence.invocations }),
   };
 }
 
@@ -281,6 +294,44 @@ function recordToSummary(record: WorkflowRecord): WorkflowRecordSummary {
 }
 
 /** Narrow a persisted checkpoint before it reaches the bounded projection. */
+function isWorkflowInvocations(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > 16) return false;
+  return (value as unknown[]).every((raw) => {
+    if (typeof raw !== "object" || raw === null) return false;
+    const invocation = raw as Record<string, unknown>;
+    const coverage = invocation.coverage;
+    return (
+      typeof invocation.id === "string" &&
+      typeof invocation.stageId === "string" &&
+      typeof invocation.fingerprint === "string" &&
+      typeof invocation.gap === "string" &&
+      (invocation.sourceInvocationId === undefined ||
+        typeof invocation.sourceInvocationId === "string") &&
+      typeof invocation.status === "string" &&
+      ["running", "completed", "failed", "cancelled"].includes(invocation.status) &&
+      Number.isInteger(invocation.requested) &&
+      Number.isInteger(invocation.started) &&
+      Number.isInteger(invocation.completed) &&
+      Array.isArray(coverage) &&
+      coverage.length <= 64 &&
+      (coverage as unknown[]).every((rawEntry) => {
+        if (typeof rawEntry !== "object" || rawEntry === null) return false;
+        const entry = rawEntry as Record<string, unknown>;
+        return (
+          typeof entry.ref === "string" &&
+          typeof entry.disposition === "string" &&
+          ["selected", "skipped", "deferred", "covered"].includes(entry.disposition) &&
+          (entry.reason === undefined || typeof entry.reason === "string") &&
+          (entry.status === undefined || typeof entry.status === "string") &&
+          (entry.replicas === undefined ||
+            (Number.isInteger(entry.replicas) && Number(entry.replicas) >= 1))
+        );
+      })
+    );
+  });
+}
+
+/** Narrow a persisted checkpoint before it reaches the bounded projection. */
 function isWorkflowSequenceRecord(value: unknown): value is WorkflowSequenceRecord {
   const sequence = value as WorkflowSequenceRecord | null;
   const optionalString = (field: unknown): boolean =>
@@ -309,7 +360,19 @@ function isWorkflowSequenceRecord(value: unknown): value is WorkflowSequenceReco
     Number.isInteger(sequence.max_total_leaders) &&
     sequence.max_total_leaders >= 1 &&
     sequence.leaders_started <= sequence.max_total_leaders &&
-    optionalString(sequence.reason)
+    optionalString(sequence.reason) &&
+    (sequence.control === undefined || sequence.control === "manager") &&
+    optionalString(sequence.objective) &&
+    optionalIndex(sequence.dispatches) &&
+    optionalIndex(sequence.max_dispatches) &&
+    (sequence.assessment === undefined ||
+      (typeof sequence.assessment === "object" &&
+        sequence.assessment !== null &&
+        ["not_assessed", "sufficient", "insufficient"].includes(sequence.assessment.outcome) &&
+        Array.isArray(sequence.assessment.criteria) &&
+        Array.isArray(sequence.assessment.remainingGaps) &&
+        Array.isArray(sequence.assessment.unresolvedFailures))) &&
+    (sequence.invocations === undefined || isWorkflowInvocations(sequence.invocations))
   );
 }
 

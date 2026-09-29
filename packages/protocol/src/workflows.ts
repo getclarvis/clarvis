@@ -22,6 +22,26 @@ export type WorkflowSequenceStatus =
   "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
 
 /** Latest durable checkpoint for a round sequence. */
+export interface WorkflowInvocation {
+  id: string;
+  stageId: string;
+  sourceInvocationId?: string;
+  gap: string;
+  fingerprint: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  requested: number;
+  started: number;
+  completed: number;
+  coverage: readonly {
+    ref: string;
+    disposition: "selected" | "skipped" | "deferred" | "covered";
+    reason?: string;
+    replicas?: number;
+    status?: string;
+  }[];
+}
+
+/** Latest durable checkpoint for a round sequence. */
 export interface WorkflowSequence {
   session_id: string;
   status: WorkflowSequenceStatus;
@@ -33,6 +53,26 @@ export interface WorkflowSequence {
   leaders_started: number;
   max_total_leaders: number;
   reason?: string;
+  control?: "manager";
+  objective?: string;
+  dispatches?: number;
+  max_dispatches?: number;
+  assessment?: WorkflowObjectiveAssessment;
+  invocations?: readonly WorkflowInvocation[];
+}
+
+/** Manager judgment, independent of the aggregate operational status. */
+export interface WorkflowObjectiveAssessment {
+  outcome: "not_assessed" | "sufficient" | "insufficient";
+  decisionRevision: number;
+  criteria: readonly { id: string; evidenceRefs: readonly string[]; explanation: string }[];
+  remainingGaps: readonly string[];
+  unresolvedFailures: readonly {
+    runId: string;
+    disposition: "resolved" | "non_blocking";
+    explanation: string;
+    evidenceRefs: readonly string[];
+  }[];
 }
 
 /**

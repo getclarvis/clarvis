@@ -71,6 +71,73 @@ test("projects an awaiting-Admiral checkpoint even when no leader is currently l
   expect(activity?.nodes.get("leader-5")?.status).toBe("running");
 });
 
+test("keeps objective assessment separate from a failed execution on live projection", () => {
+  const activity = reduceWorkflowProjection(null, {
+    type: "workflow_sequence_state",
+    at: 2,
+    run_id: "mgr",
+    session_id: "wfseq-1",
+    status: "completed",
+    revision: 3,
+    control: "manager",
+    objective: "Answer",
+    dispatches: 1,
+    max_dispatches: 2,
+    leaders_started: 1,
+    max_total_leaders: 32,
+    assessment: {
+      outcome: "sufficient",
+      decisionRevision: 2,
+      criteria: [{ id: "answer", evidenceRefs: ["evidence-1"], explanation: "Supported" }],
+      remainingGaps: [],
+      unresolvedFailures: [
+        {
+          runId: "leader-1",
+          disposition: "non_blocking",
+          explanation: "Optional",
+          evidenceRefs: [],
+        },
+      ],
+    },
+  });
+  expect(activity?.sequence?.assessment?.outcome).toBe("sufficient");
+  expect(activity?.sequence?.assessment?.unresolvedFailures[0]?.runId).toBe("leader-1");
+  expect(activity?.nodes.get("mgr")?.status).toBe("running");
+});
+
+test("projects bounded invocation coverage from a manager checkpoint", () => {
+  const activity = reduceWorkflowProjection(null, {
+    type: "workflow_sequence_state",
+    at: 2,
+    run_id: "mgr",
+    session_id: "wfseq-1",
+    status: "awaiting_manager",
+    revision: 3,
+    leaders_started: 2,
+    max_total_leaders: 32,
+    control: "manager",
+    invocations: [
+      {
+        id: "wfseq-1-inv-1",
+        stageId: "verify",
+        gap: "check",
+        fingerprint: "a".repeat(64),
+        status: "completed",
+        requested: 2,
+        started: 2,
+        completed: 2,
+        coverage: [
+          { ref: "candidate-1", disposition: "selected", replicas: 2, status: "completed" },
+        ],
+      },
+    ],
+  });
+  expect(activity?.sequence?.invocations?.[0]).toMatchObject({
+    requested: 2,
+    coverage: [{ ref: "candidate-1", status: "completed" }],
+  });
+});
+
 test("keeps authored round context and a terminal failure reason on the live leader", () => {
   let activity = reduceWorkflowProjection(null, {
     ...started("leader-1", "mgr", "verify"),

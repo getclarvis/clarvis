@@ -21,6 +21,7 @@ import {
   type LeaderProfileInfo,
   type LeaderRequestAssembler,
   type WorkflowCtx,
+  type WorkflowEvidence,
   type WorkflowRunDeps,
 } from "@clarvis/workflows";
 import { loadWorkflows } from "@clarvis/workflows/artifact";
@@ -323,6 +324,18 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
     store.save(record);
 
     const edgesByRunId = new Map(record.edges.map((edge) => [edge.run_id, edge]));
+    const evidenceItems: WorkflowEvidence[] = [];
+    const addEvidence = (entry: Omit<WorkflowEvidence, "ref">): void => {
+      evidenceItems.push({ ...entry, ref: `evidence-${String(evidenceItems.length + 1)}` });
+    };
+    const currentUser = [...params.messages].reverse().find((message) => message.role === "user");
+    if (currentUser !== undefined) {
+      const detail =
+        typeof currentUser.content === "string"
+          ? currentUser.content
+          : JSON.stringify(currentUser.content);
+      addEvidence({ origin: "user", status: "provided", summary: detail.slice(0, 512), detail });
+    }
     const persistSnapshot = (): void => {
       store.save(record);
     };
@@ -343,6 +356,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
       record.updated_at = Date.now();
       saves.request();
     };
+    let pendingManagerSequence: WorkflowSequenceRecord | undefined;
 
     const observe = (event: RunEvent): void => {
       if (event.type === "workflow_run_started") {
@@ -369,7 +383,28 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
         });
         record.edges.push(edge);
         edgesByRunId.set(edge.run_id, edge);
+        addEvidence({
+          origin: "leader",
+          status: "running",
+          summary: `stage ${edge.round_id ?? "ad-hoc"} running`,
+          detail: "",
+          runId: edge.run_id,
+          ...(edge.round_id === undefined ? {} : { stageId: edge.round_id }),
+        });
         persist();
+      } else if (
+        event.type === "tool_call" &&
+        event.subagent_id === undefined &&
+        event.tool !== "workflow_status" &&
+        event.tool !== "workflow_decide" &&
+        event.result !== undefined
+      ) {
+        addEvidence({
+          origin: "tool",
+          status: event.ok ? "completed" : "failed",
+          summary: `${event.tool}: ${event.result.slice(0, 400)}`,
+          detail: event.result,
+        });
       } else if (event.type === "workflow_title_updated") {
         record.title = truncateWorkflowText(event.title, WORKFLOW_MAX_TITLE_BYTES, "title");
         const root = edgesByRunId.get(managerRunId);
@@ -565,15 +600,60 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
               leaders_started: state.leadersStarted,
               max_total_leaders: state.maxTotalLeaders,
               ...(state.reason === undefined ? {} : { reason: state.reason }),
+              ...(state.control === undefined ? {} : { control: state.control }),
+              ...(state.objective === undefined ? {} : { objective: state.objective }),
+              ...(state.dispatches === undefined ? {} : { dispatches: state.dispatches }),
+              ...(state.maxDispatches === undefined ? {} : { max_dispatches: state.maxDispatches }),
+              ...(state.assessment === undefined ? {} : { assessment: state.assessment }),
+              ...(state.invocations === undefined ? {} : { invocations: state.invocations }),
             });
             record.sequence = sequence;
             persist();
-            context.emit({
-              type: "workflow_sequence_state",
-              at: Date.now(),
-              run_id: managerRunId,
-              ...sequence,
-            });
+            if (sequence.control === "manager") pendingManagerSequence = sequence;
+            else
+              context.emit({
+                type: "workflow_sequence_state",
+                at: Date.now(),
+                run_id: managerRunId,
+                ...sequence,
+              });
+          },
+          flushSequenceState: () => {
+            saves.flush();
+            if (pendingManagerSequence !== undefined) {
+              context.emit({
+                type: "workflow_sequence_state",
+                at: Date.now(),
+                run_id: managerRunId,
+                ...pendingManagerSequence,
+              });
+              pendingManagerSequence = undefined;
+            }
+          },
+          evidence: {
+            list: () => evidenceItems,
+            get: (ref) => evidenceItems.find((item) => item.ref === ref),
+            addLeader: (stageId, runId, status, result, revision) => {
+              const item = evidenceItems.find(
+                (entry) => entry.runId === runId && entry.origin === "leader",
+              );
+              const detail = typeof result === "string" ? result : (JSON.stringify(result) ?? "");
+              if (item !== undefined) {
+                item.status = status;
+                item.detail = detail;
+                item.summary = `stage ${stageId}: ${status}: ${detail.slice(0, 400)}`;
+                item.revision = revision;
+              } else
+                addEvidence({
+                  origin: "leader",
+                  status,
+                  summary: `stage ${stageId}: ${status}`,
+                  detail,
+                  stageId,
+                  runId,
+                  revision,
+                });
+            },
           },
           ...(prepared !== undefined
             ? { leaderProfiles: prepared.leaderProfiles }
@@ -730,6 +810,12 @@ function terminalWorkflowSequence(
     leaders_started: sequence.leaders_started,
     max_total_leaders: sequence.max_total_leaders,
     reason,
+    ...(sequence.control === undefined ? {} : { control: sequence.control }),
+    ...(sequence.objective === undefined ? {} : { objective: sequence.objective }),
+    ...(sequence.dispatches === undefined ? {} : { dispatches: sequence.dispatches }),
+    ...(sequence.max_dispatches === undefined ? {} : { max_dispatches: sequence.max_dispatches }),
+    ...(sequence.assessment === undefined ? {} : { assessment: sequence.assessment }),
+    ...(sequence.invocations === undefined ? {} : { invocations: sequence.invocations }),
   });
 }
 

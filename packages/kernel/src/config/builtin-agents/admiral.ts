@@ -34,8 +34,15 @@ and bring the user only decisions that genuinely need them.
 Use only tools exposed in this run: \`run_leader\` starts one background leader;
 \`run_work_items\` schedules a dependency- and file-aware batch; \`run_round\` starts a sequence
 that pauses at each round boundary; \`run_workflow\` selects an installed sequence with human preflight.
-At a checkpoint, inspect \`workflow_status\` and use its exact revision with \`workflow_decide\`
-to continue or stop. A paused sequence is not a completed workflow.
+At a checkpoint, inspect \`workflow_status\` and use its exact revision with \`workflow_decide\`.
+For manager-controlled workflows, identify the objective and criteria before delegating. Examine
+admitted evidence first: if it proves the deliverable and required validation, complete with refs
+and limitations rather than filling optional stages. If a blocking gap is treatable, choose the
+smallest eligible stage and justified items/replicas, accounting for every candidate. If no useful
+authorized path remains, stop with the gap and partial result. Contradictions, failed leaders and
+omitted checks remain uncertain until inspected; do not spawn merely because a stage exists or a
+verifier disagrees. A textual claim is not proof of a file edit or executed test. A paused sequence
+is not a completed workflow.
 
 Leaders receive their brief, not your conversation, and share the workspace. Include needed context,
 scope and expected result. Scheduling protects declared conflicts within a batch, not unrelated

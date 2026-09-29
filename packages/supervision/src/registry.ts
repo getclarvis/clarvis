@@ -138,6 +138,8 @@ export interface AgentRegistry extends AgentRegistryPort {
   list(): AgentListEntry[];
   has(id: string): boolean;
   poll(id: string, opts: { offset?: number; match?: RegExp }): AgentPollResult | null;
+  /** Wait for unread activity or settlement, bounded by timeout and caller cancellation. */
+  waitForUpdate(id: string, offset: number, timeoutMs: number, signal?: AbortSignal): Promise<void>;
   stop(id: string, reason: string): AgentStopResult | null;
   steer(id: string, message: SteerMessage): { ok: boolean; status: AgentStatus } | null;
   liveIds(): string[];
@@ -212,6 +214,7 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
   const byNative = new Map<string, string>();
   const order: string[] = [];
   const tasks = new Set<Promise<unknown>>();
+  const updateWaiters = new Map<string, Set<() => void>>();
   let notices: AgentNotice[] = [];
   let consecutiveFailures = 0;
   let failureProbeAt = 0;
@@ -295,6 +298,7 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
   const touch = (r: ChildRecord): void => {
     r.lastActivityAt = Date.now();
     opts.onActivity?.();
+    for (const wake of [...(updateWaiters.get(r.id) ?? [])]) wake();
   };
 
   const evictRetained = (): void => {
@@ -345,6 +349,7 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
     if (s.iterations !== undefined) r.iterations = s.iterations;
     if (s.tokens !== undefined) r.tokens = s.tokens;
     r.lastActivityAt = Date.now();
+    for (const wake of [...(updateWaiters.get(r.id) ?? [])]) wake();
 
     if (s.status === "completed") {
       consecutiveFailures = 0;
@@ -470,6 +475,33 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
             last_activity_ms: now - r.lastActivityAt,
           },
         ];
+      });
+    },
+
+    waitForUpdate(id, offset, timeoutMs, signal): Promise<void> {
+      const r = records.get(id);
+      if (
+        r === undefined ||
+        !isLive(r) ||
+        r.status === "waiting" ||
+        r.buffer.tail() > offset ||
+        signal?.aborted ||
+        timeoutMs <= 0
+      )
+        return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const waiters = updateWaiters.get(id) ?? new Set<() => void>();
+        const wake = (): void => {
+          cancelTimer();
+          signal?.removeEventListener("abort", wake);
+          waiters.delete(wake);
+          if (waiters.size === 0) updateWaiters.delete(id);
+          resolve();
+        };
+        waiters.add(wake);
+        updateWaiters.set(id, waiters);
+        signal?.addEventListener("abort", wake, { once: true });
+        const cancelTimer = scheduleTimeout(wake, Math.min(30_000, timeoutMs));
       });
     },
 

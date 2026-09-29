@@ -649,3 +649,7 @@ exports. Bun tests and the development typecheck select source without a prior b
 clears the `bun` condition and emits its own JavaScript and declarations under `dist`.
 See [package architecture](../../specs/cross-cutting/package-architecture.md) for ownership and
 [build and CI](../../specs/cross-cutting/build-and-ci.md) for resolution and emit checks.
+
+Caught-up `agent_poll` calls wait up to 30 seconds for child activity or settlement and can request
+`wait_ms: 0` for immediate inspection. Fresh activity counts as progress once; rereading a page does
+not. Registry waits release timers/listeners on activity, settlement, questions and cancellation.

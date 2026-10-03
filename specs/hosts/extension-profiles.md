@@ -255,9 +255,10 @@ catalog. Production: `createInProcessKernel` in
 [kernel.ts](../../packages/kernel/src/kernel.ts) and `acquireExtensionProfileRunLease` in
 [file-kernel.ts](../../packages/kernel/src/file-kernel.ts). Test:
 [run-lease.test.ts](../../packages/kernel/tests/unit/run-lease.test.ts) pins the `done`/`closed`
-ordering; the agent-authored skill fixture in
-[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
-and the isolated PTY authoring journey cover discovery.
+ordering; `observes initially absent skill roots and coalesces their creation into one generation`
+and `observes a newly created empty directory before its manifest arrives` in
+[extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts)
+cover subsequent discovery.
 
 The configuration document fixture demonstrates exact plugin versus standalone skill scopes with a
 nonempty definition. File authoring does not select that definition: activation still uses the
@@ -281,7 +282,7 @@ No state silently substitutes `builtin:default`.
 transition deliberately recomposes the selected trust-dependent contribution set. Each active
 plugin digest covers its resolved manifest (including MCP/hook companion semantics), bounded agent
 files, packaged skill manifests, install record, resolved source revision, and every directly
-referenced package-local MCP, hook, or capability process file's content, size, executable mode, and
+referenced package-local MCP or hook process file's content, size, executable mode, and
 relative path. Packaged
 skill resources are hashed as streamed raw bytes by `hashBoundedFile`, capped at 8 MiB per file and
 32 MiB aggregate across the plugin; the canonical identity records relative path, digest, byte
@@ -296,24 +297,26 @@ MCP and agent projections reuse those pinned parsed loadables and perform only a
 check. Skill roots are projected from the pinned parse without another filesystem pass. The file
 kernel supplies them through `SkillRootSnapshotProvider`; `snapshotSkills` consumes those roots while
 run dependencies are constructed, materializes catalog metadata and bodies, and records the initial
-resource-path allow-list. An idle trust recomposition is the only event that publishes a replacement
-root set to that provider. Run admission then acquires only its in-memory lease: it performs no skill
+resource snapshot. Idle trust recomposition and validated standalone refresh publish replacement
+root sets to that provider. Run admission then acquires only its in-memory lease: it performs no skill
 discovery, filesystem traversal, or hashing.
 
 After the registry is captured, `createSkillCatalogMonitor.observeCatalog` arms `watchFile` polling on
 every admitted identity file: manifest, selected sidecar, and resources. Before the capture becomes
 visible, the manager's `verifySkillCatalog` re-reads the bounded identities and compares them with the pinned
-digests. A mismatch in that interval uses the same memory latch and `onSkillDrift` notice as a later
-watch callback; it withholds only the affected skill and does not fail dependency construction. The
-ongoing maintenance is asynchronous and outside every run. Its callback does not recompute an
-Extension Profile, fail the kernel, or reject work. `snapshotSkills` immediately filters a latched skill
-from catalog/body access and refuses its resources. Code relays the notice through
+digests. A plugin mismatch uses the same memory latch and `onSkillDrift` notice as a later plugin
+watch callback; it withholds only the affected plugin skill and does not fail dependency construction.
+`snapshotSkills` filters that latched plugin skill from catalog/body access and refuses its resources.
+Code relays the notice through
 `WorkspaceClientManager.subscribeExtensionProfileDrift` and renders a transient warning outside transcript
-history. The next run continues with every unaffected skill. A reconnect is the explicit operation
-that captures the changed version, while an idle trust transition atomically replaces the catalog
-with the new trust-dependent roots. Package-local executable files use the same asynchronous model:
-`observeRuntimeFiles` withdraws the plugin's MCP/hook/capability projections through
-`runtimeAvailable`, without a run-admission or capability-location rehash. Explicitly local
+history. The next run continues with every unaffected skill. Standalone watcher changes instead queue
+a coalesced refresh without withdrawing the captured execution revision or sending a plugin drift
+notice. After catalog users settle, `flushSkillRefresh` publishes a validated replacement; a failed
+replacement retains the prior catalog and monitors. Reconnect captures changed plugin content, while
+an idle trust transition atomically replaces the catalog with new trust-dependent roots.
+Package-local executable files use the same asynchronous withdrawal model:
+`observeRuntimeFiles` withdraws the plugin's MCP/hook projections through
+`runtimeAvailable`, without a run-admission rehash. Explicitly local
 declarations that are absent or do not resolve to a regular file are rejected during pin;
 watchers bind the declaration path and compare inode/device identity as well as metadata so symlink
 retargeting cannot preserve availability. Selected standalone skill
@@ -330,7 +333,9 @@ retain the existing withdrawal boundary. Production: `standaloneCatalog`, `pinne
 `packages/kernel/src/extension-profiles/skill-catalog-monitor.ts`; `skillSurface`,
 `verifyPinnedSkillCatalog`, and `pinnedSkillRoots` in
 `packages/kernel/src/plugins/plugin-contributions.ts`; `snapshotSkills` in
-`packages/loop/src/runtime/build-run-deps.ts`. Test: asynchronous withdrawal in
+`packages/loop/src/runtime/build-run-deps.ts`. Test: `refreshes a drifted standalone skill without
+withdrawing the captured execution revision`, `refreshes standalone skills without invoking the
+obsolete withdrawal notice`, and plugin asynchronous withdrawal in
 `packages/kernel/tests/integration/extension-profile-manager.test.ts`, end-to-end non-blocking admission in
 `packages/kernel/tests/integration/file-kernel.test.ts`, and exact provider filtering and idle trust
 replacement in
@@ -471,8 +476,8 @@ falls back to builtin.
 ### INV-317 — Each execution retains one immutable resolved snapshot
 
 General definition/selection changes use explicit recomposition; a stale preview cannot authorize
-different bytes. Standalone authorship and its host-prepared new-skill membership use automatic idle
-generations. Existing runs keep their captured revision. Run admission is deliberately
+different bytes. Standalone authorship uses automatic idle generations without changing a custom
+definition's selected membership. Existing runs keep their captured revision. Run admission is deliberately
 independent of extension filesystem size: it does not discover, stat, or hash skills. Only atomically
 captured plugin skill surfaces and exact builtin/custom standalone includes enter the one registry
 owned by the dependencies; catalog bodies are materialized there, and resource names are constrained
@@ -500,9 +505,9 @@ Standalone skills written through ordinary file tools are discovered at the next
   and preview fingerprint comparison in `packages/kernel/src`; `hashBoundedFile` and the two
   `MAX_SKILL_RESOURCE_*` snapshot limits in `packages/skills/src`.
 - **Test:** the stale-preview, global-precedence, contribution-fingerprint, standalone-resource
-  withdrawal, and trust-transition
+  refresh, and trust-transition
   cases in `packages/kernel/tests/integration/extension-profile-manager.test.ts`, including process-file
-  fingerprint drift; the MCP/hook/capability process-file drift cases in
+  fingerprint drift; the MCP/hook process-file drift cases in
   `packages/kernel/tests/integration/plugin-contributions.test.ts`, including invalid-sibling and
   aggregate-resource withholding; standalone aggregate-resource withholding and builtin exact-root
   filtering in `extension-profile-manager.test.ts`;

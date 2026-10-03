@@ -300,6 +300,19 @@ and rejects older candidate formats. Production: `packages/code/src/adapters/sou
 `packages/code/tests/integration/candidate-install.test.ts` and
 `tooling/tests/architecture/distribution-workflows.test.ts`.
 
+Ordinary developer setup, global source `setup`, and candidate installation prepare the selected
+checkout with frozen dependencies followed by `build:packages`, before publishing system docs or
+activating the launcher. This generates declarations, native Sandbox assets and the tool-worker
+integrity manifest. Linux source builds require `cc` and `/usr/bin/bwrap`; macOS uses the system
+Seatbelt executable. Build success and the CLI version check do not prove that OS policy permits
+native execution. Candidate preparation failure removes its new checkout and leaves the prior
+launcher and published documentation intact. Production:
+`packages/code/tooling/development-install.ts` (`prepareSourceCheckout`, `main`),
+`packages/code/tooling/candidate-install.ts` (`installCandidate`), and
+`packages/code/tooling/setup.ts` (`main`). Test:
+`packages/code/tests/integration/candidate-install.test.ts`
+(`candidate installation prepares assets before activation and preserves the previous install on failure`).
+
 ## 5. Invariants
 
 **DIST-1.** Root `package.json` is the sole product-version authority. Both installer defaults must

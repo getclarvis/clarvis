@@ -49,7 +49,10 @@ do not establish GitHub App permissions or successful public publication.
 The signed RC tag triggers `candidate.yml`, which checks the source identity and publishes a
 source prerelease with `source-candidate.json`. Use `./dev-install.sh --candidate` for the newest
 published RC among the latest 100 source releases, or supply an exact RC tag. This installs an
-isolated source checkout using the candidate's pinned Bun. Git must be available. Candidate
+isolated source checkout using the candidate's pinned Bun. Git must be available; source setup also
+builds package declarations and native/worker assets before activation. Linux requires `cc` and
+`/usr/bin/bwrap`; macOS uses the system Seatbelt executable. A build failure preserves the prior
+launcher and system documentation and removes the incomplete candidate checkout. Candidate
 checkouts are retained; reinstall selects a newer candidate explicitly. The root version remains
 the prepared final version, while the RC tag identifies the source snapshot. No stable installer
 is published from an RC.

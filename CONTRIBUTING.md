@@ -30,7 +30,12 @@ mise install
 ./dev-install.sh
 ```
 
-The development installer performs the frozen dependency install, configures `.githooks`, and
+On Linux, source setup also requires a C compiler available as `cc` and Bubblewrap at
+`/usr/bin/bwrap`; macOS uses `/usr/bin/sandbox-exec`. The host must allow the native Sandbox boundary
+for tool execution. A successful build or `--version` does not prove that OS policy permits it.
+
+The development installer performs the frozen dependency install, runs `bun run build:packages`
+to prepare declarations and native/worker assets, configures `.githooks`, and
 creates a managed `clarvis-develop` launcher in
 `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. It records this checkout and Bun binary,
 so the command can be run from another project's directory while loading the current Clarvis
@@ -41,7 +46,8 @@ cd /path/to/project-under-test
 clarvis-develop
 ```
 
-Re-run `./dev-install.sh` after moving the checkout or changing Bun installations. It updates only a
+Re-run `./dev-install.sh` after moving the checkout, changing Bun installations, or editing the
+tool worker so its integrity manifest matches the current source. It updates only a
 launcher carrying its ownership marker and refuses an unrelated file with the same name.
 `./dev-install.sh --uninstall` removes that launcher. `clarvis-develop --empty-workspace` creates a
 new empty `/tmp/clarvis-development-temp/workspace-*` directory and starts the app there.

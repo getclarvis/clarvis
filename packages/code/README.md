@@ -196,7 +196,7 @@ Then launch the UI:
 bun --filter @clarvis/code start
 ```
 
-For a reusable source command from this checkout, run the root development installer once:
+For a reusable source command from this checkout, run the root development installer:
 
 ```bash
 ./dev-install.sh
@@ -208,6 +208,13 @@ directory as the Clarvis workspace, and remains separate from an installed relea
 command. `--empty-workspace` starts it in a newly allocated directory under
 `/tmp/clarvis-development-temp/`; `--clear` removes global state and those managed workspaces, and
 the two flags can be combined to clear before opening a fresh workspace.
+
+Source setup runs `bun run build:packages` after installing frozen dependencies, before publishing
+system documentation or activating a launcher. This generates package declarations, native Sandbox
+assets and the tool-worker integrity manifest. Linux requires `cc` and `/usr/bin/bwrap`; macOS uses
+`/usr/bin/sandbox-exec`. Native tool execution also requires OS support for the Sandbox boundary.
+Re-run setup after changing the worker source so its manifest matches. The global `setup` command
+below prepares the same package assets before its install build.
 
 To install the optimized command globally from this checkout:
 
@@ -224,10 +231,12 @@ To test a published source candidate, use:
 clarvis-develop
 ```
 
-This requires Git and the candidate's pinned Bun version. The installer verifies the source
+This requires Git, the candidate's pinned Bun version and the source-build prerequisites above. The installer verifies the source
 prerelease and its `source-candidate.json`, checks out the exact tag commit under
-`${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies and
-checks the CLI version before replacing the managed launcher. The launcher pins the RC and source
+`${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies,
+builds package assets in that checkout and checks the CLI version before replacing the managed
+launcher. A dependency or build failure removes the incomplete checkout and preserves the previous
+launcher and published system documentation. The launcher pins the RC and source
 revision. The ordinary `./dev-install.sh` selects the working checkout. Candidate installation
 does not alter that checkout or replace the stable `clarvis` command. Update a candidate by
 rerunning `--candidate`; `clarvis --update` remains a portable-release command. Previous candidate
@@ -576,11 +585,15 @@ lazy full-page reference containing actions available here and elsewhere, destin
 syntax, editing commands and the effective terminal path. F1 has no built-in action or reserved
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
-`/diff` opens every file mutation recorded in the active Lead or selected sub-agent transcript. A
-folder tree lists all changed files and can collapse or expand directories; selecting a file shows
-all of its recorded diffs in chronological order. Narrow terminals show the tree and file detail as
-separate steps. Retained bodies are rehydrated before display instead of silently falling back to
-only the newest edit. Moving through the tree does not replace the open file until Enter confirms
+`/diff` and `Ctrl+X D` open the current workspace changes independently of conversation history or
+the selected agent, including on an empty conversation. With Git, All compares HEAD to the working
+tree, Staged compares HEAD to the index, and Unstaged compares the index to the working tree.
+All is the net effect; untracked additions appear in All and Unstaged, and ignored files are excluded.
+The viewer reads without changing Git state and reports unavailable, binary, conflict, stale or
+truncated detail explicitly. A folder tree lists changed files and can collapse or expand directories;
+selecting a file reads its current patch on demand. The inventory refreshes while visible and exposes
+explicit refresh. Narrow terminals show the tree and file detail as separate steps.
+Moving through the tree does not replace the open file until Enter confirms
 the selected row. Each tree row names its file in full: the status letter, the whole basename and
 the entry's added and removed counts, which move to the row's own trailing line when a long name
 needs the width. A file is therefore recognisable before it is opened, and a row's height depends on
@@ -1392,9 +1405,9 @@ For live development:
 bun --filter @clarvis/code dev
 ```
 
-For testing this checkout from arbitrary project directories without rebuilding after source
+For testing this checkout from arbitrary project directories without rebuilding the TUI artifact after source
 edits, use `./dev-install.sh`. It requires the exact Bun version from `mise.toml`, performs
-`bun install --frozen-lockfile`, installs the repository hook, and atomically writes a managed
+`bun install --frozen-lockfile` and `bun run build:packages`, installs the repository hook, and atomically writes a managed
 `clarvis-develop` launcher to
 `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Re-running it updates that owned launcher;
 an unrelated file, directory, or symlink at the destination is refused. `./dev-install.sh

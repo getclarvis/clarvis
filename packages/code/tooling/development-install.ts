@@ -323,6 +323,17 @@ function run(command: readonly string[], cwd: string): void {
   }
 }
 
+/** Prepare frozen dependencies and generated native/worker assets before activating source. */
+export function prepareSourceCheckout(input: {
+  repository: string;
+  bun: string;
+  run?: (argv: readonly string[], cwd: string) => void;
+}): void {
+  const execute = input.run ?? run;
+  execute([input.bun, "install", "--frozen-lockfile"], input.repository);
+  execute([input.bun, "run", "build:packages"], input.repository);
+}
+
 function repositoryHookIsConfigured(): boolean {
   const child = spawnSync("git", ["config", "--local", "--get", "core.hooksPath"], {
     cwd: repositoryRoot,
@@ -428,8 +439,8 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log(`[2/${steps}] Installing dependencies from the frozen lockfile.`);
-  run([process.execPath, "install", "--frozen-lockfile"], repositoryRoot);
+  console.log(`[2/${steps}] Installing frozen dependencies and building package assets.`);
+  prepareSourceCheckout({ repository: repositoryRoot, bun: process.execPath });
 
   console.log(`[3/${steps}] Configuring the repository Git hook.`);
   if (repositoryHookIsConfigured()) {

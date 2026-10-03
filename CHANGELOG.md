@@ -52,7 +52,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 - Plan reminders name the plan and group compact task ids/statuses into attention, pending and
   closed work so returned or failed work is actionable without repeating task titles.
 - Source release candidates carry an exact source identity separately from stable installers.
-  `./dev-install.sh --candidate` installs a candidate in an isolated checkout; ordinary
+  `./dev-install.sh --candidate` installs a candidate in an isolated checkout; source setup
+  builds native Sandbox and tool-worker assets before activating the launcher. Ordinary
   `./dev-install.sh` prepares the local source launcher.
 
 ### Changed

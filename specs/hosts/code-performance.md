@@ -643,7 +643,7 @@ tree.
 | aggregate prose is full | release older settled prose, preserve newest | `packages/code/src/adapters/store.ts` |
 | hydrated tool budget is full | dehydrate older bodies; explicit expand can re-fetch within queue limits | `packages/code/src/adapters/store.ts` |
 | session reconstruction exceeds request-shape limits | throw `SessionResumeLimitError` before the next batch | `SessionResumeLimitError` and `resumeSession` in `packages/code/src/adapters/session.ts` |
-| RSS reaches configured limit | cancel, detach after grace if required, block new work and offer recovery | `packages/code/src/adapters/memory-pressure.ts` |
+| RSS reaches configured limit | keep the interface and independent hosted work alive; perform bounded local maintenance and block expensive new admissions until safe recovery; do not cancel work or restart the workspace host | `createMemoryPressureController` in `packages/code/src/adapters/memory-pressure.ts`; `packages/code/tests/unit/memory-pressure.test.ts` (`critical pressure blocks admission, maintains once, and rearms after three safe samples`, `tolerates a throwing GC and does not reconnect or cancel work`) |
 | overlay soak child starves or grows past its process budget | parent watchdog kills it and fails with the case name and limit | `packages/code/tooling/benchmarks/overlays.tsx` (`runParent`) |
 | interactive event loop is starved outside the soak | in-process sampler may not run; host/process-tree monitoring is still required | `specs/known-issues.md` (reactive microtask starvation) |
 | external MCP/shell process grows | TUI self-RSS fuse does not observe it | `packages/code/README.md` |

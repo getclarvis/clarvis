@@ -7,7 +7,7 @@ import {
   parseSourceCandidate,
   type SourceCandidate,
 } from "#src/adapters/source-candidate.ts";
-import { installDevelopmentLauncher } from "./development-install.ts";
+import { installDevelopmentLauncher, prepareSourceCheckout } from "./development-install.ts";
 import { publishSelectedSystemDocs } from "#src/bootstrap/system-docs-cli.ts";
 
 type CandidateFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -165,7 +165,7 @@ export async function installCandidate(input: {
     const pinnedBun = /^bun\s*=\s*"([^"]+)"\s*$/m.exec(mise)?.[1];
     if (pinnedBun !== input.bunVersion)
       throw new Error(`candidate requires Bun ${pinnedBun}; installed Bun is ${input.bunVersion}`);
-    run([input.bun, "install", "--frozen-lockfile"], checkout);
+    prepareSourceCheckout({ repository: checkout, bun: input.bun, run });
     const version = run([input.bun, "packages/code/src/cli.ts", "--version"], checkout);
     if (version !== `clarvis ${manifest.version}`)
       throw new Error("candidate CLI version smoke failed");

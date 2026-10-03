@@ -95,12 +95,23 @@ describe("cli fast path", () => {
       scripts?: Record<string, string>;
     };
     const setup = readFileSync(join(packageRoot, "tooling", "setup.ts"), "utf8");
+    const sourcePreparation = readFileSync(
+      join(packageRoot, "tooling", "development-install.ts"),
+      "utf8",
+    );
     expect(manifest.bin).toEqual({ clarvis: "src/cli.ts" });
     expect(manifest.scripts?.setup).toBe("bun run tooling/setup.ts");
     expect(manifest.scripts?.["build:install"]).toBe("bun run tooling/artifact/build.ts --install");
     expect(setup).toContain('join(repositoryRoot, "mise.toml")');
     expect(setup).toContain("Bun.version !== expected");
-    expect(setup).toContain('["bun", "install", "--frozen-lockfile"]');
+    expect(setup).toContain(
+      "prepareSourceCheckout({ repository: repositoryRoot, bun: process.execPath })",
+    );
+    expect(sourcePreparation).toContain('[input.bun, "install", "--frozen-lockfile"]');
+    expect(sourcePreparation).toContain('[input.bun, "run", "build:packages"]');
+    expect(setup.indexOf("prepareSourceCheckout({")).toBeLessThan(
+      setup.indexOf('["bun", "--filter", "@clarvis/code", "build:install"]'),
+    );
     expect(setup).toContain('["bun", "--filter", "@clarvis/code", "build:install"]');
     expect(setup).toContain("isSymbolicLink");
     expect(setup).toContain("resolvedTarget !== ownedTarget");

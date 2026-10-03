@@ -3,6 +3,7 @@
 import { lstat, readFile, readlink, unlink } from "node:fs/promises";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { prepareSourceCheckout } from "./development-install.ts";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const repositoryRoot = resolve(packageRoot, "../..");
@@ -57,7 +58,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`Using Bun ${Bun.version}.`);
-  run(["bun", "install", "--frozen-lockfile"], repositoryRoot);
+  prepareSourceCheckout({ repository: repositoryRoot, bun: process.execPath });
   run(["bun", "--filter", "@clarvis/code", "build:install"], repositoryRoot);
 
   const userHome = process.env.HOME;

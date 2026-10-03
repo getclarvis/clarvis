@@ -514,9 +514,9 @@ The suite is classified by the lowest boundary that can observe each behavior:
   adapters.
 - `tests/integration/` keeps real filesystem layout, wiki mutations, journals, recovery, provider
   loading and indexer/loop execution. `capability-loop.test.ts` is the sole owner of the real
-  capability→loop seam: seed/tool composition, the awaited durable enqueue and cancelled-run
-  learning. File-only job cases are limited to reopen durability and safe run-id encoding; external
-  edits, revision bytes, crash recovery and machinery layout stay real.
+  capability→loop seam: seed/tool composition, awaited durable enqueue for completed runs, and
+  rejection of indexing for cancelled runs. File-only job cases are limited to reopen durability
+  and safe run-id encoding; external edits, revision bytes, crash recovery and machinery layout stay real.
 - `tests/architecture/` protects public barrels, eager-import boundaries and cross-surface identity.
 
 Shared fixtures live in `tests/helpers/`; pure data, filesystem resources, contract-only capability

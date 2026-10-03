@@ -113,14 +113,14 @@ export interface MemoryFactory {
    */
   forOwnerControlPlane(owner: string): Memory | undefined;
   /**
-   * Resolve the {@link MemoryProvider} this workspace declared, or `undefined`
-   * when memory is off or disabled.
+   * Resolve the owner's built-in wiki provider, or `undefined` when memory is
+   * off or disabled.
    *
    * @remarks Optional so a host or test may supply a factory that only knows
    *   the built-in wiki; the memory capability falls back to wrapping
    *   {@link forOwnerControlPlane} when this is absent. A resolution that
    *   *fails* is reported rather than thrown, and the run then proceeds with no
-   *   memory at all — never with a different store than the one declared.
+   *   memory rather than selecting another store.
    */
   providerFor?(owner: string): Promise<ProviderResolution | undefined>;
   /** Begin draining one owner's durable index queue: once now, then on an interval. */
@@ -158,34 +158,6 @@ export interface MemoryFactory {
   subscribeToRun(owner: string, runId: string, onSettled: MemoryIngestListener): () => void;
 }
 
-/**
- * Build the process-lived {@link MemoryFactory} whose `forOwner` resolves the
- * current `memory:` settings, picks the indexer model, and returns a cached
- * {@link Memory} keyed by owner and a signature of `(config, model, providers)`.
- *
- * @param opts - provider, workspace root, logger, and the per-run
- *   `loadSettings` port; see {@link CreateMemoryFactoryOptions}.
- * @returns a factory whose owner accessors return `undefined` when memory is
- *   disabled or settings cannot be read. Indexing uses each subject run's model.
- * @remarks Lives in long-lived deps and is built once per process; instances
- *   are cached per owner plus a settings signature, the same pattern
- *   `dynamicSkills` uses in `build-run-deps`, so a settings edit between runs
- *   is picked up without rebuilding on every run. A settings change is
- *   detected by the signature and rebuilds only that owner's instance — an
- *   unchanged signature returns the cached one. The **store is built once per
- *   owner**, in a cache the signature never touches, so a settings-driven
- *   rebuild never produces a second store over the same tree (which would give
- *   the two instances independent exclusion). With no `storeFor`, that
- *   per-owner cache resolves every owner to the *same* shared instance, so the
- *   local product's exclusion semantics are unchanged. The chosen model's
- *   provider is resolved via {@link resolveProvider}; an unresolved provider is
- *   warned once and the generation calls fall back to ambient credentials. The
- *   background index workers are built beside the per-owner cache rather than
- *   inside it — a settings edit rebuilds the `Memory` instance without leaving
- *   a second timer on that owner's queue. Each worker holds an owner-bound
- *   resolver rather than a resolved model, so an indexer model appearing where
- *   there was none takes effect on its next tick.
- */
 /** Provider tokens that name an SDK kind directly, so an entry can be derived. */
 const BUILTIN_PROVIDER_KINDS = new Set<string>([
   "openai-compatible",
@@ -194,6 +166,24 @@ const BUILTIN_PROVIDER_KINDS = new Set<string>([
   "google",
 ]);
 
+/**
+ * Build the process-lived {@link MemoryFactory} over the built-in Markdown wiki.
+ *
+ * @param opts - model runtime, workspace root, logger and settings ports; see
+ *   {@link CreateMemoryFactoryOptions}.
+ * @returns a factory whose owner accessors return `undefined` when memory is
+ *   disabled or settings cannot be read. Indexing uses the entry model retained
+ *   in each completed subject run's snapshot.
+ * @remarks Memory facades are cached per owner and a signature of `(config, providers)`.
+ *   A settings change rebuilds the facade while retaining that owner's store
+ *   and exclusion lock. Without `storeFor`, every owner shares one workspace-local
+ *   store. Background workers are cached independently, so facade replacement
+ *   does not create another queue timer. Each pass resolves the current settings
+ *   and the subject run's saved model through the host catalog or declared provider
+ *   configuration. Unavailable runtime blocks the queue without consuming an
+ *   attempt; an unresolved subject model skips its pass with `run-model-unavailable`.
+ *   The wiki stays readable and editable in either case.
+ */
 export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFactory {
   const ownerStores = new Map<string, MemoryStore>();
   let sharedStore: MemoryStore | undefined;
@@ -262,22 +252,18 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
     };
 
   /**
-   * The `providers` array an indexer request must declare.
+   * Resolve model transport declarations for the completed run's indexer request.
    *
-   * @param modelRef - the indexer model, `provider/model`.
-   * @param declared - what the workspace's settings declare, if anything.
-   * @returns the declared providers when they already cover `modelRef`'s token,
-   *   a single entry derived from that token when they do not and the token
-   *   names a built-in SDK kind, or `undefined` when neither holds.
-   * @remarks A run request is rejected outright unless every profile's provider
-   *   token matches a `providers[]` entry, and `providers` may not be empty. The
-   *   common local setup declares `default_model: "anthropic/..."` and no
-   *   `providers` block at all, relying on ambient credentials — so without this
-   *   fallback memory would simply stop learning there, with the failure landing
-   *   as a validation error deep inside a background pass. Deriving the entry
-   *   keeps that setup working; a token naming no built-in kind cannot be guessed
-   *   at, and yields `undefined` so the drain reports the job blocked rather than
-   *   burning its retry budget on a request that can never validate.
+   * @param modelRef - the subject run's saved entry model, `provider/model`.
+   * @param declared - providers available from the host's current settings.
+   * @returns an empty array when the closed host catalog resolves the exact model;
+   *   otherwise the matching declarations, a derived built-in SDK entry, or
+   *   `undefined` when no supported provider can be resolved.
+   * @remarks A host model resolver owns transport selection and needs no provider
+   *   declarations in the request. Without it, a built-in SDK token can derive
+   *   its declaration and use ambient credentials. An undeclared custom token
+   *   cannot be guessed; returning `undefined` skips the pass with
+   *   `run-model-unavailable` instead of generating an invalid request.
    */
   function providersFor(
     modelRef: string,
@@ -346,7 +332,7 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
    *
    * @remarks Knows nothing about runs beyond their id — the translation from
    * drain vocabulary to {@link MemoryIngestNotice} phases lives in
-   * `ingest-run.ts`'s `translateDrainSettlement`.
+   * `ingest.ts`'s `translateDrainSettlement`.
    */
   const broker = createMemoryJobBroker();
   const workers = new Map<string, MemoryIndexWorker>();
@@ -374,23 +360,10 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
   }
 
   /**
-   * The environment a command-backed provider is given.
-   *
-   * @remarks `process.env` minus this run's provider API-key variables, and
-   * nothing else. The broad filtering `@clarvis/hooks` applies exists because a
-   * **plugin** may contribute a hook; a memory provider cannot be
-   * plugin-contributed (`memorySettingsSpec` is not `pluginContributable`), so
-   * the command was named in the operator's own `settings.json` by someone who
-   * already has this shell. Withholding their own environment from their own
-   * command would buy nothing. The provider credentials are still denied,
-   * because those are the run's secrets rather than the operator's, and a
-   * memory command has no reason to see them.
-   */
-  /**
-   * Read the declared provider, tolerating an unreadable settings file exactly
+   * Read the built-in wiki settings, tolerating an unreadable settings file exactly
    * as {@link resolve} does.
    *
-   * @returns the declaration, or `undefined` when memory is off or disabled —
+   * @returns the settings, or `undefined` when memory is off or disabled —
    *   which is the same signal `resolve` gives, kept in one place so the two
    *   cannot disagree about whether memory exists.
    */

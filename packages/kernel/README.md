@@ -833,7 +833,7 @@ Production: `createApprovalService` in [approval-service.ts](src/execution/appro
 `createIsolationService` in [isolation-service.ts](src/execution/isolation-service.ts), and
 `createJudgeRunner` in [judge-runner.ts](src/execution/judge-runner.ts).
 Test: `tests/integration/judge-approval.test.ts`,
-`tests/unit/isolation-service.test.ts`, and `tests/unit/judge-runner.test.ts`.
+`tests/integration/isolation-service.test.ts`, and `tests/integration/judge-runner.test.ts`.
 
 Manual review shows the action, cwd, effects and requested permissions. For a complete literal
 single-segment command it can offer the displayed argv prefix for global persistence. The Kernel
@@ -929,9 +929,8 @@ five. That lets `@clarvis/code` reach its first prompt against a directory nothi
 written to. `DEFAULT_ENTRY_AGENT` (`marshall`) is what
 `createFileKernel` hands the run assembler, so a request naming no agent still resolves.
 
-The two shipped leaders, `marshall` and `admiral`, each declare a 256-iteration soft session limit;
-the `coder`, `explorer`, and `planner` children each declare 64 iterations. These power-of-two
-limits distinguish lead and child capacity without relying on the former 50-iteration profile cap.
+All five shipped agents declare a 512-iteration soft session limit. The builtin-agent tests pin
+that allowance for both leaders and children.
 
 The builtin bodies define roles and the minimum harness handoff contract, not a generic engineering
 handbook. Leads act directly unless delegation is explicitly requested under the shared policy:

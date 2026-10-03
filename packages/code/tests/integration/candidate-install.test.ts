@@ -5,11 +5,12 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   candidateJson,
@@ -68,7 +69,7 @@ test("candidate metadata bounds bodies and refuses a foreign final origin", asyn
   ).rejects.toThrow("size limit");
 });
 
-test("candidate installation publishes only its selected checkout and retires a pre-skill candidate", async () => {
+test("candidate installation prepares assets before activation and preserves the previous install on failure", async () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-candidate-docs-"));
   const sourceRoot = productRootForEntry(
     fileURLToPath(new URL("../../src/cli.ts", import.meta.url)),
@@ -105,8 +106,10 @@ test("candidate installation publishes only its selected checkout and retires a 
       version: selectedVersion,
     };
   };
-  const install = async (selectedVersion: string, withDocs: boolean) => {
+  const install = async (selectedVersion: string, withDocs: boolean, failBuild = false) => {
     const manifest = makeManifest(selectedVersion);
+    let dependenciesInstalled = false;
+    let assetsBuilt = false;
     return installCandidate({
       tag: manifest.tag,
       installRoot: join(root, "candidates"),
@@ -148,7 +151,17 @@ test("candidate installation publishes only its selected checkout and retires a 
             cpSync(sourceDocs, destination, { recursive: true });
           }
         }
+        if (argv[0] === process.execPath && argv[1] === "install") {
+          expect(argv).toEqual([process.execPath, "install", "--frozen-lockfile"]);
+          dependenciesInstalled = true;
+        }
+        if (argv[0] === process.execPath && argv[1] === "run" && argv[2] === "build:packages") {
+          expect(dependenciesInstalled).toBe(true);
+          if (failBuild) throw new Error("native asset build failed");
+          assetsBuilt = true;
+        }
         if (argv[0] === process.execPath && argv[1] === "packages/code/src/cli.ts") {
+          expect(assetsBuilt).toBe(true);
           return `clarvis ${selectedVersion}`;
         }
         return "";
@@ -162,6 +175,13 @@ test("candidate installation publishes only its selected checkout and retires a 
       readFileSync(join(sourceDocs, "SKILL.md"), "utf8"),
     );
     expect(first.checkout).toContain(first.manifest.tag);
+    const launcherBefore = readFileSync(first.launcher, "utf8");
+    await expect(install(olderVersion, false, true)).rejects.toThrow("native asset build failed");
+    expect(readFileSync(first.launcher, "utf8")).toBe(launcherBefore);
+    expect(readFileSync(installed, "utf8")).toBe(
+      readFileSync(join(sourceDocs, "SKILL.md"), "utf8"),
+    );
+    expect(readdirSync(join(root, "candidates"))).toEqual([basename(first.checkout)]);
     const older = await install(olderVersion, false);
     expect(existsSync(installed)).toBe(false);
     expect(older.checkout).toContain(older.manifest.tag);

@@ -197,17 +197,21 @@ To install a source-only command from this checkout after Bun is available, run:
 ./dev-install.sh
 ```
 
-That one-time machine setup installs dependencies, configures the repository hook, and creates
+That machine setup installs frozen dependencies, builds package declarations and the native Sandbox
+and tool-worker assets, configures the repository hook, and creates
 `clarvis-develop` in `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Run the command
-from any project to test the current checkout without building or downloading a release. Use
+from any project to test the current checkout without building or downloading a release artifact.
+Linux source setup requires a C compiler available as `cc` and Bubblewrap at `/usr/bin/bwrap`;
+macOS uses the system Seatbelt executable. Re-run setup after editing the tool worker to refresh
+its integrity manifest. Use
 `clarvis-develop --empty-workspace` to open every test in a new directory under
 `/tmp/clarvis-development-temp/`. `clarvis-develop --clear` removes the effective global state and
 all managed temporary workspaces and exits; workspace-local `.clarvis` data outside that temporary
 root is not removed. Combine both flags to clear first and then open a newly allocated workspace.
 
 To install a published source RC, use `./dev-install.sh --candidate`
-or `./dev-install.sh --candidate <rc-tag>`. This selects an isolated checkout and requires Git,
-the RC's pinned Bun version. See the
+or `./dev-install.sh --candidate <rc-tag>`. This prepares the same package assets in an isolated
+checkout and requires Git, the RC's pinned Bun version and the native build prerequisites above. See the
 [Code candidate installation guide](packages/code/README.md) for prerequisites and lifecycle.
 
 ## Packages

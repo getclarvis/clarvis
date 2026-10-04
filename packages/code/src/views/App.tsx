@@ -240,8 +240,6 @@ export interface AppRunControls {
   /** Detach an unresponsive run after a host-owned cancellation grace. */
   forceStop?: () => void;
   active: () => boolean;
-  /** Host-confirmed continuation of the observed run; independent of volatile tool consent. */
-  continuesOnExit?: Accessor<boolean>;
   /** True until every backend handle and local process has physically settled. */
   physicalActive?: () => boolean;
   /** Host-owned retained-memory and event-queue counters. */
@@ -704,7 +702,7 @@ export function App(props: AppProps): JSX.Element {
   let requestFinalQuit = props.shell.quit;
   const quitConfirm = createQuitConfirm({
     isDirtyView: () => overlays.viewDirty(),
-    isRunAtRisk: () => props.run.active() && props.run.continuesOnExit?.() !== true,
+    isRunAtRisk: () => props.run.active(),
     isDraftNonEmpty: () => (inputEl?.plainText ?? "").trim().length > 0,
     notify,
     quit: () => requestFinalQuit(),
@@ -1401,7 +1399,6 @@ export function App(props: AppProps): JSX.Element {
     const goal = props.run.goals?.view()?.state.current;
     const detail: string[] = goal === undefined ? [] : [`Goal ${goal.status}`];
     if (!props.run.active()) return detail.join(` ${glyph("separator")} `);
-    if (props.run.continuesOnExit?.()) detail.push("continues after exit");
     const startedAt = props.run.startedAt();
     if (startedAt !== null) detail.push(formatElapsed(tickNow() - startedAt));
     const iteration = /iteration\s+(\d+)/i.exec(props.run.status())?.[1];

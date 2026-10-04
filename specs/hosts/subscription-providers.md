@@ -234,7 +234,7 @@ previous durable prefix.
 
 Every subscription HTTP request that carries a Clarvis user agent uses `clarvis/<root product
 version>`. ChatGPT entitled-catalog discovery separately uses the adapter-owned Codex compatibility
-revision `0.158.0` as `client_version`: the service treats this query as a minimum-client feature
+revision `1.160.0` as `client_version`: the service treats this query as a minimum-client feature
 gate independently of the Clarvis product version. Visible API-supported models are projected with their published reasoning
 levels; unrelated provider metadata does not suppress them or cross the protocol boundary. Production: `VERSION`,
 `PRODUCT_USER_AGENT`, and `OPENAI_CODEX_CLIENT_VERSION` in

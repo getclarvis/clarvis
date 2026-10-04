@@ -328,6 +328,26 @@ describe("createManagedRunWithRuntime", () => {
     expect(clock.pendingDeadlines()).toEqual([]);
   });
 
+  it("cancellation closes pending memory observation without waiting for ingest grace", async () => {
+    const clock = new FakeClock();
+    const handle = createManagedRunWithRuntime(
+      {
+        executionId: "cancel-memory-observation",
+        execute(context) {
+          context.emit(ingest(context.executionId, "started", clock.now()));
+          return Promise.resolve(completed(context.executionId));
+        },
+      },
+      clock,
+    );
+    await handle.done;
+    expect(clock.pendingDeadlines()).toHaveLength(1);
+    await handle.cancel();
+    await handle.closed;
+    expect(clock.pendingDeadlines()).toEqual([]);
+    expect((await collect(handle.events)).map((event) => event.type)).toEqual(["memory_ingest"]);
+  });
+
   it("bounds a hung ingest with fake time and renews the deadline for every queued retry", async () => {
     const timeoutClock = new FakeClock();
     const hung = createManagedRunWithRuntime(

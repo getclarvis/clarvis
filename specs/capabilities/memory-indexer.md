@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This subsystem is what turns *a completed run* into *something the wiki knows*. The work it
+This subsystem is what turns _a completed run_ into _something the wiki knows_. The work it
 performs — one LLM agent run over the memory tools — is expensive and must not sit on the response
 path, so the code splits it in two: a **bounded, durable enqueue** performed synchronously at run end
 (`packages/memory/src/ingest.ts`, `packages/memory/src/memory.ts`), and a **background drain**
@@ -16,12 +16,12 @@ that later claims that record, runs a real `executeRun`, and settles it
 in-flight promise: a process that dies mid-pass loses nothing it had accepted responsibility for"
 (`packages/memory/src/jobs.ts`).
 
-An *index pass* is not a single completion. `indexRun` builds a `RunRequest` and calls the host-owned
+An _index pass_ is not a single completion. `indexRun` builds a `RunRequest` and calls the host-owned
 executor when supplied, otherwise the engine's `executeRun`, so the model edits the wiki through the same
 seven memory tools an agent gets. Two shapes exist. The **isolated** pass runs an inline
-`memory-indexer` profile over a rendered execution digest and *replaces* the host's capability list
+`memory-indexer` profile over a rendered execution digest and _replaces_ the host's capability list
 (`packages/memory/src/indexer/run.ts`). The **continuation** pass is a `continue_from` of the very
-run being indexed, appending only a trailing instruction, and *prepends* its capability to the host's
+run being indexed, appending only a trailing instruction, and _prepends_ its capability to the host's
 list (`packages/memory/src/indexer/run.ts`). `planPass` chooses between them
 (`packages/memory/src/indexer/run.ts`), guided by `continuationBlocker`
 (`packages/memory/src/indexer/request.ts`).
@@ -43,41 +43,41 @@ timer (`packages/memory/src/worker.ts`), the per-run settlement broker
 
 ### 2.1 Exported from `@clarvis/memory` (the package barrel)
 
-| Symbol | Kind | Signature / value | Source |
-| --- | --- | --- | --- |
-| `drainIndexJobs` | fn | `(args: DrainArgs) => Promise<MemoryDrainReport>` | `packages/memory/src/drain.ts` |
-| `DEFAULT_JOB_RETENTION` | const | `{ terminalMs: 7d, pendingMs: 30d, keepFailed: 20 }` | `packages/memory/src/drain.ts` |
-| `MemoryDrainOutcome` | type | `"completed" \| "retry_wait" \| "failed" \| "blocked"` | `packages/memory/src/drain.ts` |
-| `MemoryDrainReport`, `MemoryJobRetention` | types | see §3.3 | `packages/memory/src/drain.ts` |
-| `createMemoryJobBroker` | fn | `(opts?: MemoryJobBrokerOptions) => MemoryJobBroker` | `packages/memory/src/job-broker.ts` |
-| `MemoryJobSettlement` | type | `MemoryDrainReport["jobs"][number]` | `packages/memory/src/job-broker.ts` |
-| `retryDelayMs` | fn | `(attempts: number, policy: MemoryRetryPolicy) => number` | `packages/memory/src/jobs.ts` |
-| `classifyFailure` | fn | `(job, failure, policy, now) => MemoryJobTransition` | `packages/memory/src/jobs.ts` |
-| `appendAttempt` | fn | `(job, failure, now) => MemoryJobAttempt[]` | `packages/memory/src/jobs.ts` |
-| `isJobPrunable` | fn | `(job, { terminalBefore, pendingBefore? }) => boolean` | `packages/memory/src/jobs.ts` |
-| `boundRunSnapshot` | fn | `(run, limits?) => BoundedSnapshot` | `packages/memory/src/jobs.ts` |
-| `DEFAULT_RETRY_POLICY` | const | `{ maxAttempts: 5, maxValidateAttempts: 2, baseDelayMs: 30_000, maxDelayMs: 900_000, jitter: Math.random }` | `packages/memory/src/jobs.ts` |
-| `DEFAULT_SNAPSHOT_LIMITS` | const | `{ maxToolCalls: 500, maxExcerptChars: 600, maxFinalAnswer: 4000, maxTask: 8000, maxSteering: 20, maxSteeringChars: 400 }` | `packages/memory/src/jobs.ts` |
-| `MAX_JOB_HISTORY` | const | `5` | `packages/memory/src/jobs.ts` |
-| `MemoryIndexError` | class | `phase`, `terminal`, `indexerRunId`, `code = "memory_index_failed"` | `packages/memory/src/indexer/run.ts` |
-| `createIndexWorker` | fn | `(opts: MemoryIndexWorkerOptions) => MemoryIndexWorker` | `packages/memory/src/worker.ts` |
-| `INDEXER_SYSTEM`, `INDEXER_ITERATION_LIMIT` (12), `INDEXER_TOKEN_LIMIT` (200_000), `MEMORY_INDEXER_AGENT` (`"memory-indexer"`) | consts | isolated-pass prompt and bounds | `packages/memory/src/indexer/request.ts` |
-| `health`, `HEALTH_CODES`, `DEFAULT_HEALTH_CONFIG` | fn / consts | §2.4 | `packages/memory/src/health.ts` |
+| Symbol                                                                                                                         | Kind        | Signature / value                                                                                                          | Source                                   |
+| ------------------------------------------------------------------------------------------------------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `drainIndexJobs`                                                                                                               | fn          | `(args: DrainArgs) => Promise<MemoryDrainReport>`                                                                          | `packages/memory/src/drain.ts`           |
+| `DEFAULT_JOB_RETENTION`                                                                                                        | const       | `{ terminalMs: 7d, pendingMs: 30d, keepFailed: 20 }`                                                                       | `packages/memory/src/drain.ts`           |
+| `MemoryDrainOutcome`                                                                                                           | type        | `"completed" \| "retry_wait" \| "failed" \| "blocked"`                                                                     | `packages/memory/src/drain.ts`           |
+| `MemoryDrainReport`, `MemoryJobRetention`                                                                                      | types       | see §3.3                                                                                                                   | `packages/memory/src/drain.ts`           |
+| `createMemoryJobBroker`                                                                                                        | fn          | `(opts?: MemoryJobBrokerOptions) => MemoryJobBroker`                                                                       | `packages/memory/src/job-broker.ts`      |
+| `MemoryJobSettlement`                                                                                                          | type        | `MemoryDrainReport["jobs"][number]`                                                                                        | `packages/memory/src/job-broker.ts`      |
+| `retryDelayMs`                                                                                                                 | fn          | `(attempts: number, policy: MemoryRetryPolicy) => number`                                                                  | `packages/memory/src/jobs.ts`            |
+| `classifyFailure`                                                                                                              | fn          | `(job, failure, policy, now) => MemoryJobTransition`                                                                       | `packages/memory/src/jobs.ts`            |
+| `appendAttempt`                                                                                                                | fn          | `(job, failure, now) => MemoryJobAttempt[]`                                                                                | `packages/memory/src/jobs.ts`            |
+| `isJobPrunable`                                                                                                                | fn          | `(job, { terminalBefore, pendingBefore? }) => boolean`                                                                     | `packages/memory/src/jobs.ts`            |
+| `boundRunSnapshot`                                                                                                             | fn          | `(run, limits?) => BoundedSnapshot`                                                                                        | `packages/memory/src/jobs.ts`            |
+| `DEFAULT_RETRY_POLICY`                                                                                                         | const       | `{ maxAttempts: 5, maxValidateAttempts: 2, baseDelayMs: 30_000, maxDelayMs: 900_000, jitter: Math.random }`                | `packages/memory/src/jobs.ts`            |
+| `DEFAULT_SNAPSHOT_LIMITS`                                                                                                      | const       | `{ maxToolCalls: 500, maxExcerptChars: 600, maxFinalAnswer: 4000, maxTask: 8000, maxSteering: 20, maxSteeringChars: 400 }` | `packages/memory/src/jobs.ts`            |
+| `MAX_JOB_HISTORY`                                                                                                              | const       | `5`                                                                                                                        | `packages/memory/src/jobs.ts`            |
+| `MemoryIndexError`                                                                                                             | class       | `phase`, `terminal`, `indexerRunId`, `code = "memory_index_failed"`                                                        | `packages/memory/src/indexer/run.ts`     |
+| `createIndexWorker`                                                                                                            | fn          | `(opts: MemoryIndexWorkerOptions) => MemoryIndexWorker`                                                                    | `packages/memory/src/worker.ts`          |
+| `INDEXER_SYSTEM`, `INDEXER_ITERATION_LIMIT` (12), `INDEXER_TOKEN_LIMIT` (200_000), `MEMORY_INDEXER_AGENT` (`"memory-indexer"`) | consts      | isolated-pass prompt and bounds                                                                                            | `packages/memory/src/indexer/request.ts` |
+| `health`, `HEALTH_CODES`, `DEFAULT_HEALTH_CONFIG`                                                                              | fn / consts | §2.4                                                                                                                       | `packages/memory/src/health.ts`          |
 
 `DEFAULT_MEMORY_JOB_PAGE_SIZE` (200) is exported from `packages/memory/src/jobs.ts` but is **not** in the barrel's
 export list (`packages/memory/src/index.ts`).
 
 ### 2.2 Exported from `@clarvis/memory/capability` (host-facing)
 
-| Symbol | Signature | Source |
-| --- | --- | --- |
-| `createMemoryFactory` | `(opts: CreateMemoryFactoryOptions) => MemoryFactory` | `packages/memory/src/factory.ts` |
-| `MemoryFactory`, `MemoryFactorySettings` | types | `packages/memory/src/factory.ts` |
-| `enqueueFinishedRun` | `(a: {...}) => Promise<void>` (never rejects) | `packages/memory/src/ingest.ts` |
-| `MemoryIngestNotice` | type | `packages/memory/src/ingest.ts` |
-| `storedExecutionToRunSnapshot`, `firstUserText` | fns | `packages/memory/src/run-snapshot.ts` |
-| `captureWorkspaceState` | `(cwd, logger?, environment?) => Promise<WorkspaceState \| undefined>` | `packages/memory/src/workspace-state.ts` |
-| `composeMemoryPolicy`, `loadMemoryPolicy`, `MEMORY_POLICY_MAX_CHARS` (4000) | fns / const | `packages/memory/src/recording-policy.ts` |
+| Symbol                                                                      | Signature                                                              | Source                                    |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------- |
+| `createMemoryFactory`                                                       | `(opts: CreateMemoryFactoryOptions) => MemoryFactory`                  | `packages/memory/src/factory.ts`          |
+| `MemoryFactory`, `MemoryFactorySettings`                                    | types                                                                  | `packages/memory/src/factory.ts`          |
+| `enqueueFinishedRun`                                                        | `(a: {...}) => Promise<void>` (never rejects)                          | `packages/memory/src/ingest.ts`           |
+| `MemoryIngestNotice`                                                        | type                                                                   | `packages/memory/src/ingest.ts`           |
+| `storedExecutionToRunSnapshot`, `firstUserText`                             | fns                                                                    | `packages/memory/src/run-snapshot.ts`     |
+| `captureWorkspaceState`                                                     | `(cwd, logger?, environment?) => Promise<WorkspaceState \| undefined>` | `packages/memory/src/workspace-state.ts`  |
+| `composeMemoryPolicy`, `loadMemoryPolicy`, `MEMORY_POLICY_MAX_CHARS` (4000) | fns / const                                                            | `packages/memory/src/recording-policy.ts` |
 
 Re-export site: `packages/memory/src/capability.ts`.
 
@@ -92,18 +92,18 @@ tests. `packages/memory/tests/architecture/file-store-exports.test.ts` pins that
 
 ### 2.3 `MemoryFactory` (the process-lived host seam)
 
-| Member | Behaviour | Source |
-| --- | --- | --- |
-| `forOwner(owner)` | resolves the owner's wiki for the worker when memory is enabled | `packages/memory/src/factory.ts` |
-| `forOwnerControlPlane(owner)` | shares that wiki for runs and owner operations | `packages/memory/src/factory.ts`, `packages/memory/src/memory.ts` |
-| `providerFor(owner)` | optional; resolves the declared memory provider | `packages/memory/src/factory.ts` |
-| `start(owner)` / `poke(owner)` | drive that owner's `MemoryIndexWorker` | `packages/memory/src/factory.ts` |
-| `stopOwner(owner)` | closes broker subs, stops the worker, evicts caches and store | `packages/memory/src/factory.ts` |
-| `stop()` | idempotent, concurrent-safe teardown of every worker | `packages/memory/src/factory.ts` |
-| `subscribeToRun(owner, runId, onSettled)` | broker subscription, already translated to `MemoryIngestNotice` | `packages/memory/src/factory.ts` |
+| Member                                    | Behaviour                                                       | Source                                                            |
+| ----------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `forOwner(owner)`                         | resolves the owner's wiki for the worker when memory is enabled | `packages/memory/src/factory.ts`                                  |
+| `forOwnerControlPlane(owner)`             | shares that wiki for runs and owner operations                  | `packages/memory/src/factory.ts`, `packages/memory/src/memory.ts` |
+| `providerFor(owner)`                      | optional; resolves the declared memory provider                 | `packages/memory/src/factory.ts`                                  |
+| `start(owner)` / `poke(owner)`            | drive that owner's `MemoryIndexWorker`                          | `packages/memory/src/factory.ts`                                  |
+| `stopOwner(owner)`                        | closes broker subs, stops the worker, evicts caches and store   | `packages/memory/src/factory.ts`                                  |
+| `stop()`                                  | idempotent, concurrent-safe teardown of every worker            | `packages/memory/src/factory.ts`                                  |
+| `subscribeToRun(owner, runId, onSettled)` | broker subscription, already translated to `MemoryIngestNotice` | `packages/memory/src/factory.ts`                                  |
 
 Construction inputs that matter here: `runDeps` and `passRunDeps` are **thunks**
-(`packages/memory/src/factory.ts`) — the host's deps object contains the memory capability built *from* this
+(`packages/memory/src/factory.ts`) — the host's deps object contains the memory capability built _from_ this
 factory, so an eager value would be circular (`packages/kernel/src/file-kernel.ts`).
 `loadPolicy` is a thunk for the same reason edits should take effect next pass (`packages/memory/src/factory.ts`).
 
@@ -127,37 +127,37 @@ recoveryRequired? }` (`packages/memory/src/health.ts`). The `tx` is typed as a `
 `HEALTH_CODES` in declaration order (`packages/memory/src/health.ts`), which is also part of the report sort key
 (`packages/memory/src/health.ts`):
 
-| Code | Severity | Source of severity |
-| --- | --- | --- |
-| `missing_profile` | error | `packages/memory/src/health.ts` |
-| `recovery_required` | error | `packages/memory/src/health.ts` |
-| `failed_index_job` | error | `packages/memory/src/health.ts` |
-| `missing_topic_index` | warning | `packages/memory/src/health.ts` |
-| `orphan_document` | warning | `packages/memory/src/health.ts` |
-| `stale_navigation` | warning | `packages/memory/src/health.ts` |
-| `invalid_frontmatter` | warning | `packages/memory/src/health.ts` |
-| `missing_description` | warning | `packages/memory/src/health.ts` |
-| `invalid_authority` | warning | `packages/memory/src/health.ts` |
-| `empty_document` | warning | `packages/memory/src/health.ts` |
-| `document_too_large` | warning | `packages/memory/src/health.ts` |
-| `stuck_index_job` | warning | `packages/memory/src/health.ts` |
-| `placeholder_description` | info | `packages/memory/src/health.ts` |
-| `description_too_long` | info | `packages/memory/src/health.ts` |
-| `stale_document` | info | `packages/memory/src/health.ts` |
-| `unknown_frontmatter_key` | info | `packages/memory/src/health.ts` |
+| Code                      | Severity | Source of severity              |
+| ------------------------- | -------- | ------------------------------- |
+| `missing_profile`         | error    | `packages/memory/src/health.ts` |
+| `recovery_required`       | error    | `packages/memory/src/health.ts` |
+| `failed_index_job`        | error    | `packages/memory/src/health.ts` |
+| `missing_topic_index`     | warning  | `packages/memory/src/health.ts` |
+| `orphan_document`         | warning  | `packages/memory/src/health.ts` |
+| `stale_navigation`        | warning  | `packages/memory/src/health.ts` |
+| `invalid_frontmatter`     | warning  | `packages/memory/src/health.ts` |
+| `missing_description`     | warning  | `packages/memory/src/health.ts` |
+| `invalid_authority`       | warning  | `packages/memory/src/health.ts` |
+| `empty_document`          | warning  | `packages/memory/src/health.ts` |
+| `document_too_large`      | warning  | `packages/memory/src/health.ts` |
+| `stuck_index_job`         | warning  | `packages/memory/src/health.ts` |
+| `placeholder_description` | info     | `packages/memory/src/health.ts` |
+| `description_too_long`    | info     | `packages/memory/src/health.ts` |
+| `stale_document`          | info     | `packages/memory/src/health.ts` |
+| `unknown_frontmatter_key` | info     | `packages/memory/src/health.ts` |
 
 `DEFAULT_HEALTH_CONFIG` = `{ maxDocumentChars: 20_000, staleDays: 180, stuckJobMinutes: 30,
 maxPerCode: 50, maxFindings: 200 }` (`packages/memory/src/health.ts`).
 
 ### 2.5 Kernel-facing surface
 
-| Symbol | Value / signature | Source |
-| --- | --- | --- |
-| `isIngestPending(phase)` | `true` for `"started"`/`"queued"`, else `false` | `packages/kernel/src/runs/memory-ingest-phase.ts` |
-| `ingestPendingAfter(event)` | `undefined` for a non-`memory_ingest` event | `packages/kernel/src/runs/memory-ingest-phase.ts` |
-| `DEFAULT_INGEST_CLOSE_GRACE_MS` | `5_000` | `packages/kernel/src/runs/memory-ingest-phase.ts` |
-| `DEFAULT_INGEST_CLOSE_MAX_WAIT_MS` | `15_000` | `packages/kernel/src/runs/memory-ingest-phase.ts` |
-| `MAX_INGEST_CLOSE_WAIT_MS` | `60_000` | `packages/kernel/src/runs/memory-ingest-phase.ts` |
+| Symbol                             | Value / signature                               | Source                                            |
+| ---------------------------------- | ----------------------------------------------- | ------------------------------------------------- |
+| `isIngestPending(phase)`           | `true` for `"started"`/`"queued"`, else `false` | `packages/kernel/src/runs/memory-ingest-phase.ts` |
+| `ingestPendingAfter(event)`        | `undefined` for a non-`memory_ingest` event     | `packages/kernel/src/runs/memory-ingest-phase.ts` |
+| `DEFAULT_INGEST_CLOSE_GRACE_MS`    | `5_000`                                         | `packages/kernel/src/runs/memory-ingest-phase.ts` |
+| `DEFAULT_INGEST_CLOSE_MAX_WAIT_MS` | `15_000`                                        | `packages/kernel/src/runs/memory-ingest-phase.ts` |
+| `MAX_INGEST_CLOSE_WAIT_MS`         | `60_000`                                        | `packages/kernel/src/runs/memory-ingest-phase.ts` |
 
 `isIngestPending` is re-exported on `@clarvis/kernel/policy` (`packages/kernel/src/policy.ts`).
 
@@ -177,17 +177,21 @@ snapshot deliberately (`packages/kernel/src/memory/memory-service.ts`). Transpor
 ```ts
 interface MemoryIndexJob {
   run_id: string;
-  agent_instance_id?: string;          // assigned and persisted once before inference
-  indexer_execution_id?: string;       // execution reserved by the current claim
-  indexer_continue_from?: string;      // previous indexing execution for recovery
+  agent_instance_id?: string; // assigned and persisted once before inference
+  indexer_execution_id?: string; // execution reserved by the current claim
+  indexer_continue_from?: string; // previous indexing execution for recovery
   indexer_prior_executions?: string[]; // newest-first reservations across empty crashed claims
   state: "pending" | "running" | "retry_wait" | "completed" | "failed";
-  enqueued_at: number;  updated_at: number;  attempts: number;
+  enqueued_at: number;
+  updated_at: number;
+  attempts: number;
   provider_key?: string;
-  not_before?: number;                 // retry_wait only
-  lease_until?: number; lease_owner?: string; lease_token?: string;   // running only
-  snapshot?: RunSnapshot;              // dropped on complete()
-  history: MemoryJobAttempt[];         // capped at MAX_JOB_HISTORY = 5
+  not_before?: number; // retry_wait only
+  lease_until?: number;
+  lease_owner?: string;
+  lease_token?: string; // running only
+  snapshot?: RunSnapshot; // dropped on complete()
+  history: MemoryJobAttempt[]; // capped at MAX_JOB_HISTORY = 5
   note?: string;
 }
 ```
@@ -199,10 +203,10 @@ interface MemoryIndexJob {
 
 ### 3.2 On-disk layout (file backend)
 
-| Path | Contents | Source |
-| --- | --- | --- |
-| `<machineryRoot>/.state/jobs/<encoded>.json` | one job record, JSON | `packages/memory/src/file-store/jobs.ts` |
-| `<machineryRoot>/.state/indexed/<encoded>` | the "was indexed" ledger marker; body is `String(at)` | `packages/memory/src/file-store/jobs.ts` |
+| Path                                         | Contents                                              | Source                                   |
+| -------------------------------------------- | ----------------------------------------------------- | ---------------------------------------- |
+| `<machineryRoot>/.state/jobs/<encoded>.json` | one job record, JSON                                  | `packages/memory/src/file-store/jobs.ts` |
+| `<machineryRoot>/.state/indexed/<encoded>`   | the "was indexed" ledger marker; body is `String(at)` | `packages/memory/src/file-store/jobs.ts` |
 
 `machineryRoot` is `workspaceStatePaths(workspaceRoot).memoryMachineryRoot`
 (`packages/memory/src/factory.ts`), i.e. `<state>/…/memory`
@@ -241,14 +245,14 @@ shortcut (`packages/memory/src/drain.ts`, and the consumer at `packages/memory/s
 written?, deleted?, reindexed?, skipped?, note?, error?, indexer_run_id? }`
 (`packages/memory/src/ingest.ts`).
 
-| Drain outcome | Notice phase | Carried | Source |
-| --- | --- | --- | --- |
-| `retry_wait` | `queued` | `indexer_run_id` only | `packages/memory/src/ingest.ts` |
-| `failed` | `failed` | `error` = job note (omitted when absent), `indexer_run_id` | `packages/memory/src/ingest.ts` |
-| `blocked` | `blocked` | `note` only — **no** `indexer_run_id` | `packages/memory/src/ingest.ts` |
-| `completed` with any of `written`/`deleted`/`reindexed` | `done` | the three counts, defaulted to `0/0/false` | `packages/memory/src/ingest.ts` |
-| `completed` with none of them | `done` | `skipped: true` | `packages/memory/src/ingest.ts` |
-| anything unrecognized | `done`, `skipped: true` | — (`default` shares the `completed` arm) | `packages/memory/src/ingest.ts`, test `packages/memory/tests/component/ingest.test.ts` |
+| Drain outcome                                           | Notice phase            | Carried                                                    | Source                                                                                 |
+| ------------------------------------------------------- | ----------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `retry_wait`                                            | `queued`                | `indexer_run_id` only                                      | `packages/memory/src/ingest.ts`                                                        |
+| `failed`                                                | `failed`                | `error` = job note (omitted when absent), `indexer_run_id` | `packages/memory/src/ingest.ts`                                                        |
+| `blocked`                                               | `blocked`               | `note` only — **no** `indexer_run_id`                      | `packages/memory/src/ingest.ts`                                                        |
+| `completed` with any of `written`/`deleted`/`reindexed` | `done`                  | the three counts, defaulted to `0/0/false`                 | `packages/memory/src/ingest.ts`                                                        |
+| `completed` with none of them                           | `done`                  | `skipped: true`                                            | `packages/memory/src/ingest.ts`                                                        |
+| anything unrecognized                                   | `done`, `skipped: true` | — (`default` shares the `completed` arm)                   | `packages/memory/src/ingest.ts`, test `packages/memory/tests/component/ingest.test.ts` |
 
 ### 3.5 `RunSnapshot`, and how a stored run becomes one
 
@@ -381,7 +385,7 @@ For an eligible run:
 
 `boundRunSnapshot` lives in `packages/memory/src/jobs.ts`, not in the file-backed job store.
 `sanitizeDeep(run, sanitizeText)` runs **first**, before any measurement or storage
-(`packages/memory/src/jobs.ts`); `originalBytes` is measured on the *clean* object
+(`packages/memory/src/jobs.ts`); `originalBytes` is measured on the _clean_ object
 (`packages/memory/src/jobs.ts`). Tool-call trimming keeps `floor(maxToolCalls / 5)` from the head
 and the remainder from the tail (`packages/memory/src/jobs.ts`), then excerpts, `task`,
 `final_answer` and `steering` are truncated (`packages/memory/src/jobs.ts`). `truncated` is
@@ -394,21 +398,21 @@ on the job.
 `drainIndexJobs` loops up to `limit` (default 5, `packages/memory/src/drain.ts`) times
 (`packages/memory/src/drain.ts`). Per iteration:
 
-| Step | Code | Effect |
-| --- | --- | --- |
-| abort check | `packages/memory/src/drain.ts` | break |
-| `store.jobs.peekDue(now)` | `packages/memory/src/drain.ts`; both job adapters | inspect the oldest due job without a lease or consumed attempt |
-| resolve the indexer runtime for an eligible snapshot | `packages/memory/src/drain.ts` | a legacy non-completed snapshot needs no runtime |
-| enter `store.exclusive` | `packages/memory/src/drain.ts` | one critical section for the claim decision |
-| no runtime → peek again inside the critical section | `packages/memory/src/drain.ts` | eligible job is `blocked`; non-completed job is claimed and converged |
-| `tx.jobs.claim(now, {ms, owner, token: randomUUID()})` | `packages/memory/src/drain.ts` | stamps a lease, `attempts += 1` |
-| `snapshot.status !== "completed"` | `packages/memory/src/drain.ts` | converge, note `run-not-completed`, before inference or wiki mutation |
-| `provider_key === undefined` | `packages/memory/src/drain.ts` | converge, note `provider-selection-unknown` |
-| `provider_key !== (memoryProviderKey ?? "wiki:local")` | `packages/memory/src/drain.ts` | converge, `provider-selection-changed` |
-| provider has no `writeTools` | `packages/memory/src/drain.ts` | converge, `provider-read-only` |
-| `tx.wasIndexed(run_id)` | `packages/memory/src/drain.ts` | converge, `already-indexed` |
-| `job.snapshot === undefined` | `packages/memory/src/drain.ts` | converge, `no-snapshot` |
-| otherwise | `packages/memory/src/drain.ts` | `claimed` |
+| Step                                                   | Code                                              | Effect                                                                |
+| ------------------------------------------------------ | ------------------------------------------------- | --------------------------------------------------------------------- |
+| abort check                                            | `packages/memory/src/drain.ts`                    | break                                                                 |
+| `store.jobs.peekDue(now)`                              | `packages/memory/src/drain.ts`; both job adapters | inspect the oldest due job without a lease or consumed attempt        |
+| resolve the indexer runtime for an eligible snapshot   | `packages/memory/src/drain.ts`                    | a legacy non-completed snapshot needs no runtime                      |
+| enter `store.exclusive`                                | `packages/memory/src/drain.ts`                    | one critical section for the claim decision                           |
+| no runtime → peek again inside the critical section    | `packages/memory/src/drain.ts`                    | eligible job is `blocked`; non-completed job is claimed and converged |
+| `tx.jobs.claim(now, {ms, owner, token: randomUUID()})` | `packages/memory/src/drain.ts`                    | stamps a lease, `attempts += 1`                                       |
+| `snapshot.status !== "completed"`                      | `packages/memory/src/drain.ts`                    | converge, note `run-not-completed`, before inference or wiki mutation |
+| `provider_key === undefined`                           | `packages/memory/src/drain.ts`                    | converge, note `provider-selection-unknown`                           |
+| `provider_key !== (memoryProviderKey ?? "wiki:local")` | `packages/memory/src/drain.ts`                    | converge, `provider-selection-changed`                                |
+| provider has no `writeTools`                           | `packages/memory/src/drain.ts`                    | converge, `provider-read-only`                                        |
+| `tx.wasIndexed(run_id)`                                | `packages/memory/src/drain.ts`                    | converge, `already-indexed`                                           |
+| `job.snapshot === undefined`                           | `packages/memory/src/drain.ts`                    | converge, `no-snapshot`                                               |
+| otherwise                                              | `packages/memory/src/drain.ts`                    | `claimed`                                                             |
 
 `peekDue(now)` uses the same due-state and oldest-enqueue ordering as `claim`
 in both adapters. The drain checks again inside the exclusive section, so a
@@ -450,7 +454,7 @@ The worker separately owns the scope for detached pass failures. Production: `cr
 `next_due_at` is read afterwards from the lock-free reader `store.jobs.nextDueAt()`
 (`packages/memory/src/drain.ts`).
 
-Pruning first identifies the `keepFailed` (20) most-recently-*updated* `failed` jobs
+Pruning first identifies the `keepFailed` (20) most-recently-_updated_ `failed` jobs
 (`keptFailureIds`, `packages/memory/src/jobs.ts`) and exempts every one of them from the age
 check entirely, however old — the file-store's `prune` computes that protected set before its
 deletion pass and skips any job whose `run_id` is in it (`packages/memory/src/file-store/jobs.ts`).
@@ -464,21 +468,21 @@ Claim due-ness: `pending`, or `retry_wait` past `not_before`, or `running` past 
 (`packages/memory/src/file-store/jobs.ts`; identical rule in the in-memory adapter,
 `packages/memory/src/testing.ts`).
 
-| State | Event | Next | Effect |
-| --- | --- | --- | --- |
-| — | `enqueue` (new run id) | `pending` | `attempts: 0`, `history: []`, snapshot stored (`packages/memory/src/file-store/jobs.ts`) |
-| any | `enqueue` (existing run id) | unchanged | the existing record is returned untouched (`packages/memory/src/file-store/jobs.ts`) |
-| `pending` / due `retry_wait` / expired `running` | `claim` | `running` | `attempts += 1`, `lease_until = now + ms`, owner+token stamped, `not_before` deleted; among every due job, the one with the earliest `enqueued_at` wins — strict FIFO across `pending`/`retry_wait`/`running` together, identically on both store backends (`packages/memory/src/file-store/jobs.ts`, in-memory twin `packages/memory/src/testing.ts`) |
-| `running` (fence valid & unexpired) | `renew` | `running` | `lease_until = at + ms` (`packages/memory/src/file-store/jobs.ts`) |
-| `running` (fence valid, **expiry ignored**) | `refreshOwnedAfterFence` | `running` | `lease_until = at + ms` (`packages/memory/src/file-store/jobs.ts`) |
-| `running` (fenced) | `complete` | `completed` | snapshot, all lease fields and `not_before` deleted; `note` set (`packages/memory/src/file-store/jobs.ts`) |
-| `running` (fenced) | `fail` → `retry_wait` | `retry_wait` | history appended, `not_before` set, lease cleared, `note = "<phase>: <error>"` capped at 200 (`packages/memory/src/file-store/jobs.ts`) |
-| `running` (fenced) | `fail` → `failed` | `failed` | same, `not_before` deleted |
-| `running` (fenced) | `release` | `pending` | `attempts = max(0, attempts - 1)`, lease cleared (`packages/memory/src/file-store/jobs.ts`) |
-| `failed` | `retry` | `pending` | `attempts = 0`, `note = "retried by operator"`, history retained (`packages/memory/src/file-store/jobs.ts`) |
-| any but `failed` | `retry` | unchanged | returns `null` (`packages/memory/src/file-store/jobs.ts`) |
-| terminal past `terminalBefore`, or `pending`/`retry_wait` past `pendingBefore` | `prune` | deleted | `packages/memory/src/jobs.ts`, applied at `packages/memory/src/file-store/jobs.ts` |
-| `running` | `prune` | unchanged | `isJobPrunable` returns false for every other state (`packages/memory/src/jobs.ts`) |
+| State                                                                          | Event                       | Next         | Effect                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------ | --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| —                                                                              | `enqueue` (new run id)      | `pending`    | `attempts: 0`, `history: []`, snapshot stored (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                                               |
+| any                                                                            | `enqueue` (existing run id) | unchanged    | the existing record is returned untouched (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                                                   |
+| `pending` / due `retry_wait` / expired `running`                               | `claim`                     | `running`    | `attempts += 1`, `lease_until = now + ms`, owner+token stamped, `not_before` deleted; among every due job, the one with the earliest `enqueued_at` wins — strict FIFO across `pending`/`retry_wait`/`running` together, identically on both store backends (`packages/memory/src/file-store/jobs.ts`, in-memory twin `packages/memory/src/testing.ts`) |
+| `running` (fence valid & unexpired)                                            | `renew`                     | `running`    | `lease_until = at + ms` (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                                                                     |
+| `running` (fence valid, **expiry ignored**)                                    | `refreshOwnedAfterFence`    | `running`    | `lease_until = at + ms` (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                                                                     |
+| `running` (fenced)                                                             | `complete`                  | `completed`  | snapshot, all lease fields and `not_before` deleted; `note` set (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                             |
+| `running` (fenced)                                                             | `fail` → `retry_wait`       | `retry_wait` | history appended, `not_before` set, lease cleared, `note = "<phase>: <error>"` capped at 200 (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                |
+| `running` (fenced)                                                             | `fail` → `failed`           | `failed`     | same, `not_before` deleted                                                                                                                                                                                                                                                                                                                             |
+| `running` (fenced)                                                             | `release`                   | `pending`    | `attempts = max(0, attempts - 1)`, lease cleared (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                                            |
+| `failed`                                                                       | `retry`                     | `pending`    | `attempts = 0`, `note = "retried by operator"`, history retained (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                            |
+| any but `failed`                                                               | `retry`                     | unchanged    | returns `null` (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                                                                              |
+| terminal past `terminalBefore`, or `pending`/`retry_wait` past `pendingBefore` | `prune`                     | deleted      | `packages/memory/src/jobs.ts`, applied at `packages/memory/src/file-store/jobs.ts`                                                                                                                                                                                                                                                                     |
+| `running`                                                                      | `prune`                     | unchanged    | `isJobPrunable` returns false for every other state (`packages/memory/src/jobs.ts`)                                                                                                                                                                                                                                                                    |
 
 The `complete`/`fail`/`release` fence condition is the same three-part predicate in each: the guard
 fires when the record is `running` **or** a lease was supplied, and then demands a supplied lease,
@@ -503,20 +507,20 @@ Evaluated strictly in this order (`packages/memory/src/jobs.ts`):
 
 ### 4.6 `indexRun`, step by step
 
-| # | Step | Code | Outcome on failure |
-| --- | --- | --- | --- |
-| 0 | subject run status is not `completed` | `packages/memory/src/indexer/run.ts` | `skipped` report, note `run-not-completed`; no model call |
-| 1 | resolve the subject run's model | `packages/memory/src/indexer/run.ts` | `skipped` report, note `run-model-unavailable` |
-| 2 | provider present but read-only | `packages/memory/src/indexer/run.ts` | `skipped` report, note `provider-read-only` |
-| 3 | `store.exclusive(tx => tx.wasIndexed(run_id))` | `packages/memory/src/indexer/run.ts` | `skipped`, note `already-indexed` |
-| 4 | `store.recover()` probe, outside any exclusive section | `packages/memory/src/indexer/run.ts` | throws `MemoryIndexError("apply", "memory is awaiting recovery…")` |
-| 5 | `generateExecutionId()`, `planPass(...)` | `packages/memory/src/indexer/run.ts` | — |
-| 6 | host `IndexerRuntime.executeRun` when supplied, else loop `executeRun({ rawBody, owner, deps, elicit: declineElicit, externalSignal? })` | `indexRun` in `packages/memory/src/indexer/run.ts` | throw → `MemoryIndexError("generate", "index-run-failed: …")`, terminal iff `err.name === "ValidationError"` |
-| 7 | `response.status === "error"` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("generate", "index-run-errored: <code>: <msg>")`, terminal iff code is `no_progress` |
-| 8 | `status !== "completed"` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("validate", "index-run-<status>")` |
-| 9 | `pyramidIssue(mutations)` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("validate", "pyramid-not-closed: …")` |
-| 10 | fenced `markIndexed` inside `store.exclusive` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("commit", …)` |
-| 11 | log `memory.index.pass`, build the report | `packages/memory/src/indexer/run.ts` | — |
+| #   | Step                                                                                                                                     | Code                                               | Outcome on failure                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 0   | subject run status is not `completed`                                                                                                    | `packages/memory/src/indexer/run.ts`               | `skipped` report, note `run-not-completed`; no model call                                                    |
+| 1   | resolve the subject run's model                                                                                                          | `packages/memory/src/indexer/run.ts`               | `skipped` report, note `run-model-unavailable`                                                               |
+| 2   | provider present but read-only                                                                                                           | `packages/memory/src/indexer/run.ts`               | `skipped` report, note `provider-read-only`                                                                  |
+| 3   | `store.exclusive(tx => tx.wasIndexed(run_id))`                                                                                           | `packages/memory/src/indexer/run.ts`               | `skipped`, note `already-indexed`                                                                            |
+| 4   | `store.recover()` probe, outside any exclusive section                                                                                   | `packages/memory/src/indexer/run.ts`               | throws `MemoryIndexError("apply", "memory is awaiting recovery…")`                                           |
+| 5   | `generateExecutionId()`, `planPass(...)`                                                                                                 | `packages/memory/src/indexer/run.ts`               | —                                                                                                            |
+| 6   | host `IndexerRuntime.executeRun` when supplied, else loop `executeRun({ rawBody, owner, deps, elicit: declineElicit, externalSignal? })` | `indexRun` in `packages/memory/src/indexer/run.ts` | throw → `MemoryIndexError("generate", "index-run-failed: …")`, terminal iff `err.name === "ValidationError"` |
+| 7   | `response.status === "error"`                                                                                                            | `packages/memory/src/indexer/run.ts`               | `MemoryIndexError("generate", "index-run-errored: <code>: <msg>")`, terminal iff code is `no_progress`       |
+| 8   | `status !== "completed"`                                                                                                                 | `packages/memory/src/indexer/run.ts`               | `MemoryIndexError("validate", "index-run-<status>")`                                                         |
+| 9   | `pyramidIssue(mutations)`                                                                                                                | `packages/memory/src/indexer/run.ts`               | `MemoryIndexError("validate", "pyramid-not-closed: …")`                                                      |
+| 10  | fenced `markIndexed` inside `store.exclusive`                                                                                            | `packages/memory/src/indexer/run.ts`               | `MemoryIndexError("commit", …)`                                                                              |
+| 11  | log `memory.index.pass`, build the report                                                                                                | `packages/memory/src/indexer/run.ts`               | —                                                                                                            |
 
 Step 3's placement is explicit: a frozen tree "would otherwise surface as every mutating tool failing
 inside its own batch, where the tool wrapper turns a throw into an ordinary error result — so the
@@ -533,6 +537,7 @@ Step 9's fence is `before → markIndexed → after`, and `after` is invoked eve
 The final report deduplicates paths, with `deleted` derived from `tool === "delete_memory"` and
 `written` from everything else (`packages/memory/src/indexer/run.ts`); `skipped` is `mutations.length === 0`, in
 which case `note` is `"nothing-to-record"` (`packages/memory/src/indexer/run.ts`).
+
 ### 4.7 Pass selection (`planPass`)
 
 ```
@@ -545,15 +550,15 @@ otherwise                                     → isolated, blocker = that reaso
 
 `continuationBlocker` order (`packages/memory/src/indexer/request.ts`):
 
-| # | Condition | Blocker |
-| --- | --- | --- |
-| 1 | `subject === null` | `no-stored-run` |
-| 2 | `final_context` absent or empty | `no-final-context` |
-| 3 | `(request.servers ?? []).length > 0` | `mcp-servers-declared` |
-| 4 | `total_input_tokens >= 100_000` and `total_cached_tokens === 0` | `no-cache-observed` |
-| 5 | no profile named `request.entry` | `no-entry-profile` |
-| 6 | any profile carries a grant absent from the pass deps' built-in, registry, and capability declarations | `undeclared-profile-grant` |
-| 7 | `entry.model !== modelRef` | `model-differs` |
+| #   | Condition                                                                                              | Blocker                    |
+| --- | ------------------------------------------------------------------------------------------------------ | -------------------------- |
+| 1   | `subject === null`                                                                                     | `no-stored-run`            |
+| 2   | `final_context` absent or empty                                                                        | `no-final-context`         |
+| 3   | `(request.servers ?? []).length > 0`                                                                   | `mcp-servers-declared`     |
+| 4   | `total_input_tokens >= 100_000` and `total_cached_tokens === 0`                                        | `no-cache-observed`        |
+| 5   | no profile named `request.entry`                                                                       | `no-entry-profile`         |
+| 6   | any profile carries a grant absent from the pass deps' built-in, registry, and capability declarations | `undeclared-profile-grant` |
+| 7   | `entry.model !== modelRef`                                                                             | `model-differs`            |
 
 The grant check makes a dynamically injected workflow manager take the isolated
 digest path. Its primary run had a `workflow` capability that is deliberately not
@@ -570,14 +575,14 @@ the measured cases: 5 110 875 input with 0 cached blocks; 2 270 231 with 2 083 4
 
 ### 4.8 The two indexer capability shapes
 
-| Property | isolated (`createIndexerMemoryCapability`) | continuation (`createIndexingPassCapability`) |
-| --- | --- | --- |
-| host capability list | **replaced** (`packages/memory/src/indexer/run.ts`) | **prepended** to (`packages/memory/src/indexer/run.ts`) |
-| advertised `tools` | the seven wiki tools, read-then-write (`packages/memory/src/capability.ts`) | none (`packages/memory/src/capability.ts`) |
-| `seedMarker` / `seedBlock` / `systemSection` | none declared here | none declared (`packages/memory/src/capability.ts`) |
-| handlers | read toolset, write toolset (`packages/memory/src/capability.ts`) | read, write, **refusal** (`packages/memory/src/capability.ts`) |
-| gates | `buildPyramidGate(ledger)` (`packages/memory/src/capability.ts`) | same (`packages/memory/src/capability.ts`) |
-| `onRunEnd` | absent (`packages/memory/src/capability.ts`) | absent |
+| Property                                     | isolated (`createIndexerMemoryCapability`)                                  | continuation (`createIndexingPassCapability`)                  |
+| -------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| host capability list                         | **replaced** (`packages/memory/src/indexer/run.ts`)                         | **prepended** to (`packages/memory/src/indexer/run.ts`)        |
+| advertised `tools`                           | the seven wiki tools, read-then-write (`packages/memory/src/capability.ts`) | none (`packages/memory/src/capability.ts`)                     |
+| `seedMarker` / `seedBlock` / `systemSection` | none declared here                                                          | none declared (`packages/memory/src/capability.ts`)            |
+| handlers                                     | read toolset, write toolset (`packages/memory/src/capability.ts`)           | read, write, **refusal** (`packages/memory/src/capability.ts`) |
+| gates                                        | `buildPyramidGate(ledger)` (`packages/memory/src/capability.ts`)            | same (`packages/memory/src/capability.ts`)                     |
+| `onRunEnd`                                   | absent (`packages/memory/src/capability.ts`)                                | absent                                                         |
 
 Both build their toolsets from `buildIndexerParts`: navigation is unbudgeted
 (`Number.MAX_SAFE_INTEGER`) while the write half carries `budgets.max_index_ops`
@@ -595,13 +600,13 @@ advertised array (`packages/memory/src/capability.ts`).
 
 `pyramidIssue(touched)` (`packages/memory/src/indexer/pyramid.ts`):
 
-| Condition | Result |
-| --- | --- |
-| `touched` empty | `null` (recording nothing is legitimate) |
-| no path ends `/MEMORY.md` | "you changed only compiled layers — …" |
-| `PROFILE.md` not among the non-delete writes | "a detailed change must also update the compiled PROFILE.md" |
+| Condition                                         | Result                                                                    |
+| ------------------------------------------------- | ------------------------------------------------------------------------- |
+| `touched` empty                                   | `null` (recording nothing is legitimate)                                  |
+| no path ends `/MEMORY.md`                         | "you changed only compiled layers — …"                                    |
+| `PROFILE.md` not among the non-delete writes      | "a detailed change must also update the compiled PROFILE.md"              |
 | some ancestor `TOPIC.md` of a leaf not among them | "the change to `<leaf>` must also update its compiled ancestor `<topic>`" |
-| otherwise | `null` |
+| otherwise                                         | `null`                                                                    |
 
 `compiled` excludes deletes (`packages/memory/src/indexer/pyramid.ts`), so deleting a leaf still obliges its ancestors to be
 updated (`packages/memory/src/indexer/pyramid.ts`). `ancestorTopics` builds `<seg1>/TOPIC.md`, `<seg1>/<seg2>/TOPIC.md`, …
@@ -621,7 +626,7 @@ calls `lose()`, which sets the flag and aborts the controller with `LOST_LEASE_N
 (`packages/memory/src/drain.ts`). The signal handed to `indexRun` is `AbortSignal.any([hostSignal, controller])`
 when a host signal exists (`packages/memory/src/drain.ts`).
 
-`packages/memory/tests/component/drain.test.ts` pins that the lease is extended with the *current* clock while a
+`packages/memory/tests/component/drain.test.ts` pins that the lease is extended with the _current_ clock while a
 model call is in flight (200 → 250 after advancing 50 against `leaseMs: 100`), and
 `packages/memory/tests/component/drain.test.ts` pins that a worker whose lease was reclaimed mid-pass writes
 nothing to the wiki and does not mark its run indexed.
@@ -702,7 +707,7 @@ truncated again to the overall `maxFindings` (default 200) (`packages/memory/src
 
 `truncated` is `incomplete || kept.length < sorted.length` (`packages/memory/src/health.ts`), where `incomplete` is
 set by any `skip(...)` (`packages/memory/src/health.ts`). Because a per-code overflow never reaches `sorted`, it is
-**not** reflected in `truncated` unless the overall cap is *also* exceeded or `incomplete` was
+**not** reflected in `truncated` unless the overall cap is _also_ exceeded or `incomplete` was
 independently set by some other `skip(...)` — a tree with, say, 80 `orphan_document` findings and
 nothing else wrong reports exactly 50 of them with `truncated: false`, as long as the total finding
 count stays under `maxFindings`.
@@ -750,7 +755,7 @@ Test: `packages/memory/tests/architecture/indexer-surface-identity.test.ts`.
 **MIX-01.** Moving the read/write partition boundary's last read-tool name
 (`grep_memories`) across the boundary changes only that tool's call budget, never the wire order —
 the concatenated `[...read, ...write]` array is unchanged either way, so the identity guard (INV-094)
-cannot detect that particular reclassification; only moving a *non*-boundary name reorders the array
+cannot detect that particular reclassification; only moving a _non_-boundary name reorders the array
 and turns the guard red.
 Production: n/a (a property of concatenation order, not a code path).
 Test: `packages/memory/tests/architecture/indexer-surface-identity.test.ts` (docstring
@@ -795,8 +800,8 @@ Production: [`indexRun`](../../packages/memory/src/indexer/run.ts),
 Test: [`job-durability.test.ts`](../../packages/memory/tests/integration/job-durability.test.ts) and
 [`indexer-continuation.test.ts`](../../packages/memory/tests/unit/indexer-continuation.test.ts).
 
-**MIX-07.** The hot path *prepends* the pass capability to the host's list and the cold
-path *replaces* it with a single-element list.
+**MIX-07.** The hot path _prepends_ the pass capability to the host's list and the cold
+path _replaces_ it with a single-element list.
 Production: `packages/memory/src/indexer/run.ts`.
 Test: `packages/memory/tests/integration/indexer-pass-plan.test.ts`.
 
@@ -909,14 +914,14 @@ Production: `packages/memory/src/file-store/jobs.ts`.
 Test: `packages/memory/src/testing.ts`.
 
 **INV-127.** Every lease operation (`renew`, `refreshOwnedAfterFence`, `complete`, `fail`, `release`)
-is fenced by the `(owner, token)` pair: after a reclaim, every one of them presented with the *old*
+is fenced by the `(owner, token)` pair: after a reclaim, every one of them presented with the _old_
 pair returns `false` rather than mutating the job — even before the new owner has completed anything.
 Production: `packages/memory/src/file-store/jobs.ts`.
 Test: `packages/memory/src/testing.ts` ("refreshes a fenced long effect and rejects every stale
 operation after reclaim").
 
 **INV-128.** An expired-lease holder cannot `renew`, `complete`, `fail` or `release` its own claim
-*before* anyone reclaims it — expiry alone invalidates those calls.
+_before_ anyone reclaims it — expiry alone invalidates those calls.
 Production: the `(job.lease_until ?? 0) <= at` term at
 `packages/memory/src/file-store/jobs.ts`.
 Test: `packages/memory/src/testing.ts`.
@@ -976,19 +981,26 @@ Test: `packages/memory/tests/component/jobs.test.ts` (`state: "pending", attempt
 `packages/memory/tests/component/drain.test.ts`.
 
 **MIX-15.** A `MemoryRecoveryRequiredError` thrown mid-pass releases the claim and stops
-the whole pass rather than failing the job; a shutdown does the same, decided from *our* abort signal
+the whole pass rather than failing the job; a shutdown does the same, decided from _our_ abort signal
 rather than from the error's shape.
 Production: `packages/memory/src/drain.ts`, reasoning.
 Test: `packages/memory/tests/component/observability.test.ts`;
 `packages/memory/tests/component/drain.test.ts` (three shutdowns leave `pending`, `attempts: 0`,
 empty history).
 
+A normal TUI exit aborts the worker before waiting for hosted settlement. The interrupted durable job
+returns to `pending` with its claim released and attempt refunded. On reopening the workspace the
+host starts recovery in background, without creating an interactive hosted run or a conversation turn.
+Production: `stopMemoryRecovery` in `packages/kernel/src/kernel.ts`, `close` in
+`packages/kernel/src/hosting/file-host.ts`, and `drainIndexJobs` in `packages/memory/src/drain.ts`.
+Test: `packages/kernel/tests/integration/local-host-memory-exit.test.ts`.
+
 **MIX-16.** The retention sweep is skipped entirely on a pass that saw no job at all, so a
 quiet workspace never takes the tree lock for it.
 Production: `packages/memory/src/drain.ts`.
 Test: `packages/memory/tests/component/drain.test.ts`.
 
-**MIX-17.** A blocked job is *reported* every pass but the log record is rate-limited,
+**MIX-17.** A blocked job is _reported_ every pass but the log record is rate-limited,
 keyed by `reason \0 run_id`, so a second stuck run or a new reason for the same run is never
 swallowed by the first.
 Production: `packages/memory/src/drain.ts`; the limiter is constructed once per tree, beside
@@ -1066,10 +1078,13 @@ Production: `packages/kernel/src/runs/memory-ingest-phase.ts`.
 Test: `packages/kernel/tests/unit/memory-ingest-phase.test.ts`.
 
 **MIX-27.** The ingest close grace is 5 s sliding with a 15 s absolute ceiling, and no host
-or test override may retain a settled run beyond 60 s.
+or test override may retain a settled run beyond 60 s. Cancellation bypasses this observation grace
+without cancelling the durable job unless the host also stops its worker.
 Production: `packages/kernel/src/runs/memory-ingest-phase.ts`, enforced at
 `packages/kernel/src/runs/managed-run.ts`.
-Test: `packages/kernel/tests/unit/memory-ingest-phase.test.ts`.
+Test: `packages/kernel/tests/unit/memory-ingest-phase.test.ts` and
+`cancellation closes pending memory observation without waiting for ingest grace` in
+`packages/kernel/tests/unit/managed-run.test.ts`.
 
 ### Broker, factory and health
 
@@ -1104,7 +1119,7 @@ Production: `packages/memory/src/health.ts`.
 Test: `packages/memory/tests/component/health.test.ts`.
 
 **MIX-34.** `health` is deterministic for a fixed tree and a fixed `now`, orders errors
-before warnings before info, and drops the *least* important findings when the overall `maxFindings`
+before warnings before info, and drops the _least_ important findings when the overall `maxFindings`
 cap truncates the sorted set. A separate, earlier `maxPerCode` cap (default 50) drops excess findings
 of one code at collection time, before dedup or sort ever sees them — that drop does **not** set
 `truncated` on its own; only the overall cap (or an independent `skip(...)`) does.
@@ -1143,30 +1158,30 @@ indexer pass through the host-owned run executor`) and
 
 ## 6. Failure modes and degradation
 
-| Condition | Detected at | Classification | Consequence |
-| --- | --- | --- | --- |
-| No indexer runtime resolves | `packages/memory/src/drain.ts` | `blocked`, reason `no_indexer` | job stays `pending`, **no attempt consumed**, until the runtime is available (`packages/memory/src/drain.ts`) |
-| Lease reclaimed mid-pass | `packages/memory/src/drain.ts` | `blocked`, reason `lease_lost` | "whatever this pass wrote stands, and the claimant decides the rest" (`packages/memory/src/drain.ts`) |
-| Tree frozen awaiting recovery | `packages/memory/src/drain.ts`; probed at `packages/memory/src/indexer/run.ts` | `blocked`, reason `recovery` | claim released, whole pass stops (`packages/memory/src/drain.ts`) |
-| Host aborted the drain | `packages/memory/src/drain.ts` | `blocked`, reason `shutdown` | claim released, attempt refunded (`packages/memory/src/drain.ts`) |
-| `executeRun` throws | `packages/memory/src/indexer/run.ts` | `generate`; terminal iff `ValidationError` | full durable job retry budget unless terminal; the indexer profile does not nest transport retries inside the pass |
-| Run answered `status: "error"` | `packages/memory/src/indexer/run.ts` | `generate`; terminal iff `no_progress` | as above |
-| Run ended non-`completed` (cancelled, `budget_exhausted`, `soft_limit_declined`) | `packages/memory/src/indexer/run.ts` | `validate` | 2-attempt budget; the subject is **not** marked indexed (`packages/memory/src/indexer/run.ts`) |
-| Pyramid still open at run end | `packages/memory/src/indexer/run.ts` | `validate` | 2-attempt budget |
-| `markIndexed` failed or the claim was lost first | `packages/memory/src/indexer/run.ts` | `commit` | full retry budget |
-| `MemoryPathError` escaping a tool | `packages/memory/src/drain.ts` | `apply`, terminal | fails immediately |
-| Any other untagged throw | `packages/memory/src/drain.ts` | `apply`, non-terminal | full retry budget |
-| Retry budget spent | `packages/memory/src/drain.ts` | `failed` | `memory.index.gave_up` at **error** level: "what that run could have taught this workspace is lost for good" (`packages/memory/src/drain.ts`) |
-| Enqueue write failed | `packages/memory/src/ingest.ts` | `phase: "failed"` notice | run stays persisted; "memory will never cover it" (`packages/memory/src/ingest.ts`) |
-| Drain itself threw | `packages/memory/src/worker.ts` | `memory.drain.failed` warn | timer re-armed at the full interval; the queue is durable |
-| A job record cannot be parsed | `packages/memory/src/file-store/jobs.ts` | `memory.job.record_corrupt` warn, sampled | the record is skipped: "that run's learning is lost and nothing will retry it" (`packages/memory/src/file-store/jobs.ts`) |
-| A job file exceeds `metadataBytes` on write | `packages/memory/src/file-store/jobs.ts` | `MemoryStorageLimitError` throws | propagates out of `enqueue` |
-| Prune failed | `packages/memory/src/drain.ts` | swallowed by `bestEffort` | the pass still reports normally |
-| `onJobSettled` / `onNotice` / broker listener threw | `packages/memory/src/worker.ts`, `packages/memory/src/ingest.ts`, `packages/memory/src/job-broker.ts` | swallowed | never breaks the worker or the publisher |
-| Git probe unavailable | `packages/memory/src/workspace-state.ts` | `undefined` | snapshot simply carries no `workspace_state`; debug-only log |
-| Subject run's provider token neither declared nor built-in | `packages/memory/src/factory.ts` | `memory.provider.undeclared` warn, once | index pass skips that run without a model call (`packages/memory/src/indexer/run.ts`) |
-| Settings unreadable | `packages/memory/src/factory.ts` | `memory.settings.unreadable` warn | run proceeds with memory off entirely |
-| Subject run model missing or unavailable | `packages/memory/src/indexer/run.ts` | `run-model-unavailable` | index pass is skipped without a model call |
+| Condition                                                                        | Detected at                                                                                           | Classification                             | Consequence                                                                                                                                   |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| No indexer runtime resolves                                                      | `packages/memory/src/drain.ts`                                                                        | `blocked`, reason `no_indexer`             | job stays `pending`, **no attempt consumed**, until the runtime is available (`packages/memory/src/drain.ts`)                                 |
+| Lease reclaimed mid-pass                                                         | `packages/memory/src/drain.ts`                                                                        | `blocked`, reason `lease_lost`             | "whatever this pass wrote stands, and the claimant decides the rest" (`packages/memory/src/drain.ts`)                                         |
+| Tree frozen awaiting recovery                                                    | `packages/memory/src/drain.ts`; probed at `packages/memory/src/indexer/run.ts`                        | `blocked`, reason `recovery`               | claim released, whole pass stops (`packages/memory/src/drain.ts`)                                                                             |
+| Host aborted the drain                                                           | `packages/memory/src/drain.ts`                                                                        | `blocked`, reason `shutdown`               | claim released, attempt refunded (`packages/memory/src/drain.ts`)                                                                             |
+| `executeRun` throws                                                              | `packages/memory/src/indexer/run.ts`                                                                  | `generate`; terminal iff `ValidationError` | full durable job retry budget unless terminal; the indexer profile does not nest transport retries inside the pass                            |
+| Run answered `status: "error"`                                                   | `packages/memory/src/indexer/run.ts`                                                                  | `generate`; terminal iff `no_progress`     | as above                                                                                                                                      |
+| Run ended non-`completed` (cancelled, `budget_exhausted`, `soft_limit_declined`) | `packages/memory/src/indexer/run.ts`                                                                  | `validate`                                 | 2-attempt budget; the subject is **not** marked indexed (`packages/memory/src/indexer/run.ts`)                                                |
+| Pyramid still open at run end                                                    | `packages/memory/src/indexer/run.ts`                                                                  | `validate`                                 | 2-attempt budget                                                                                                                              |
+| `markIndexed` failed or the claim was lost first                                 | `packages/memory/src/indexer/run.ts`                                                                  | `commit`                                   | full retry budget                                                                                                                             |
+| `MemoryPathError` escaping a tool                                                | `packages/memory/src/drain.ts`                                                                        | `apply`, terminal                          | fails immediately                                                                                                                             |
+| Any other untagged throw                                                         | `packages/memory/src/drain.ts`                                                                        | `apply`, non-terminal                      | full retry budget                                                                                                                             |
+| Retry budget spent                                                               | `packages/memory/src/drain.ts`                                                                        | `failed`                                   | `memory.index.gave_up` at **error** level: "what that run could have taught this workspace is lost for good" (`packages/memory/src/drain.ts`) |
+| Enqueue write failed                                                             | `packages/memory/src/ingest.ts`                                                                       | `phase: "failed"` notice                   | run stays persisted; "memory will never cover it" (`packages/memory/src/ingest.ts`)                                                           |
+| Drain itself threw                                                               | `packages/memory/src/worker.ts`                                                                       | `memory.drain.failed` warn                 | timer re-armed at the full interval; the queue is durable                                                                                     |
+| A job record cannot be parsed                                                    | `packages/memory/src/file-store/jobs.ts`                                                              | `memory.job.record_corrupt` warn, sampled  | the record is skipped: "that run's learning is lost and nothing will retry it" (`packages/memory/src/file-store/jobs.ts`)                     |
+| A job file exceeds `metadataBytes` on write                                      | `packages/memory/src/file-store/jobs.ts`                                                              | `MemoryStorageLimitError` throws           | propagates out of `enqueue`                                                                                                                   |
+| Prune failed                                                                     | `packages/memory/src/drain.ts`                                                                        | swallowed by `bestEffort`                  | the pass still reports normally                                                                                                               |
+| `onJobSettled` / `onNotice` / broker listener threw                              | `packages/memory/src/worker.ts`, `packages/memory/src/ingest.ts`, `packages/memory/src/job-broker.ts` | swallowed                                  | never breaks the worker or the publisher                                                                                                      |
+| Git probe unavailable                                                            | `packages/memory/src/workspace-state.ts`                                                              | `undefined`                                | snapshot simply carries no `workspace_state`; debug-only log                                                                                  |
+| Subject run's provider token neither declared nor built-in                       | `packages/memory/src/factory.ts`                                                                      | `memory.provider.undeclared` warn, once    | index pass skips that run without a model call (`packages/memory/src/indexer/run.ts`)                                                         |
+| Settings unreadable                                                              | `packages/memory/src/factory.ts`                                                                      | `memory.settings.unreadable` warn          | run proceeds with memory off entirely                                                                                                         |
+| Subject run model missing or unavailable                                         | `packages/memory/src/indexer/run.ts`                                                                  | `run-model-unavailable`                    | index pass is skipped without a model call                                                                                                    |
 
 Bounded reads throughout: a job scan visits at most `MEMORY_STORAGE_LIMITS.scanEntries` (10 000)
 entries and stops once accumulated bytes would exceed `corpusBytes` (32 MiB)
@@ -1188,14 +1203,14 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 
 ### 7.1 Outbound, runtime
 
-| Depends on | Why the direction is forced | Static/dynamic |
-| --- | --- | --- |
-| `@clarvis/loop` (`executeRun`, `generateExecutionId`, `ExecuteRunDeps`, `StoredExecution`) | an index pass **is** a run — the engine types are imported statically and type-only (`packages/memory/src/indexer/run.ts`, `packages/memory/src/indexer/request.ts`), while the executable entry is loaded dynamically at `packages/memory/src/indexer/run.ts`; `packages/memory/package.json` lists it as a hard dependency | static type + dynamic value |
-| `@clarvis/loop/host` (`SUBMIT_RESULT_TOOL_NAME`) | the refusal set must contain the exact name the engine dispatches — `packages/memory/src/indexer/capability.ts` | static, value |
-| `@clarvis/capability` | `sanitizeDeep`/`sanitizeText` (`packages/memory/src/jobs.ts`), `createRateLimiter`/`createSampler`/`bestEffort`/`detachObserved`/`NOOP_LOGGER` (`packages/memory/src/drain.ts`, `packages/memory/src/worker.ts`, `packages/memory/src/file-store/jobs.ts`), `FinalizeGate` (`packages/memory/src/indexer/pyramid.ts`), `handlerBaseOf`/`openCallEnvelope` (`packages/memory/src/indexer/capability.ts`) | static, value |
-| `@clarvis/paths` | `workspacePaths`/`workspaceStatePaths` (`packages/memory/src/factory.ts`), `writeFileDurable` (`packages/memory/src/file-store/jobs.ts`), `ensureWorkspaceSubdir` (`packages/memory/src/file-store/layout.ts`) | static, value |
-| `node:crypto` | `randomUUID` for the claim's fencing token (`packages/memory/src/drain.ts`), `createHash` for `encodeRunId` (`packages/memory/src/file-store/jobs.ts`) | static |
-| the run's trace store | `planPass` reads the subject through `indexer.deps.traceStore.getById(owner, run_id)` (`packages/memory/src/indexer/run.ts`) — no direct `@clarvis/trace` import or manifest edge | structural, via `ExecuteRunDeps` from `@clarvis/loop` |
+| Depends on                                                                                 | Why the direction is forced                                                                                                                                                                                                                                                                                                                                                                             | Static/dynamic                                        |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `@clarvis/loop` (`executeRun`, `generateExecutionId`, `ExecuteRunDeps`, `StoredExecution`) | an index pass **is** a run — the engine types are imported statically and type-only (`packages/memory/src/indexer/run.ts`, `packages/memory/src/indexer/request.ts`), while the executable entry is loaded dynamically at `packages/memory/src/indexer/run.ts`; `packages/memory/package.json` lists it as a hard dependency                                                                            | static type + dynamic value                           |
+| `@clarvis/loop/host` (`SUBMIT_RESULT_TOOL_NAME`)                                           | the refusal set must contain the exact name the engine dispatches — `packages/memory/src/indexer/capability.ts`                                                                                                                                                                                                                                                                                         | static, value                                         |
+| `@clarvis/capability`                                                                      | `sanitizeDeep`/`sanitizeText` (`packages/memory/src/jobs.ts`), `createRateLimiter`/`createSampler`/`bestEffort`/`detachObserved`/`NOOP_LOGGER` (`packages/memory/src/drain.ts`, `packages/memory/src/worker.ts`, `packages/memory/src/file-store/jobs.ts`), `FinalizeGate` (`packages/memory/src/indexer/pyramid.ts`), `handlerBaseOf`/`openCallEnvelope` (`packages/memory/src/indexer/capability.ts`) | static, value                                         |
+| `@clarvis/paths`                                                                           | `workspacePaths`/`workspaceStatePaths` (`packages/memory/src/factory.ts`), `writeFileDurable` (`packages/memory/src/file-store/jobs.ts`), `ensureWorkspaceSubdir` (`packages/memory/src/file-store/layout.ts`)                                                                                                                                                                                          | static, value                                         |
+| `node:crypto`                                                                              | `randomUUID` for the claim's fencing token (`packages/memory/src/drain.ts`), `createHash` for `encodeRunId` (`packages/memory/src/file-store/jobs.ts`)                                                                                                                                                                                                                                                  | static                                                |
+| the run's trace store                                                                      | `planPass` reads the subject through `indexer.deps.traceStore.getById(owner, run_id)` (`packages/memory/src/indexer/run.ts`) — no direct `@clarvis/trace` import or manifest edge                                                                                                                                                                                                                       | structural, via `ExecuteRunDeps` from `@clarvis/loop` |
 
 ### 7.2 Host composition
 

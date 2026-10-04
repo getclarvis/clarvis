@@ -376,7 +376,7 @@ describe("subscription transport authority", () => {
         },
       ],
     });
-    expect(request?.url).toContain("client_version=0.158.0");
+    expect(request?.url).toContain("client_version=1.160.0");
     expect(request?.url).not.toContain(encodeURIComponent(VERSION));
     expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
   });

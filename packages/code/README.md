@@ -51,13 +51,14 @@ the displayed host/run identity. The host records this operator verification in 
 before releasing its physical-work block. The conversation is archived and new work requires a new
 conversation; existing history and any known result remain. Failed confirmation or persistence keeps
 the recovery pending. The application does not infer physical closure from a missing host process.
-After attachment through a local host connection, the activity line says `continues after exit`
-for a promoted run. `/quit` closes that TUI without asking about losing the run or cancelling
-it; a new turn defaults to ordinary exit policy. SSH attachments never show that
-promise. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
-A Goal turn whose intent has committed also carries the host's continuation policy immediately.
-Connection loss pauses its future automatic stages but preserves the current physical work and its
-eventual settlement; it does not depend on the TUI completing a separate `/background` handoff.
+Exiting the TUI normally, including `/quit`, signals or terminal closure, immediately retires the
+workspace host and cancels all its work, including previously handed-off runs and Goal stages observed
+by another connection. New work is refused during shutdown. Use `/background` for each exit that
+should preserve work; a run's prior continuation policy alone does not authorize this TUI's exit.
+Unsaved settings and active-run quit confirmation still apply, and Ctrl+C still requests cancellation.
+Active memory indexing is aborted, its durable claim is released without spending an attempt, and
+reopening the workspace recovers that job through the background worker without attaching it to the
+TUI or adding a conversation turn. Cancelled foreground work does not enqueue new memory jobs.
 
 For local connections, `/reconnect` restores the connection to the existing host without restarting
 it or replaying work. `/reconnect reload` applies saved configuration through an explicit host
@@ -345,8 +346,8 @@ memory, inspect MCP tool servers, and manage extensions. `/extensions` is the on
 route. It uses the same guided decision pattern as first boot: choose workspace/global selection
 scope, choose or stage an Extension Profile, search exact plugin and standalone-skill inventory, review
 every resulting agent/skill/MCP/hook contribution, then apply one preview-bound delta and
-reconnect. Each decision exposes one key per outcome: Enter advances or applies and Escape finishes
-the multi-select or walks back, asking before an edited draft is discarded. Install, exact
+reconnect. Each decision exposes one key per outcome: Enter advances or applies and Escape walks
+back, asking before an edited draft is discarded. Install, exact
 resolution and Apply use the shared footer-right spinner, show elapsed time, advance through their
 real host phases and suspend mutation keys until the operation settles, while Escape remains live.
 Leaving an install or preview returns immediately without cancelling its background work; once Apply
@@ -397,7 +398,12 @@ exact `{ scope, source, name }` plugins and standalone skills. Plugins install i
 `.agents/plugins` inventory. Definitions may be shared from `.clarvis/extension-profiles`, but the active workspace
 selection is always local machine state. The Extension Profile browser shows resolution status, routes
 creation/customization into the guided composer, retains direct selection/clear diagnostics, and
-can revision-safely delete an inactive custom definition. A process-local `--extension-profile`
+can revision-safely delete an inactive custom definition. New-profile creation opens directly at
+scope selection; the badge follows the chosen scope, and cancelling a name returns to the profile
+picker. Step 3 offers **Install external plugin** for a plugin Git URL outside any marketplace:
+the checkout is installed immediately and its exact identity is staged until Apply. Cancelling the
+URL returns to the draft; a failed install keeps it editable. Returning from the composer refreshes
+the retained profile browser so new definitions and the active snapshot appear immediately. A process-local `--extension-profile`
 keeps persisted selection controls read-only. A failed Extension Profile catalog reload remains visible
 inside the browser, with `r` retry, instead of surviving only as a transient footer notification. When a
 retained child returns after changing the active snapshot, the Extensions hub immediately starts a full

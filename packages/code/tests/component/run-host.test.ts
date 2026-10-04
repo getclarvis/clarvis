@@ -1095,7 +1095,6 @@ test.each(["continue", "cancel"] as const)(
     const observing = f.host.attachHostedRun(f.ref);
     await flush();
     expect(f.host.runActive()).toBe(true);
-    expect(f.host.continuesOnExit()).toBe(policy === "continue");
     expect(f.calls.attaches).toBe(1);
     expect(f.host.sessionMeta()!.turns).toHaveLength(1);
     f.host.teardownRuns();
@@ -1105,7 +1104,6 @@ test.each(["continue", "cancel"] as const)(
     expect(f.calls.hostCancels).toBe(policy === "cancel" ? 1 : 0);
     expect(f.run.cancelled).toBe(false);
     expect(f.host.physicalWorkActive()).toBe(false);
-    expect(f.host.continuesOnExit()).toBe(false);
     expect(f.calls.writes).toBe(0);
   },
 );
@@ -1119,7 +1117,6 @@ test("a connection-owned host neither advertises exit survival nor attempts back
     detachCalls++;
     throw new Error("must not detach");
   };
-  expect(f.host.continuesOnExit()).toBe(false);
   await expect(f.host.backgroundCurrentRun()).rejects.toThrow("available only on a local host");
   expect(detachCalls).toBe(0);
   f.host.teardownRuns();
@@ -1316,7 +1313,6 @@ test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles
   await flush();
   expect(host.runActive()).toBe(true);
   expect(host.runStartedAt()).not.toBeNull();
-  expect(host.continuesOnExit()).toBe(false);
   expect(host.sessionUsageBaseline()).toEqual({ input: 0, output: 0, cached: 0 });
   expect(runs.length).toBe(1);
   expect(runs[0]!.input.profile).toBe("coder");

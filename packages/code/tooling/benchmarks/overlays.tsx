@@ -348,6 +348,8 @@ function ExtensionsCatalogPage(props: {
     loadError: () => undefined,
     install: () =>
       props.pendingInstall ? pendingPluginInstall : Promise.resolve(extensionPlugins[0]!),
+    installUrl: () =>
+      props.pendingInstall ? pendingPluginInstall : Promise.resolve(extensionPlugins[0]!),
     refresh: async () => {},
     reconnect: async () => ({ ok: true, message: "connected" }),
     runActive: () => false,

@@ -90,6 +90,69 @@ async function fixture(environmentOverrides: Readonly<Record<string, string | un
 }
 
 describe("independent local kernel process", () => {
+  test("normal TUI exit cancels every run including handed-off work and retires the process", async () => {
+    const f = await fixture();
+    const { client } = await connectOrLaunchLocalKernel(f.options);
+    cleanups.push(() => client.close());
+    const other = (await connectOrLaunchLocalKernel(f.options)).client;
+    cleanups.push(() => other.close());
+    await client.localHost!.setDisconnectAction("shutdown");
+    for (const [peer, id] of [
+      [client, "foreground"],
+      [other, "background"],
+    ] as const) {
+      await peer.sessions.save({
+        id,
+        title: id,
+        project_id: peer.project.id,
+        workspace: peer.workspace.id,
+        created_at: 1,
+        updated_at: 1,
+        turns: [],
+        totals: { input: 0, output: 0, cached: 0 },
+      });
+      const session = (await peer.sessions.get(id))!;
+      const run = await peer.hosting!.start({
+        session_id: id,
+        session_revision: session.revision!,
+        kind: "conversation",
+        user_preview: id,
+        params: { execution_id: id, agent: "solo", messages: [{ role: "user", content: id }] },
+      });
+      void run.handle.done.catch(() => undefined);
+      void run.handle.closed.catch(() => undefined);
+      if (id === "background") {
+        const ref = (await peer.hosting!.list()).find((entry) => entry.execution_id === id)!;
+        await peer.hosting!.detach({
+          execution_id: id,
+          host_generation: ref.host_generation,
+          control_epoch: ref.control_epoch,
+          revision: ref.revision,
+          operation_id: "handoff",
+        });
+      }
+      await until(async () =>
+        access(join(f.workspaceRoot, `entered-${id}.json`)).then(
+          () => true,
+          () => false,
+        ),
+      );
+    }
+    const record = (await readLocalHostConnection(f.identity))!;
+    const started = performance.now();
+    await client.close();
+    await until(async () => !isAlive(record.pid), 5000);
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(await readLocalHostConnection(f.identity)).toBeNull();
+    expect(
+      await access(join(f.workspaceRoot, "after-exit.json")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
+    await expect(other.localHost!.inspect()).rejects.toThrow();
+  });
+
   test("explicit replacement cancels an old hosted run before launching a new generation", async () => {
     const f = await fixture();
     const peer = Bun.spawn(

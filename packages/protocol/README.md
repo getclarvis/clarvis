@@ -20,7 +20,8 @@ Wire DTOs, service interfaces, capability advertisement, and the transport seam 
 the kernel and are specified separately in
 [`hosts/kernel-transport.md`](../../specs/hosts/kernel-transport.md).
 The authenticated local operator service exposes separate idle restart and explicit shutdown
-requests; shutdown retires the old host's work before a replacement connects.
+requests; shutdown retires the host's work. `setDisconnectAction` arms workspace shutdown for a
+TUI connection or selects deliberate detach for background handoff and connection replacement.
 
 ## The client contract
 

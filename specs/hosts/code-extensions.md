@@ -52,8 +52,21 @@ consent, but it does not bypass the Extension Profile draft. The operator is alr
 snapshot, so the installed plugin enters only when Step 5 applies the reviewed composition. Closing
 the wizard never silently uninstalls that checkout.
 
-Escape always means back. Escape from a retained picker finishes that choice; Escape from an edited
-Extension Profile asks before discarding the draft. Preview and install keep running when Escape returns to
+Step 3 includes an **Install external plugin** action for a direct plugin Git URL, even when the
+marketplace catalog is empty. It uses the same host installation and staging lifecycle as a listed
+plugin: successful installation stages its exact global reference, and activation waits for Step 5.
+Cancelling the URL restores the selection picker without discarding the draft; installation failure
+reports the error and reopens that picker. A background install cannot stage into a replaced draft.
+The name editor also returns to the chosen-scope profile picker when cancelled. The frame's scope
+badge follows the selection decision for creation, customization, review and completion.
+Production: `chooseExtension`, `installAndStage`, `beginNamedDraft`, and
+`openExtensionProfilePicker` in `packages/code/src/views/config/ExtensionsHub.tsx`;
+`FieldEditor.start` in `packages/code/src/views/config/field-editor.tsx`.
+Test: the external Git installation and name-cancellation cases in
+`packages/code/tests/integration/extensions-hub-render.test.tsx`.
+
+Escape always means back. Escape from the retained extension picker returns to the profile decision,
+asking before an edited Extension Profile draft is discarded. Preview and install keep running when Escape returns to
 the previous level, and an installed checkout is staged only if the draft that started it still
 exists. Apply is already committed work: Escape closes Extensions immediately while apply,
 reconnect, refresh, and the final notification finish in the background. Escape never cancels or
@@ -201,7 +214,12 @@ catalogs. Refresh clears cached fetch results and retries every exact URL.
 
 The Extension Profile browser is diagnostics and lifecycle administration, not a second composer. It
 lists builtin/global/workspace definitions, exact status and fingerprint, counts, issues, selected
-plugins and standalone skills. Creating, cloning, or configuring returns into the guided composer.
+plugins and standalone skills. Creating opens the guided scope decision directly; configuring
+primes the existing exact definition. Returning from the composer reloads definitions, current
+snapshot and inventory, so the retained browser shows newly created profiles and the new active
+selection without a manual refresh. Production: `ExtensionProfileBrowser` and the
+`extension-profiles.open` registration in `packages/code/src/app/commands.tsx`. Test: the
+return-from-composer case in `packages/code/tests/integration/extension-profile-browser-render.test.tsx`.
 
 `builtin:default` is immutable. An inactive custom Extension Profile with a known revision exposes `d`;
 deletion is danger-confirmed and revision-bound. The active Extension Profile, an Extension Profile selected by

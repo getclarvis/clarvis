@@ -49,6 +49,13 @@ hiding a failure from another instance using the same logger. Production:
 
 ## Contract
 
+Local TUI connections arm workspace shutdown on disconnect. Normal exit cancels every hosted run and
+memory worker immediately, without the idle retirement delay; explicit background handoff and
+connection replacement disarm that connection. Shutdown releases interrupted memory claims for
+background recovery on the next host, preserving history and refusing new admission.
+See [hosted runs](../../specs/hosts/hosted-runs.md) and
+[memory indexing](../../specs/capabilities/memory-indexer.md).
+
 `createFileKernel` reconciles the product-owned `clarvis-docs` Markdown tree in the resolved global
 Clarvis skills directory before capturing the skill catalog. `reconcileSystemDocs` verifies a
 portable release's listed Markdown hashes or reads the current source checkout, then publishes a
@@ -418,7 +425,7 @@ refresh, revocation, entitled catalogs, and token-opaque physical request author
 owner explicitly enables both public-client references for the local product; that is a Clarvis
 product decision, not provider endorsement. Synthetic registrations exercise transport behavior in
 tests. Provider `user-agent` identity uses the root-owned Clarvis product version. ChatGPT and Grok
-separately send adapter-owned compatibility revisions (`0.158.0` and `1.0.41`, respectively) in the
+separately send adapter-owned compatibility revisions (`1.160.0` and `1.0.41`, respectively) in the
 catalog version fields their services gate; those values are not the Clarvis product version.
 Responses-backed Grok entitled-catalog rows tag `tool_calling` and tag `vision` only when the
 payload declares image input or `supports_vision: true`. The

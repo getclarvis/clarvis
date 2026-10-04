@@ -119,6 +119,7 @@ export function ExtensionProfileBrowser(
   let detailScroll: ScrollBoxRenderable | undefined;
   let previewScroll: ScrollBoxRenderable | undefined;
   let detailEpoch = 0;
+  let wasActive = host.active();
 
   const rows = createMemo(() => {
     const value = term().trim();
@@ -301,6 +302,15 @@ export function ExtensionProfileBrowser(
     );
   });
   onMount(() => act("extension_profiles_reload", "Loading Extension Profiles", reload));
+
+  createEffect(() => {
+    const active = host.active();
+    const returnedFromComposer = active && !wasActive;
+    wasActive = active;
+    if (returnedFromComposer) {
+      act("extension_profiles_return_reload", "Refreshing Extension Profiles", reload);
+    }
+  });
 
   const spec = (): LevelSpec => {
     if (pending() !== undefined) {

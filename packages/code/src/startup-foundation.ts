@@ -19,6 +19,7 @@ export function prepareStartupFoundation(mode: RunMode): Promise<WorkspaceClient
     ...(owner === undefined ? {} : { defaultOwner: owner }),
     logger: createLogger("silent"),
     openMcpAuthorizationUrl: openPublicUrl,
+    shutdownOnExit: true,
     ...(mode.remote === undefined ? {} : { destination: { kind: "ssh" as const, ...mode.remote } }),
   });
 }

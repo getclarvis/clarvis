@@ -105,7 +105,8 @@ Code exposes the surface under Extensions as **Extension Profile**, explicitly d
 **Agent Profile** that selects an agent definition for a run. The
 primary route guides scope, definition/clone choice, exact inventory, capability review, and one
 composition apply. The focused view lists and diagnoses definitions, routes creation/customization
-into that composer, previews direct selection/clear deltas, and reconnects the backend
+into that composer, refreshes definitions and the active snapshot when it returns, previews direct
+selection/clear deltas, and reconnects the backend
 (`ExtensionsHub` and `ExtensionProfileBrowser` in `packages/code/src/views/config`). The focused Plugins
 browser composes installation and exact membership through the current Extension Profile; its configure
 action returns to the guided composer primed with the selected exact ref (`marketplace.open`

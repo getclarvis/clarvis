@@ -931,7 +931,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           runActive: deps.runActive,
           notify,
           configure: (ref) => {
-            extensionSetupInitialProfile = ref;
+            extensionSetupInitialProfile = ref ?? { scope: "builtin", name: "default" };
             extensionSetupInitialPlugin = undefined;
             openWithReturn("extensions.open", "extension-profiles.open", host.scope());
           },
@@ -1700,6 +1700,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           loadError,
           install: (listing, source) =>
             pluginsStore.installSource(marketplaceInstallSource(listing), source),
+          installUrl: (url, source) => pluginsStore.install(url, undefined, source),
           refresh: async (refreshInventory = false) => {
             market.refresh();
             await refresh(refreshInventory);

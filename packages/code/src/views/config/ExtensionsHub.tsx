@@ -69,6 +69,7 @@ export interface ExtensionsHubDeps {
   loading: () => boolean;
   loadError: () => string | undefined;
   install: (listing: MarketplaceListing, source: "agents") => Promise<PluginView>;
+  installUrl: (url: string, source: "agents") => Promise<PluginView>;
   refresh: (inventory?: boolean) => Promise<void>;
   reconnect: () => Promise<{ ok: boolean; message: string }>;
   runActive: () => boolean;
@@ -247,6 +248,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
       return;
     }
     replaceDraft(next);
+    if (host.scope() !== selectionScope) host.toggleScope();
     setStep(3);
     openExtensionPicker();
   };
@@ -258,31 +260,36 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   ): void => {
     setPicker(null);
     setStep(2);
-    editor.start(`Step 2 of 5 ${glyph("separator")} ${scope} Extension Profile name`, "", (raw) => {
-      const name = raw.trim();
-      if (!NAME_RE.test(name)) {
-        deps.notify("use 1-128 letters, numbers, dots, underscores or hyphens", "warn");
-        openExtensionProfilePicker(selectionScope);
-        return;
-      }
-      if (
-        deps
-          .definitions()
-          .some((definition) => definition.ref.scope === scope && definition.ref.name === name)
-      ) {
-        deps.notify(`${scope}:${name} already exists`, "warn");
-        openExtensionProfilePicker(selectionScope);
-        return;
-      }
-      replaceDraft({
-        selectionScope,
-        ref: { scope, name },
-        definition: basis,
-        expectedRevision: null,
-      });
-      setStep(3);
-      openExtensionPicker();
-    });
+    editor.start(
+      `Step 2 of 5 ${glyph("separator")} ${scope} Extension Profile name`,
+      "",
+      (raw) => {
+        const name = raw.trim();
+        if (!NAME_RE.test(name)) {
+          deps.notify("use 1-128 letters, numbers, dots, underscores or hyphens", "warn");
+          openExtensionProfilePicker(selectionScope);
+          return;
+        }
+        if (
+          deps
+            .definitions()
+            .some((definition) => definition.ref.scope === scope && definition.ref.name === name)
+        ) {
+          deps.notify(`${scope}:${name} already exists`, "warn");
+          openExtensionProfilePicker(selectionScope);
+          return;
+        }
+        replaceDraft({
+          selectionScope,
+          ref: { scope, name },
+          definition: basis,
+          expectedRevision: null,
+        });
+        setStep(3);
+        openExtensionPicker();
+      },
+      { onCancel: () => openExtensionProfilePicker(selectionScope) },
+    );
   };
 
   const extensionProfileRows = (selectionScope: ExtensionProfileSelectionScope): CatalogRow[] => {
@@ -360,6 +367,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   }
 
   function openExtensionProfilePicker(selectionScope: ExtensionProfileSelectionScope): void {
+    if (host.scope() !== selectionScope) host.toggleScope();
     setStep(2);
     setPicker({
       title: `Extensions setup ${glyph("separator")} Step 2 of 5 ${glyph("separator")} Extension Profile`,
@@ -498,6 +506,13 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
           left.label.localeCompare(right.label) ||
           left.id.localeCompare(right.id),
       ),
+      {
+        id: "setup:install-url",
+        label: "Install external plugin",
+        haystack: "install external plugin git url outside marketplace",
+        detail: "Git URL · installs now; activation waits for Apply",
+        action: true,
+      },
     ];
   };
 
@@ -553,15 +568,15 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     if (replaced !== undefined) deps.notify(`replaced ${skillId(replaced)} with ${skillId(ref)}`);
   };
 
-  const installAndStage = (listing: MarketplaceListing, source: "agents"): void => {
+  const installAndStage = (label: string, install: () => Promise<PluginView>): void => {
     if (busy() !== undefined) return;
     const ownerGeneration = draftGeneration;
     setPicker(null);
-    beginBusy(`Installing ${listing.name}`);
+    beginBusy(`Installing ${label}`);
     detachObserved(
       "extensions_setup_install",
       async () => {
-        const installed = await deps.install(listing, source);
+        const installed = await install();
         if (!disposed) setBusy("Refreshing installed extensions");
         await deps.refresh(true);
         const staged = !disposed && ownerGeneration === draftGeneration && draft() !== undefined;
@@ -596,12 +611,29 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
       deps.notify(listing.notes[0] ?? `${listing.name} cannot be installed by this host`, "warn");
       return;
     }
-    installAndStage(listing, "agents");
+    installAndStage(listing.name, () => deps.install(listing, "agents"));
   };
 
   const chooseExtension = (id: string): void => {
     if (id === "setup:continue") {
       resolveReview();
+      return;
+    }
+    if (id === "setup:install-url") {
+      setPicker(null);
+      editor.start(
+        "External plugin Git URL",
+        "",
+        (raw) => {
+          const url = raw.trim();
+          if (url === "") {
+            openExtensionPicker();
+            return;
+          }
+          installAndStage("external plugin", () => deps.installUrl(url, "agents"));
+        },
+        { alwaysCommit: true, onCancel: openExtensionPicker },
+      );
       return;
     }
     const choice = choiceMap().get(id);
@@ -636,7 +668,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
       confirmLabel: (row) =>
         row?.id === "setup:continue"
           ? "continue"
-          : row?.id.startsWith("listing:")
+          : row?.id === "setup:install-url" || row?.id.startsWith("listing:")
             ? "install"
             : row?.added
               ? "remove"

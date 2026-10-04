@@ -222,6 +222,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   listAgents(): Promise<AgentSummary[]>;
   /** Begin durable memory-queue recovery after the host's critical boot path. */
   startMemoryRecovery(): void;
+  /** Stop queue admission and abort active indexing before hosted execution settlement. */
+  stopMemoryRecovery(): Promise<void>;
   /** Releases resources by invoking the {@link CreateKernelOptions.dispose} hook, if any. */
   close(): Promise<void>;
 }
@@ -432,8 +434,20 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     lifecycle.register({ close: opts.dispose });
   }
   const memoryFactory = opts.memoryFactory;
+  let memoryStop: Promise<void> | undefined;
+  let memoryRecoveryStopped = false;
+  const stopMemoryRecovery = (): Promise<void> => {
+    memoryRecoveryStopped = true;
+    memoryStop ??= Promise.resolve()
+      .then(() => memoryFactory?.stop())
+      .catch((error: unknown) => {
+        memoryStop = undefined;
+        throw error;
+      });
+    return memoryStop;
+  };
   if (memoryFactory !== undefined) {
-    lifecycle.register({ close: () => memoryFactory.stop() });
+    lifecycle.register({ close: stopMemoryRecovery });
   }
   const defaultOwner = opts.defaultOwner ?? ownerFromWorkspace(opts.workspaceRoot);
   const ownershipMode = opts.ownershipMode ?? "single";
@@ -537,7 +551,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       projectId: opts.project.id,
       workspaceId: opts.workspace.id,
     };
-    if (memoryRecoveryStarted) opts.memoryFactory?.start(scope.owner);
+    if (memoryRecoveryStarted && !memoryRecoveryStopped) opts.memoryFactory?.start(scope.owner);
     const runLogger = logger.child?.({ owner: stateOwner }) ?? logger;
     const workflows = createWorkflowsService({
       deps: runDeps,
@@ -731,7 +745,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     return { value: lease.value.services, release: () => lease.release() };
   };
   const startMemoryRecovery = (): void => {
-    if (memoryRecoveryStarted) return;
+    if (memoryRecoveryStarted || memoryRecoveryStopped) return;
     memoryRecoveryStarted = true;
     ownerPool.forEachResident((value) => opts.memoryFactory?.start(value.stateOwner));
   };
@@ -1049,6 +1063,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     },
     listAgents: () => config.listAgents(),
     startMemoryRecovery,
+    stopMemoryRecovery,
     async close(): Promise<void> {
       await lifecycle.close();
     },

@@ -261,7 +261,7 @@ export function createManagedRunWithRuntime(
   };
 
   const closeStream = (): void => {
-    if (!ingestPending) {
+    if (!ingestPending || abort.signal.aborted) {
       endStream();
       return;
     }
@@ -364,6 +364,7 @@ export function createManagedRunWithRuntime(
     },
     async cancel() {
       abort.abort();
+      settleIngest?.();
     },
     async interruptTool(toolExecutionId) {
       return toolInterrupts.interruptTool(toolExecutionId);

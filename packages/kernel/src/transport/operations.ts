@@ -226,6 +226,13 @@ export const OPERATIONS = {
       encode: () => ({}),
       invoke: (services) => requireLocalHost(services).requestShutdown(),
     },
+    setDisconnectAction: {
+      method: "localHost.setDisconnectAction",
+      metadata: write(),
+      encode: (action) => ({ action }),
+      invoke: (services, params) =>
+        requireLocalHost(services).setDisconnectAction(params.action as "shutdown" | "detach"),
+    },
   }),
   hosting: serviceOperations<HostingService, "start" | "attach">({
     resumePending: {

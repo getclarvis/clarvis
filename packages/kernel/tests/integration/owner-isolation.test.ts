@@ -666,6 +666,16 @@ describe("owner isolation", () => {
     expect(memoryStops()).toBe(1);
   });
 
+  it("stops recovery before shutdown and cannot restart memory on the retiring kernel", async () => {
+    const { kernel, memoryStops, startedMemoryOwners } = makeKernel(virtualWorkspace());
+    await kernel.stopMemoryRecovery();
+    kernel.startMemoryRecovery();
+    kernel.forOwner("later");
+    expect(startedMemoryOwners).toEqual([]);
+    await kernel.close();
+    expect(memoryStops()).toBe(1);
+  });
+
   it("does not recreate owner services after kernel shutdown", async () => {
     const ws = virtualWorkspace();
     const { kernel } = makeKernel(ws, { idleMs: 0 });

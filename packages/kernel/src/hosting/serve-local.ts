@@ -72,6 +72,7 @@ export async function serveLocalFileKernel(
   if (state === null) return null;
   let host: FileRunHost | undefined;
   let listener: LocalKernelListener | undefined;
+  let requestClose: (() => void) | undefined;
   try {
     host = await createFileRunHost({
       kernel: {
@@ -91,6 +92,7 @@ export async function serveLocalFileKernel(
       storage: state.storage,
       authenticate: (token) => state.authenticate(token),
       assertAuthority: () => state.lease.assertOwned(),
+      onShutdownRequested: () => requestClose?.(),
     });
     if (
       localHostPolicyIdentity({
@@ -112,12 +114,23 @@ export async function serveLocalFileKernel(
     const close = (): Promise<void> => {
       closing ??= (async () => {
         clearTimeout(timer);
-        await ownedListener.close();
-        await ownedHost.close();
+        const outcomes = await Promise.allSettled([ownedListener.close(), ownedHost.close()]);
+        const failure = outcomes.find((outcome) => outcome.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
         await state.close();
       })();
       void closing.then(completion.resolve, completion.reject);
       return closing;
+    };
+    requestClose = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        detachObserved(close, {
+          scope: observationScope,
+          operation: "hosting.lifecycle.shutdown",
+          logger,
+        });
+      }, 0);
     };
     const busy = (): boolean => {
       const stats = ownedHost.stats();

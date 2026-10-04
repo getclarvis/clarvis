@@ -20,6 +20,9 @@ function fixture() {
     requestShutdown: async () => {
       operations.push("shutdown");
     },
+    setDisconnectAction: (peer, action) => {
+      operations.push(`${peer}:${action}`);
+    },
     now: () => now,
     browserTimeoutMs: 30_000,
   });
@@ -35,6 +38,25 @@ function fixture() {
 }
 
 describe("local host operator authority", () => {
+  test("disconnect actions are validated and bound to a live operator peer", async () => {
+    const f = fixture();
+    try {
+      const client = f.operator.connect("tui");
+      await client.setDisconnectAction("shutdown");
+      await client.setDisconnectAction("detach");
+      await expect(client.setDisconnectAction("invalid" as "detach")).rejects.toMatchObject({
+        code: "invalid_request",
+      });
+      f.operator.disconnect("tui");
+      await expect(client.setDisconnectAction("detach")).rejects.toMatchObject({
+        code: "unavailable",
+      });
+      expect(f.operations).toEqual(["tui:shutdown", "tui:detach"]);
+    } finally {
+      f.operator.close();
+    }
+  });
+
   test("browser claims follow current conversation control and stale responses cannot settle them", async () => {
     const f = fixture();
     try {

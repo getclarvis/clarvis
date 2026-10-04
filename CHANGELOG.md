@@ -36,7 +36,9 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   files, instead of grouping transcript tool calls. The overlay opens on an empty conversation.
 - `/background`, `/background list`, `/attach` and scoped cancellation let a local host run
   continue after its TUI closes and return to the same execution later. SSH retains list, attach
-  and cancel only while its current client connection is alive.
+  and cancel only while its current client connection is alive. Normal TUI exit immediately
+  cancels all workspace work; only a confirmed `/background` exit preserves it. Interrupted memory
+  indexing resumes in background when the workspace reopens.
 - `/goal` creates and controls a persistent objective with bounded automatic continuation,
   checkpoints, token limits, deadlines and human or command-based completion criteria.
 - `/loop` schedules interval or cron prompts for the current conversation while the TUI remains
@@ -155,7 +157,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   complete sequence bounded.
 - Extension activation is now named Extension Profile across the CLI, protocol, persisted state,
   paths, diagnostics, and terminal UI; the existing execution identity is named Agent Profile on
-  ambiguous session and picker surfaces.
+  ambiguous session and picker surfaces. The guided setup accepts plugin Git URLs outside
+  marketplaces and refreshes newly created profiles when returning to the profile browser.
 - This prerelease rename is a clean break: Clarvis reads `extension-profiles/`,
   `extension-profile.json`, and the `--extension-profile` flag, without compatibility aliases or
   readers for the former Environment names; the internal wire contract is now version 3.

@@ -97,8 +97,9 @@ and formulation recovery in
 
 `WorkspaceClientManager` discovers or launches Code's companion `local-host` entry, selected by
 `resolveLocalKernelArtifact`. The application entry composes the local subscription manager,
-memory and lazy runtime factory without importing the renderer. Closing the manager closes its
-connection; it does not call the independently owned kernel's shutdown.
+memory and lazy runtime factory without importing the renderer. TUI managers arm workspace shutdown
+on disconnect. Normal exit requests immediate physical retirement before releasing the connection;
+confirmed background exit and deliberate connection replacement disarm the departing connection.
 
 Production: `WorkspaceClientManager` in
 [workspace-client-manager.ts](../../packages/code/src/adapters/workspace-client-manager.ts),
@@ -156,10 +157,10 @@ any hosting mutation. Their list, attach and cancel controls remain useful only 
 connection is alive. The workspace manager exposes this lifecycle fact explicitly; Code does not
 infer it from the Kernel's native runtime label.
 
-| Connection destination | `/background` survives TUI exit | List, attach and cancel |
-| --- | --- | --- |
-| local host | yes, after a confirmed host receipt | current or reopened TUI while the local host exists |
-| SSH remote | no | current SSH stdio connection only; saved history persists after closure |
+| Connection destination | `/background` survives TUI exit     | List, attach and cancel                                                 |
+| ---------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
+| local host             | yes, after a confirmed host receipt | current or reopened TUI while the local host exists                     |
+| SSH remote             | no                                  | current SSH stdio connection only; saved history persists after closure |
 
 Opening a local workspace offers runs with `continue` policy after first paint, unless a draft,
 active run or blocking interaction already owns the TUI. `/background list` makes discovery
@@ -195,19 +196,18 @@ physical/ack ordering, abandoned observations, observer attachments and acknowle
 [hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts) covers forty
 foreground turns while retaining an unseen background result.
 
-The observed run's confirmed `continue` policy is projected through `RunHost.continuesOnExit` only
-when `WorkspaceClientManager.backgroundHandoffSurvivesExit` confirms the connection lifecycle.
-The activity line shows `continues after exit`; `/quit` does not arm the run-loss confirmation for
-that run. Dirty views retain their confirmation and explicit cancellation remains available.
-This projection grants no tool consent and does not transfer `continue` to a later turn: ordinary
-admission resets it, and it is inactive after settlement or observation teardown. The host still
-owns the disconnect decision.
+A run's persisted `continue` policy does not authorize normal TUI exit. `/quit` retains the active-run
+confirmation, then requests workspace shutdown, cancelling all runs in the host, including other
+connections' runs and Goal continuations. Only this exit's confirmed `/background` handoff disarms the
+TUI connection. Reattachment therefore requires another `/background` to preserve work on exit.
+Dirty views retain their confirmation and explicit cancellation remains available.
 
-Production: `runManaged` and `continuesOnExit` in [run-host.ts](../../packages/code/src/run-host.ts),
-`leadActivityDetail` and the quit gate in [App.tsx](../../packages/code/src/views/App.tsx).
-Test: [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts) checks the observed
-policy, teardown and ordinary admission; [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx)
-exercises `/quit` through the composer with both disconnect policies and checks the visible notice.
+Production: `prepareExit` in [workspace-client-manager.ts](../../packages/code/src/adapters/workspace-client-manager.ts),
+`closeWorkspace` and background exit in [runtime.tsx](../../packages/code/src/runtime.tsx), and the quit
+gate in [App.tsx](../../packages/code/src/views/App.tsx).
+Test: [workspace-operator-notices.test.ts](../../packages/code/tests/integration/workspace-operator-notices.test.ts)
+covers normal/background exit and reconnect; [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx)
+checks active-run quit confirmation without an exit-survival promise.
 
 Production: `registerBackgroundCommands`, `createBackgroundController` and `BackgroundView` in
 [commands.ts](../../packages/code/src/features/background/commands.ts),
@@ -340,14 +340,14 @@ Production: `readHostedSnapshot` in
 [hosted-snapshot.test.ts](../../packages/kernel/tests/unit/hosted-snapshot.test.ts) covers split
 Unicode, coalesced intervals, abandoned readers, malformed records/pages, limits and empty cuts.
 
-| Resource | Default | Failure |
-| --- | --- | --- |
-| Physical observation segment | 64 MiB | Rotate to another private segment; logical offsets remain continuous |
-| Explicit encoded history quota | Disabled by default | If configured, exhaustion refuses further appends and snapshots |
-| Outstanding snapshots | 4 per projection | A new snapshot is refused without evicting an existing reader |
-| Snapshot lifetime | 120 seconds | Expired ids return `not_found`; a caller must obtain another snapshot |
-| Queued storage operations | 32 per source/observation class | Refused before another queued operation is allocated |
-| Queued input/read bytes | 16 MiB per source/observation class | Refused before another payload is retained by the queue |
+| Resource                       | Default                             | Failure                                                               |
+| ------------------------------ | ----------------------------------- | --------------------------------------------------------------------- |
+| Physical observation segment   | 64 MiB                              | Rotate to another private segment; logical offsets remain continuous  |
+| Explicit encoded history quota | Disabled by default                 | If configured, exhaustion refuses further appends and snapshots       |
+| Outstanding snapshots          | 4 per projection                    | A new snapshot is refused without evicting an existing reader         |
+| Snapshot lifetime              | 120 seconds                         | Expired ids return `not_found`; a caller must obtain another snapshot |
+| Queued storage operations      | 32 per source/observation class     | Refused before another queued operation is allocated                  |
+| Queued input/read bytes        | 16 MiB per source/observation class | Refused before another payload is retained by the queue               |
 
 Source append/sync and observation snapshot/read requests have independent queue allowances.
 A saturated reader cannot refuse admission of the next source event. Both classes share the same
@@ -1011,22 +1011,42 @@ policy after a requested idle restart, and
 preservation of background execution after incompatible tool/default/ceiling reconnect attempts in
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
 
-The host normally exits after 60 seconds with no clients or physical work. The idle boundary includes
-preparation/runs, local activities, maintenance, disconnect cleanup, index commits, and the FileKernel's
-execution leases. Pending/running/retry memory jobs also keep it alive. A globally disabled
-Memory capability does not keep an idle host alive: only `capability_disabled` with
-`MEMORY_NOT_CONFIGURED` means no active memory instance. Other queue inspection failures prevent
-automatic retirement; they are not treated as an empty queue.
-Production: `memoryKeepsHostAlive` in
-[memory-activity.ts](../../packages/kernel/src/hosting/memory-activity.ts). Test:
-[host-memory-activity.test.ts](../../packages/kernel/tests/unit/host-memory-activity.test.ts)
-covers absent/disabled memory, job states and inspection errors; `retires an idle memory-capable
-process with global memory disabled` in
+A TUI's authenticated `setDisconnectAction("shutdown")` arms immediate workspace retirement on
+transport closure, including terminal loss. Normal exit also requests shutdown before local cleanup.
+The host blocks admission and aborts every hosted preparation/source and the memory worker before
+waiting for physical settlement, commits and resource cleanup. Other clients in that host are closed;
+other workspace hosts are unaffected. No idle timeout or memory-ingest observation grace delays this
+retirement. Interrupted indexing returns its durable job to pending without spending an attempt;
+the next host recovers it in background without creating an interactive hosted turn.
+`setDisconnectAction("detach")` disarms only the departing connection for a confirmed background exit
+or deliberate reconnect. Generic clients default to detach, and unauthenticated/observer connections
+cannot arm or disarm another connection. Explicit shutdown wakes the process lifecycle independently
+of its periodic lease/idle timer.
+
+Production: `serveLocalFileKernel` in [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts),
+connection exit and `close` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts),
+`close` in [registry.ts](../../packages/kernel/src/hosting/registry.ts), `stopMemoryRecovery` in
+[kernel.ts](../../packages/kernel/src/kernel.ts), and `cancel`/`closeStream` in
+[managed-run.ts](../../packages/kernel/src/runs/managed-run.ts).
+Test: [local-host-lifecycle.test.ts](../../packages/kernel/tests/integration/local-host-lifecycle.test.ts)
+checks retirement with a one-minute check interval and another connected client;
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
-verifies process discovery retirement with the real file host.
-Closing a client never invokes
-the physical host's close. Host shutdown closes the listener, drains/cancels the kernel, then removes
-discovery and releases its lease. Durable terminal references and canonical traces/sessions remain.
+checks physical process exit with foreground and another client's handed-off run;
+[local-host-memory-exit.test.ts](../../packages/kernel/tests/integration/local-host-memory-exit.test.ts)
+checks durable claim release, retry and background-only recovery;
+[managed-run.test.ts](../../packages/kernel/tests/unit/managed-run.test.ts) checks cancellation of
+memory observation without advancing the grace clock.
+
+Hosts retained by explicit background exit use the normal 60-second idle retirement only after all
+clients and physical work drain. Pending/running/retry memory jobs keep those hosts alive. A globally
+disabled Memory capability does not: only `capability_disabled` with `MEMORY_NOT_CONFIGURED` means no
+active memory instance; other inspection failures prevent automatic idle retirement.
+Production: `memoryKeepsHostAlive` in [memory-activity.ts](../../packages/kernel/src/hosting/memory-activity.ts).
+Test: [host-memory-activity.test.ts](../../packages/kernel/tests/unit/host-memory-activity.test.ts)
+and the disabled-memory process case in
+[local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
+Host shutdown drains/cancels the kernel, removes discovery and releases its lease.
+Durable terminal references and canonical traces/sessions remain.
 
 Production: `resolveLocalHostIdentity`, `acquireLocalHostState` and `readLocalHostConnection` in
 [local-state.ts](../../packages/kernel/src/hosting/local-state.ts), private reads/ACL checks in

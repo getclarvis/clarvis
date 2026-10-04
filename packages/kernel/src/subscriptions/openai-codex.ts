@@ -28,7 +28,7 @@ const PRODUCT_USER_AGENT = `clarvis/${VERSION}`;
  *   the Clarvis product version can therefore yield an empty successful catalog. Keep this
  *   compatibility revision aligned with a reviewed stable Codex release.
  */
-const OPENAI_CODEX_CLIENT_VERSION = "0.158.0";
+const OPENAI_CODEX_CLIENT_VERSION = "1.160.0";
 
 export interface OpenAICodexAdapterOptions {
   fetch?: typeof globalThis.fetch;

@@ -10,6 +10,9 @@ on/off choice in global `memory.enabled`; it applies across workspaces and resta
 When Memory is on, only completed runs start automatic indexing. A cancelled run
 creates no indexing job. The indexer uses the model selected by the completed
 run, with no separate memory model.
+Normal TUI exit stops all workspace runs and active memory indexing immediately. Interrupted indexing
+stays queued and resumes in background when the workspace reopens, without joining the conversation.
+Only an explicit `/background` handoff keeps work alive after that TUI exits.
 A provider entry has a `name` using lowercase letters, digits, `_` or `-`, and a `kind`:
 `openai-compatible`, `openai`, `anthropic`, `google`, `openai-codex`, or `xai-grok`.
 An `openai-compatible` provider needs `base_url`; `api_key_env` names an environment variable,

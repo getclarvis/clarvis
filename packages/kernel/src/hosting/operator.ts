@@ -17,6 +17,7 @@ export interface LocalHostOperatorOptions {
   canControl(peerId: string, sessionId: string): boolean;
   requestRestart(): Promise<void>;
   requestShutdown(): Promise<void>;
+  setDisconnectAction(peerId: string, action: "shutdown" | "detach"): void;
   now?(): number;
   browserTimeoutMs?: number;
 }
@@ -133,6 +134,12 @@ export function createLocalHostOperator(options: LocalHostOperatorOptions) {
         async requestShutdown() {
           assertPeer();
           await options.requestShutdown();
+        },
+        async setDisconnectAction(action) {
+          assertPeer();
+          if (action !== "shutdown" && action !== "detach")
+            throw kernelError("invalid_request", "invalid connection disconnect action");
+          options.setDisconnectAction(peerId, action);
         },
       };
     },

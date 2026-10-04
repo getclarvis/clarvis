@@ -33,6 +33,7 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       respondBrowser: record("localHost.respondBrowser"),
       requestRestart: record("localHost.requestRestart"),
       requestShutdown: record("localHost.requestShutdown"),
+      setDisconnectAction: record("localHost.setDisconnectAction"),
     },
     hosting: {
       list: record("hosting.list"),

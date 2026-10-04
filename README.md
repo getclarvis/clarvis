@@ -17,7 +17,8 @@ repository in front of you.
 ## Why Clarvis
 
 - **One project-aware TUI:** sessions, transcript, plans, memory, and run activity stay in one
-  discoverable interface.
+  discoverable interface. Normal exit stops the workspace's runs immediately; `/background`
+  explicitly keeps work running after exit.
 - **Bring your model:** configure API providers, OpenAI-compatible local endpoints, or the beta
   ChatGPT and Grok subscription flows for eligible accounts. Availability is provider-controlled and
   does not imply provider endorsement of Clarvis.

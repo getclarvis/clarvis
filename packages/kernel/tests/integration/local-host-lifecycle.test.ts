@@ -60,6 +60,56 @@ async function fixture() {
 }
 
 describe("local host process lifecycle composition", () => {
+  test("an armed TUI disconnect retires the workspace immediately even with another client", async () => {
+    const f = await fixture();
+    const host = await serveLocalFileKernel({
+      ...f.options,
+      idleTimeoutMs: 60_000,
+      checkIntervalMs: 60_000,
+    });
+    if (host === null) throw new Error("fixture host unexpectedly contended");
+    cleanups.push(() => host.close());
+    const tui = await f.connect();
+    const other = await f.connect();
+    await tui.localHost!.setDisconnectAction("shutdown");
+    const exited = performance.now();
+    await tui.close();
+    await host.closed;
+    expect(performance.now() - exited).toBeLessThan(2000);
+    expect(await readLocalHostConnection(f.identity)).toBeNull();
+    await expect(other.localHost!.inspect()).rejects.toThrow();
+  });
+
+  test("deliberate detach preserves the host and rearming restores workspace shutdown", async () => {
+    const f = await fixture();
+    const host = await f.start();
+    const tui = await f.connect();
+    const other = await f.connect();
+    await tui.localHost!.setDisconnectAction("shutdown");
+    await tui.localHost!.setDisconnectAction("detach");
+    await tui.close();
+    expect((await other.localHost!.inspect()).host_generation).toBe(host.generation);
+    await other.localHost!.setDisconnectAction("shutdown");
+    await other.close();
+    await host.closed;
+    expect(await readLocalHostConnection(f.identity)).toBeNull();
+  });
+
+  test("explicit shutdown bypasses the idle timer", async () => {
+    const f = await fixture();
+    const host = await serveLocalFileKernel({
+      ...f.options,
+      idleTimeoutMs: 60_000,
+      checkIntervalMs: 60_000,
+    });
+    if (host === null) throw new Error("fixture host unexpectedly contended");
+    cleanups.push(() => host.close());
+    const tui = await f.connect();
+    await tui.localHost!.requestShutdown();
+    await host.closed;
+    expect(await readLocalHostConnection(f.identity)).toBeNull();
+  });
+
   test("a connected operator prevents idle shutdown and the last disconnect retires discovery", async () => {
     const f = await fixture();
     const host = await f.start();

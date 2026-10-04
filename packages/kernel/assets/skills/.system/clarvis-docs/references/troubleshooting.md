@@ -31,3 +31,7 @@ message explains the decision; missing or unusable commentary receives generic g
 fields and auxiliary assessments do not block a recognized verdict. A missing or unsupported verdict
 gets one correction; repeated invalid output is reported as an unusable result, not a transit failure.
 Cancellation, changed Goal state, required human acceptance and consumption limits remain host checks.
+
+A normal TUI exit cancels all runs in its workspace host, including previously handed-off runs.
+Use `/background` again when leaving a reattached run running. Interrupted memory indexing recovers
+in background on reopening; it does not resume the cancelled user run or add a conversation turn.

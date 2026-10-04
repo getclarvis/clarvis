@@ -155,8 +155,6 @@ export interface McpStartupNotice {
 export interface RunHost {
   /** True only while the current run can still accept interactive control. */
   runActive: Accessor<boolean>;
-  /** The currently observed run has a host-confirmed policy to continue after this TUI exits. */
-  continuesOnExit: Accessor<boolean>;
   bashActive: Accessor<boolean>;
   /** True while the context-compaction pipeline is doing hook or model work. */
   compactionActive: Accessor<boolean>;
@@ -2165,10 +2163,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   return {
     runActive,
-    continuesOnExit: () =>
-      deps.backgroundHandoffSurvivesExit() &&
-      runActive() &&
-      coordination().disconnectPolicy === "continue",
     bashActive,
     compactionActive,
     physicalWorkActive: () =>

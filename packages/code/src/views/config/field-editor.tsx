@@ -58,12 +58,13 @@ export interface FieldEditor {
    * never dirties a config panel). Callers whose commit performs an *action*
    * rather than staging a dirty edit — e.g. re-running a search, clearing a
    * filter — pass `alwaysCommit` so an unchanged value still fires.
+   * `onCancel` restores the caller's prior navigation when Escape dismisses the field.
    */
   start(
     label: string,
     current: string,
     commit: (value: string) => void,
-    opts?: { alwaysCommit?: boolean },
+    opts?: { alwaysCommit?: boolean; onCancel?: () => void },
   ): void;
   /** Masked-input field (e.g. an API key); the raw value is never rendered. */
   startSecret(label: string, commit: (value: string) => void): void;
@@ -144,7 +145,7 @@ export function createFieldEditor(
     label: string,
     current: string,
     commit: (value: string) => void,
-    opts?: { alwaysCommit?: boolean },
+    opts?: { alwaysCommit?: boolean; onCancel?: () => void },
   ): void {
     value = current;
     const apply = (): void => {
@@ -155,6 +156,7 @@ export function createFieldEditor(
     const cancel = (): void => {
       clearLayer();
       setEditing(null);
+      opts?.onCancel?.();
     };
     setLayer(() =>
       keymap.registerLayer({

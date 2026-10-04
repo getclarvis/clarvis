@@ -18,6 +18,10 @@ const host = await serveLocalFileKernel({
     async executeRun(args) {
       const executionId = (args.rawBody as { execution_id: string }).execution_id;
       await writeFile(
+        join(input.workspaceRoot, `entered-${executionId}.json`),
+        JSON.stringify({ pid: process.pid }),
+      );
+      await writeFile(
         join(input.workspaceRoot, "entered.json"),
         JSON.stringify({
           executionId,

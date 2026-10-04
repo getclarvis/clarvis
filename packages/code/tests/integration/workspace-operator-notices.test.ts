@@ -11,7 +11,12 @@ function peer(generation = "generation") {
   };
   let browser: LocalHostBrowserRequest | null = null;
   let inspectFailure: Error | undefined;
-  const calls = { close: 0, browser: [] as Array<[string, boolean]> };
+  const calls = {
+    close: 0,
+    shutdown: 0,
+    actions: [] as string[],
+    browser: [] as Array<[string, boolean]>,
+  };
   const surface: Pick<KernelClient, "workspace" | "project" | "localHost" | "close"> = {
     workspace: {
       id: "workspace",
@@ -31,7 +36,13 @@ function peer(generation = "generation") {
         calls.browser.push([id, opened]);
       },
       requestRestart: async () => {},
-      requestShutdown: async () => {},
+      requestShutdown: async () => {
+        calls.shutdown++;
+      },
+      setDisconnectAction: async (action) => {
+        if (inspectFailure !== undefined) throw inspectFailure;
+        calls.actions.push(action);
+      },
     },
     async close() {
       calls.close++;
@@ -63,6 +74,7 @@ async function until(predicate: () => boolean): Promise<void> {
 async function managerFor(
   peers: Array<ReturnType<typeof peer>>,
   openMcpAuthorizationUrl?: (url: string) => Promise<boolean>,
+  shutdownOnExit = false,
 ) {
   let index = 0;
   return WorkspaceClientManager.create(
@@ -71,6 +83,7 @@ async function managerFor(
       globalDir: "/global",
       defaultOwner: "operator",
       openMcpAuthorizationUrl,
+      shutdownOnExit,
     },
     {
       resolveArtifact: async () => ({
@@ -83,6 +96,57 @@ async function managerFor(
 }
 
 describe("workspace operator notices", () => {
+  test("TUI recovery after physical host loss does not require disarming the dead connection", async () => {
+    const old = peer("old");
+    const next = peer("next");
+    const manager = await managerFor([old, next], undefined, true);
+    try {
+      old.failInspect(new Error("transport closed"));
+      await manager.recover("workspace");
+      expect(old.calls.actions).toEqual(["shutdown"]);
+      expect(old.calls.close).toBe(1);
+      expect(next.calls.actions).toEqual(["shutdown"]);
+    } finally {
+      await manager.close();
+    }
+  });
+
+  test("normal TUI close requests workspace shutdown once", async () => {
+    const host = peer();
+    const manager = await managerFor([host], undefined, true);
+    expect(host.calls.actions).toEqual(["shutdown"]);
+    await manager.prepareExit();
+    await manager.close();
+    await manager.close();
+    expect(host.calls.shutdown).toBe(1);
+    expect(host.calls.close).toBe(1);
+  });
+
+  test("a prepared background exit detaches without requesting workspace shutdown", async () => {
+    const host = peer();
+    const manager = await managerFor([host], undefined, true);
+    await manager.prepareExit("detach");
+    await manager.close();
+    expect(host.calls.actions).toEqual(["shutdown", "detach"]);
+    expect(host.calls.shutdown).toBe(0);
+  });
+
+  test("TUI reconnect disarms the old connection and arms only the admitted replacement", async () => {
+    const old = peer();
+    const next = peer();
+    const manager = await managerFor([old, next], undefined, true);
+    try {
+      await manager.recover("workspace");
+      expect(old.calls.actions).toEqual(["shutdown", "detach"]);
+      expect(old.calls.shutdown).toBe(0);
+      expect(old.calls.close).toBe(1);
+      expect(next.calls.actions).toEqual(["shutdown"]);
+    } finally {
+      await manager.close();
+    }
+    expect(next.calls.shutdown).toBe(1);
+  });
+
   test("publishes sequenced placement and drift changes once", async () => {
     const host = peer();
     host.status({ extension_drift: { sequence: 1, kind: "skill", name: "review" } });

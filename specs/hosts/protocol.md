@@ -93,30 +93,30 @@ Test: `persists unavailable activity without manufacturing a negative progress o
 
 Source ownership:
 
-| File | Owns |
-| --- | --- |
-| `index.ts` | Barrel: `export type *` from the modules below |
-| `common.ts` | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe` |
-| `runs.ts` | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (closed discriminated union), messages, usage, Extension Profile identity, guard/memory/plans modes, elicitation types |
-| `hosting.ts` | Hosted-run identity, snapshot pages, handoff receipts, control epochs, attachments and the `HostingService` interface |
-| `goals.ts` | Persistent goal state, criteria, usage, operation receipts and authenticated user-control DTOs and `GoalService` contract |
-| `local-host.ts` | Optional local operator process state, bounded browser handoff DTOs and explicit restart/shutdown controls |
-| `config.ts` | `ConfigService`, settings and trust DTOs, repair plans, agent documents and context documents |
-| `plugins.ts` | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs |
+| File                    | Owns                                                                                                                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.ts`              | Barrel: `export type *` from the modules below                                                                                                                                           |
+| `common.ts`             | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe`     |
+| `runs.ts`               | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (closed discriminated union), messages, usage, Extension Profile identity, guard/memory/plans modes, elicitation types           |
+| `hosting.ts`            | Hosted-run identity, snapshot pages, handoff receipts, control epochs, attachments and the `HostingService` interface                                                                    |
+| `goals.ts`              | Persistent goal state, criteria, usage, operation receipts and authenticated user-control DTOs and `GoalService` contract                                                                |
+| `local-host.ts`         | Optional local operator process state, bounded browser handoff DTOs and explicit restart/shutdown controls                                                                               |
+| `config.ts`             | `ConfigService`, settings and trust DTOs, repair plans, agent documents and context documents                                                                                            |
+| `plugins.ts`            | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs                                                                               |
 | `extension-profiles.ts` | `ExtensionProfileService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
-| `secrets.ts` | `SecretService` |
-| `models.ts` | `ModelCatalogService`, `ModelCatalog`, `CatalogProvider`, `CatalogModel` |
-| `provider-auth.ts` | token-free subscription schemes, states, device authorization and `ProviderAuthService` |
-| `workspace.ts` | `WorkspaceService`, `WorkspaceEntry` |
-| `workspace-changes.ts` | `WorkspaceChangesService`, availability/comparison/inventory/detail DTOs |
-| `memory.ts` | `MemoryService`, health/reindex/jobs DTOs, `MemoryIngestDetail` |
-| `plans.ts` | `PlansService`, `PlanDocumentDto`, `PlanTaskDto`, `PlanRef` |
-| `workflows.ts` | `WorkflowsService`, `WorkflowNode`, `WorkflowSequence`, `WorkflowSummary`/`WorkflowDetail` |
-| `skills.ts` | `SkillsService`, `SkillSummary`, `SkillProvenance`, `SkillPresentation`, `SkillToolDependency` |
-| `sessions.ts` | `SessionService`, `Session`, `SessionSummary`, `SessionTurn`, cache-detail-aware `SessionTotals`, Agent Profile binding, and Extension Profile snapshot identity |
-| `storage.ts` | `StorageService`, bounded inventory DTOs and cleanup request/result shapes |
-| `transport.ts` | `KernelTransport`, `KernelRequestOptions`, `KernelAbortSignal` |
-| `client.ts` | `KernelClient`, `KernelCapabilities`, `RuntimeStatus`, `ConnectOptions` |
+| `secrets.ts`            | `SecretService`                                                                                                                                                                          |
+| `models.ts`             | `ModelCatalogService`, `ModelCatalog`, `CatalogProvider`, `CatalogModel`                                                                                                                 |
+| `provider-auth.ts`      | token-free subscription schemes, states, device authorization and `ProviderAuthService`                                                                                                  |
+| `workspace.ts`          | `WorkspaceService`, `WorkspaceEntry`                                                                                                                                                     |
+| `workspace-changes.ts`  | `WorkspaceChangesService`, availability/comparison/inventory/detail DTOs                                                                                                                 |
+| `memory.ts`             | `MemoryService`, health/reindex/jobs DTOs, `MemoryIngestDetail`                                                                                                                          |
+| `plans.ts`              | `PlansService`, `PlanDocumentDto`, `PlanTaskDto`, `PlanRef`                                                                                                                              |
+| `workflows.ts`          | `WorkflowsService`, `WorkflowNode`, `WorkflowSequence`, `WorkflowSummary`/`WorkflowDetail`                                                                                               |
+| `skills.ts`             | `SkillsService`, `SkillSummary`, `SkillProvenance`, `SkillPresentation`, `SkillToolDependency`                                                                                           |
+| `sessions.ts`           | `SessionService`, `Session`, `SessionSummary`, `SessionTurn`, cache-detail-aware `SessionTotals`, Agent Profile binding, and Extension Profile snapshot identity                         |
+| `storage.ts`            | `StorageService`, bounded inventory DTOs and cleanup request/result shapes                                                                                                               |
+| `transport.ts`          | `KernelTransport`, `KernelRequestOptions`, `KernelAbortSignal`                                                                                                                           |
+| `client.ts`             | `KernelClient`, `KernelCapabilities`, `RuntimeStatus`, `ConnectOptions`                                                                                                                  |
 
 (`packages/protocol/src/index.ts` — one `export type *` line per module above.)
 
@@ -168,15 +168,19 @@ It is advertised only to an authenticated local operator. `LocalHostStatus` carr
 sequenced notices and restart state; `LocalHostBrowserRequest` carries a claimed URL with an id and
 expiry. The service uses the same kernel operation catalog and never serializes application callbacks
 or provider credentials. Restart and shutdown remain explicit operations.
-`requestShutdown` is a separate operator-only action for an explicitly confirmed replacement: it
-stops new admission and retires the old generation after cancelling and draining hosted work.
+`requestShutdown` is an operator-only action for TUI exit or explicit host replacement: it stops
+new admission and immediately initiates cancellation and retirement of the generation.
+`setDisconnectAction("shutdown" | "detach")` sets only the authenticated operator connection's
+closure policy; TUI exit arms workspace shutdown and deliberate reconnect/background exit disarms it.
+Invalid actions and retired peers are refused. Generic connections default to detach.
 
 Production: `LocalHostService` in [local-host.ts](../../packages/protocol/src/local-host.ts),
 `OPERATIONS.localHost` in [operations.ts](../../packages/kernel/src/transport/operations.ts),
 `createLocalHostClient` in [local-host-client.ts](../../packages/kernel/src/transport/local-host-client.ts)
 and `createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
 Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts)
-checks the shared catalog facade; authenticated role checks are exercised by
+checks the shared catalog facade; [local-host-operator.test.ts](../../packages/kernel/tests/unit/local-host-operator.test.ts)
+checks exit-action validation and peer retirement; authenticated role checks are exercised by
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts), and
 physical replacement by [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
 Its DTOs describe an atomic snapshot/tail observation and independent handoff receipts; a lost
@@ -198,31 +202,31 @@ The write and accounting contract is in [sessions](sessions.md#host-owned-conver
 Defined in `packages/protocol/src/client.ts`. Aggregates identity/capability fields, named services,
 optional hosted-run ownership and a close method:
 
-| Member | Type | File |
-| --- | --- | --- |
-| `capabilities` | `KernelCapabilities` | `KernelClient.capabilities` |
-| `principal` | `Principal \| undefined` | `KernelClient.principal` |
-| `project` | `ProjectRef` | `KernelClient.project` |
-| `workspace` | `WorkspaceRef` | `KernelClient.workspace` |
-| `runs` | `RunService` | `KernelClient.runs` |
-| `hosting?` | `HostingService` | `KernelClient.hosting`; requires the advertised host generation |
-| `localHost?` | `LocalHostService` | `KernelClient.localHost`; requires authenticated local process controls |
-| `config` | `ConfigService` | `KernelClient.config` |
-| `plugins` | `PluginService` | `KernelClient.plugins` |
-| `extensionProfiles` | `ExtensionProfileService` | `KernelClient.extensionProfiles` |
-| `secrets` | `SecretService` | `KernelClient.secrets` |
-| `models` | `ModelCatalogService` | `KernelClient.models` |
-| `providerAuth` | `ProviderAuthService` | `KernelClient.providerAuth` |
-| `files` | `WorkspaceService` | `KernelClient.files` |
-| `changes` | `WorkspaceChangesService` | `KernelClient.changes` |
-| `memory` | `MemoryService` | `KernelClient.memory` |
-| `plans` | `PlansService` | `KernelClient.plans` |
-| `goals` | `GoalService` | `KernelClient.goals`; availability is reported separately |
-| `workflows` | `WorkflowsService` | `KernelClient.workflows` |
-| `skills` | `SkillsService` | `KernelClient.skills` |
-| `sessions` | `SessionService` | `KernelClient.sessions` |
-| `storage` | `StorageService` | `KernelClient.storage` |
-| `close(): Promise<void>` | method | `KernelClient.close` |
+| Member                   | Type                      | File                                                                    |
+| ------------------------ | ------------------------- | ----------------------------------------------------------------------- |
+| `capabilities`           | `KernelCapabilities`      | `KernelClient.capabilities`                                             |
+| `principal`              | `Principal \| undefined`  | `KernelClient.principal`                                                |
+| `project`                | `ProjectRef`              | `KernelClient.project`                                                  |
+| `workspace`              | `WorkspaceRef`            | `KernelClient.workspace`                                                |
+| `runs`                   | `RunService`              | `KernelClient.runs`                                                     |
+| `hosting?`               | `HostingService`          | `KernelClient.hosting`; requires the advertised host generation         |
+| `localHost?`             | `LocalHostService`        | `KernelClient.localHost`; requires authenticated local process controls |
+| `config`                 | `ConfigService`           | `KernelClient.config`                                                   |
+| `plugins`                | `PluginService`           | `KernelClient.plugins`                                                  |
+| `extensionProfiles`      | `ExtensionProfileService` | `KernelClient.extensionProfiles`                                        |
+| `secrets`                | `SecretService`           | `KernelClient.secrets`                                                  |
+| `models`                 | `ModelCatalogService`     | `KernelClient.models`                                                   |
+| `providerAuth`           | `ProviderAuthService`     | `KernelClient.providerAuth`                                             |
+| `files`                  | `WorkspaceService`        | `KernelClient.files`                                                    |
+| `changes`                | `WorkspaceChangesService` | `KernelClient.changes`                                                  |
+| `memory`                 | `MemoryService`           | `KernelClient.memory`                                                   |
+| `plans`                  | `PlansService`            | `KernelClient.plans`                                                    |
+| `goals`                  | `GoalService`             | `KernelClient.goals`; availability is reported separately               |
+| `workflows`              | `WorkflowsService`        | `KernelClient.workflows`                                                |
+| `skills`                 | `SkillsService`           | `KernelClient.skills`                                                   |
+| `sessions`               | `SessionService`          | `KernelClient.sessions`                                                 |
+| `storage`                | `StorageService`          | `KernelClient.storage`                                                  |
+| `close(): Promise<void>` | method                    | `KernelClient.close`                                                    |
 
 `KernelCapabilities` has the three booleans `memory`, `skills`, and `agent_tools`, plus the
 optional `goals`, `local_host`, host-reported `runtime`, and `hosting` (including its generation and
@@ -247,32 +251,32 @@ Every signature below is the one declared in its file.
 
 #### `RunService` (`packages/protocol/src/runs.ts`)
 
-| Method | Signature | Declaration |
-| --- | --- | --- |
-| `start` | `(params: StartRunParams) => Promise<RunHandle>` | `RunService.start` |
+| Method    | Signature                                                            | Declaration          |
+| --------- | -------------------------------------------------------------------- | -------------------- |
+| `start`   | `(params: StartRunParams) => Promise<RunHandle>`                     | `RunService.start`   |
 | `compact` | `(execution_id, request?, options?) => Promise<RunCompactionResult>` | `RunService.compact` |
 | `context` | `(execution_id, target_window_tokens?) => Promise<context estimate>` | `RunService.context` |
-| `get` | `(execution_id: string) => Promise<RunDetail>` | `RunService.get` |
-| `list` | `(page?: Pagination) => Promise<Page<RunSummary>>` | `RunService.list` |
-| `delete` | `(execution_id: string) => Promise<void>` | `RunService.delete` |
+| `get`     | `(execution_id: string) => Promise<RunDetail>`                       | `RunService.get`     |
+| `list`    | `(page?: Pagination) => Promise<Page<RunSummary>>`                   | `RunService.list`    |
+| `delete`  | `(execution_id: string) => Promise<void>`                            | `RunService.delete`  |
 
 `RunHandle` in `packages/protocol/src/runs.ts`, the live object `start` returns:
 
-| Member | Signature | Declaration |
-| --- | --- | --- |
-| `execution_id` | `readonly string` | `RunHandle.execution_id` |
-| `events` | `readonly AsyncIterable<RunEvent>` | `RunHandle.events` |
-| `steer` | `(message: Message \| string) => Promise<void>` | `RunHandle.steer` |
-| `compact` | `(request?: string) => Promise<void>` | `RunHandle.compact` |
-| `cancel` | `() => Promise<void>` | `RunHandle.cancel` |
-| `interruptTool` | `(toolExecutionId: string) => Promise<ToolInterruptReceipt>` | `RunHandle.interruptTool`; interrupts one live builtin `shell` without cancelling the run |
-| `respond` | `(response: ElicitationResponse) => Promise<void>` | `RunHandle.respond` |
-| `present?` | `(presentation: ElicitationPresentation) => Promise<ElicitationPresentationAck>` | `RunHandle.present`; confirms a pending question is visible |
-| `onElicit` | `(handler: (req: ElicitationRequest) => void) => void \| (() => void)` | `RunHandle.onElicit`; managed handles return unsubscribe |
-| `onElicitSettled?` | `(handler: (id: string) => void) => () => void` | `RunHandle.onElicitSettled`; answered or expired questions |
-| `done` | `readonly Promise<RunResult>` | `RunHandle.done` |
-| `buffered?` | `() => { buffered_items; buffered_bytes; dropped }` | `RunHandle.buffered` |
-| `closed` | `readonly Promise<void>` | `RunHandle.closed` |
+| Member             | Signature                                                                        | Declaration                                                                               |
+| ------------------ | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `execution_id`     | `readonly string`                                                                | `RunHandle.execution_id`                                                                  |
+| `events`           | `readonly AsyncIterable<RunEvent>`                                               | `RunHandle.events`                                                                        |
+| `steer`            | `(message: Message \| string) => Promise<void>`                                  | `RunHandle.steer`                                                                         |
+| `compact`          | `(request?: string) => Promise<void>`                                            | `RunHandle.compact`                                                                       |
+| `cancel`           | `() => Promise<void>`                                                            | `RunHandle.cancel`                                                                        |
+| `interruptTool`    | `(toolExecutionId: string) => Promise<ToolInterruptReceipt>`                     | `RunHandle.interruptTool`; interrupts one live builtin `shell` without cancelling the run |
+| `respond`          | `(response: ElicitationResponse) => Promise<void>`                               | `RunHandle.respond`                                                                       |
+| `present?`         | `(presentation: ElicitationPresentation) => Promise<ElicitationPresentationAck>` | `RunHandle.present`; confirms a pending question is visible                               |
+| `onElicit`         | `(handler: (req: ElicitationRequest) => void) => void \| (() => void)`           | `RunHandle.onElicit`; managed handles return unsubscribe                                  |
+| `onElicitSettled?` | `(handler: (id: string) => void) => () => void`                                  | `RunHandle.onElicitSettled`; answered or expired questions                                |
+| `done`             | `readonly Promise<RunResult>`                                                    | `RunHandle.done`                                                                          |
+| `buffered?`        | `() => { buffered_items; buffered_bytes; dropped }`                              | `RunHandle.buffered`                                                                      |
+| `closed`           | `readonly Promise<void>`                                                         | `RunHandle.closed`                                                                        |
 
 `done` resolves when execution ends and does not imply that `events` has closed; `closed` resolves
 only after execution and bounded post-run event delivery both finish. The `RunHandle.done` and
@@ -284,54 +288,54 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 
 #### `ConfigService` (`packages/protocol/src/config.ts`)
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `getSettings` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
-| `getExecutionRules` | `() => Promise<ExecutionRulesView>`; host derives workspace trust | `packages/protocol/src/config.ts` |
-| `checkExecutionRule` | `(command, cwd) => Promise<ExecutionRuleCheck>`; no execution or judge call | `packages/protocol/src/config.ts` |
-| `updateExecutionRules` | `(scope, document, expectedRevision) => Promise<ExecutionRulesView>`; authenticated CAS write | `packages/protocol/src/config.ts` |
-| `previewSettingsRepair` | `(scope: Scope) => Promise<SettingsRepairPlan \| null>` | `packages/protocol/src/config.ts` |
-| `repairSettings` | `(scope: Scope, expectedRevision: string) => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
-| `approveWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
-| `revokeWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
-| `workspaceTrustError` | `() => Promise<string \| null>` | `packages/protocol/src/config.ts` |
-| `updateSettings` | `(scope, patch: Partial<SettingsData>, expectedRevision: string \| null) => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
-| `listAgents` | `() => Promise<AgentSummary[]>` | `packages/protocol/src/config.ts` |
-| `getAgent` | `(scope: Scope \| "builtin", name: string) => Promise<AgentDoc>` | `packages/protocol/src/config.ts` |
-| `writeAgent` | `(scope, name, doc: AgentWrite) => Promise<AgentSummary>` | `packages/protocol/src/config.ts` |
-| `deleteAgent` | `(scope, name) => Promise<void>` | `packages/protocol/src/config.ts` |
-| `renameAgent` | `(scope, oldName, newName) => Promise<AgentSummary>` | `packages/protocol/src/config.ts` |
-| `getContext` | `(scope) => Promise<ContextDoc \| null>` | `packages/protocol/src/config.ts` |
-| `subscribe` | `(kinds: ConfigChangeKind[], listener) => Unsubscribe` | `packages/protocol/src/config.ts` |
+| Method                  | Signature                                                                                          | File                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `getSettings`           | `() => Promise<SettingsView>`                                                                      | `packages/protocol/src/config.ts` |
+| `getExecutionRules`     | `() => Promise<ExecutionRulesView>`; host derives workspace trust                                  | `packages/protocol/src/config.ts` |
+| `checkExecutionRule`    | `(command, cwd) => Promise<ExecutionRuleCheck>`; no execution or judge call                        | `packages/protocol/src/config.ts` |
+| `updateExecutionRules`  | `(scope, document, expectedRevision) => Promise<ExecutionRulesView>`; authenticated CAS write      | `packages/protocol/src/config.ts` |
+| `previewSettingsRepair` | `(scope: Scope) => Promise<SettingsRepairPlan \| null>`                                            | `packages/protocol/src/config.ts` |
+| `repairSettings`        | `(scope: Scope, expectedRevision: string) => Promise<SettingsView>`                                | `packages/protocol/src/config.ts` |
+| `approveWorkspace`      | `() => Promise<SettingsView>`                                                                      | `packages/protocol/src/config.ts` |
+| `revokeWorkspace`       | `() => Promise<SettingsView>`                                                                      | `packages/protocol/src/config.ts` |
+| `workspaceTrustError`   | `() => Promise<string \| null>`                                                                    | `packages/protocol/src/config.ts` |
+| `updateSettings`        | `(scope, patch: Partial<SettingsData>, expectedRevision: string \| null) => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
+| `listAgents`            | `() => Promise<AgentSummary[]>`                                                                    | `packages/protocol/src/config.ts` |
+| `getAgent`              | `(scope: Scope \| "builtin", name: string) => Promise<AgentDoc>`                                   | `packages/protocol/src/config.ts` |
+| `writeAgent`            | `(scope, name, doc: AgentWrite) => Promise<AgentSummary>`                                          | `packages/protocol/src/config.ts` |
+| `deleteAgent`           | `(scope, name) => Promise<void>`                                                                   | `packages/protocol/src/config.ts` |
+| `renameAgent`           | `(scope, oldName, newName) => Promise<AgentSummary>`                                               | `packages/protocol/src/config.ts` |
+| `getContext`            | `(scope) => Promise<ContextDoc \| null>`                                                           | `packages/protocol/src/config.ts` |
+| `subscribe`             | `(kinds: ConfigChangeKind[], listener) => Unsubscribe`                                             | `packages/protocol/src/config.ts` |
 
 #### `PluginService` (`packages/protocol/src/plugins.ts`)
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `list` | `() => Promise<PluginView[]>` | `packages/protocol/src/plugins.ts` |
-| `install` | `(url, subdir?, target?: { source }) => Promise<PluginView>` | `PluginService.install` |
-| `installSource` | `(source: PluginInstallSource, target?: { source }) => Promise<PluginView>` | `PluginService.installSource` |
-| `update` | `(ref: PluginRef) => Promise<PluginView>` | `PluginService.update` |
-| `uninstall` | `(ref: PluginRef) => Promise<void>` | `PluginService.uninstall` |
+| Method          | Signature                                                                   | File                               |
+| --------------- | --------------------------------------------------------------------------- | ---------------------------------- |
+| `list`          | `() => Promise<PluginView[]>`                                               | `packages/protocol/src/plugins.ts` |
+| `install`       | `(url, subdir?, target?: { source }) => Promise<PluginView>`                | `PluginService.install`            |
+| `installSource` | `(source: PluginInstallSource, target?: { source }) => Promise<PluginView>` | `PluginService.installSource`      |
+| `update`        | `(ref: PluginRef) => Promise<PluginView>`                                   | `PluginService.update`             |
+| `uninstall`     | `(ref: PluginRef) => Promise<void>`                                         | `PluginService.uninstall`          |
 
 #### `ExtensionProfileService` (`packages/protocol/src/extension-profiles.ts`, symbol `ExtensionProfileService`)
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `list` | `() => Promise<ExtensionProfileDefinitionView[]>` | `ExtensionProfileService.list` |
-| `current` | `() => Promise<ResolvedExtensionProfile>` | `ExtensionProfileService.current` |
-| `get` | `(ref: ExtensionProfileRef) => Promise<ResolvedExtensionProfile>` | `ExtensionProfileService.get` |
-| `inventory` | `() => Promise<ExtensionProfileInventory>` | `ExtensionProfileService.inventory` |
-| `preview` | `(ref, { selection_scope }) => Promise<ExtensionProfilePreview>` | `ExtensionProfileService.preview` |
-| `previewClear` | `(scope: ExtensionProfileSelectionScope) => Promise<ExtensionProfilePreview>` | `ExtensionProfileService.previewClear` |
-| `previewComposition` | `(input: ExtensionProfileCompositionInput) => Promise<ExtensionProfileCompositionPreview>` | `ExtensionProfileService.previewComposition` |
-| `select` | `(ref, { selection_scope, preview_token, approve_workspace? }) => Promise<ExtensionProfileApplyResult>` | `ExtensionProfileService.select` |
-| `clearSelection` | `(scope, { preview_token }) => Promise<ExtensionProfileApplyResult>` | `ExtensionProfileService.clearSelection` |
-| `applyComposition` | `(input, { preview_token, approve_workspace? }) => Promise<ExtensionProfileCompositionApplyResult>` | `ExtensionProfileService.applyComposition` |
-| `create` | `(input: ExtensionProfileDefinitionInput) => Promise<ExtensionProfileDefinitionView>` | `ExtensionProfileService.create` |
-| `update` | `(input: ExtensionProfileDefinitionInput & { expected_revision }) => Promise<ExtensionProfileDefinitionView>` | `ExtensionProfileService.update` |
-| `delete` | `(ref, { expected_revision }) => Promise<void>` | `ExtensionProfileService.delete` |
-| `clone` | `(source, target) => Promise<ExtensionProfileDefinitionView>` | `ExtensionProfileService.clone` |
+| Method               | Signature                                                                                                     | File                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `list`               | `() => Promise<ExtensionProfileDefinitionView[]>`                                                             | `ExtensionProfileService.list`               |
+| `current`            | `() => Promise<ResolvedExtensionProfile>`                                                                     | `ExtensionProfileService.current`            |
+| `get`                | `(ref: ExtensionProfileRef) => Promise<ResolvedExtensionProfile>`                                             | `ExtensionProfileService.get`                |
+| `inventory`          | `() => Promise<ExtensionProfileInventory>`                                                                    | `ExtensionProfileService.inventory`          |
+| `preview`            | `(ref, { selection_scope }) => Promise<ExtensionProfilePreview>`                                              | `ExtensionProfileService.preview`            |
+| `previewClear`       | `(scope: ExtensionProfileSelectionScope) => Promise<ExtensionProfilePreview>`                                 | `ExtensionProfileService.previewClear`       |
+| `previewComposition` | `(input: ExtensionProfileCompositionInput) => Promise<ExtensionProfileCompositionPreview>`                    | `ExtensionProfileService.previewComposition` |
+| `select`             | `(ref, { selection_scope, preview_token, approve_workspace? }) => Promise<ExtensionProfileApplyResult>`       | `ExtensionProfileService.select`             |
+| `clearSelection`     | `(scope, { preview_token }) => Promise<ExtensionProfileApplyResult>`                                          | `ExtensionProfileService.clearSelection`     |
+| `applyComposition`   | `(input, { preview_token, approve_workspace? }) => Promise<ExtensionProfileCompositionApplyResult>`           | `ExtensionProfileService.applyComposition`   |
+| `create`             | `(input: ExtensionProfileDefinitionInput) => Promise<ExtensionProfileDefinitionView>`                         | `ExtensionProfileService.create`             |
+| `update`             | `(input: ExtensionProfileDefinitionInput & { expected_revision }) => Promise<ExtensionProfileDefinitionView>` | `ExtensionProfileService.update`             |
+| `delete`             | `(ref, { expected_revision }) => Promise<void>`                                                               | `ExtensionProfileService.delete`             |
+| `clone`              | `(source, target) => Promise<ExtensionProfileDefinitionView>`                                                 | `ExtensionProfileService.clone`              |
 
 `ExtensionProfilePreview.requires_workspace_trust` is true only when the effective target selects
 repository-owned `scope: "workspace"` plugins whose exact executable surface is not currently
@@ -349,11 +353,11 @@ trust contract is owned by
 
 #### `SecretService` (`packages/protocol/src/secrets.ts`)
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `listNames` | `() => Promise<string[]>` | `packages/protocol/src/secrets.ts` |
-| `set` | `(name: string, value: string) => Promise<void>` | `packages/protocol/src/secrets.ts` |
-| `delete` | `(name: string) => Promise<void>` | `packages/protocol/src/secrets.ts` |
+| Method      | Signature                                        | File                               |
+| ----------- | ------------------------------------------------ | ---------------------------------- |
+| `listNames` | `() => Promise<string[]>`                        | `packages/protocol/src/secrets.ts` |
+| `set`       | `(name: string, value: string) => Promise<void>` | `packages/protocol/src/secrets.ts` |
+| `delete`    | `(name: string) => Promise<void>`                | `packages/protocol/src/secrets.ts` |
 
 Doc comment states values "only ever flow client → kernel; listing returns names, never values"
 (`packages/protocol/src/secrets.ts`), and warns that secrets "travel over the transport on `set`... a hosted kernel needs
@@ -361,11 +365,11 @@ TLS plus at-rest protection" (`packages/protocol/src/secrets.ts`).
 
 #### `ModelCatalogService` (`packages/protocol/src/models.ts`)
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `get` | `() => Promise<ModelCatalog>` | `packages/protocol/src/models.ts` |
-| `refresh` | `() => Promise<ModelCatalog>` | `packages/protocol/src/models.ts` |
-| `getEntitled` | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
+| Method            | Signature                                                  | File                              |
+| ----------------- | ---------------------------------------------------------- | --------------------------------- |
+| `get`             | `() => Promise<ModelCatalog>`                              | `packages/protocol/src/models.ts` |
+| `refresh`         | `() => Promise<ModelCatalog>`                              | `packages/protocol/src/models.ts` |
+| `getEntitled`     | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
 | `refreshEntitled` | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
 
 `ModelCatalog.source` distinguishes `cache`, `bundle`, and `projection`. A projection is immutable
@@ -379,10 +383,10 @@ Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts)
 paths there and accept absolute paths. Production: `createWorkspaceService` in
 `packages/kernel/src/workspace/workspace-service.ts`. Test: `packages/kernel/tests/integration/workspace-service.test.ts`.
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `listFiles` | `(query?: { prefix?, glob?, limit? }) => Promise<WorkspaceEntry[]>` | `packages/protocol/src/workspace.ts` |
-| `readFile` | `(path: string) => Promise<{ path: string; content: string }>` | `packages/protocol/src/workspace.ts` |
+| Method      | Signature                                                                 | File                                 |
+| ----------- | ------------------------------------------------------------------------- | ------------------------------------ |
+| `listFiles` | `(query?: { prefix?, glob?, limit? }) => Promise<WorkspaceEntry[]>`       | `packages/protocol/src/workspace.ts` |
+| `readFile`  | `(path: string) => Promise<{ path: string; content: string }>`            | `packages/protocol/src/workspace.ts` |
 | `readImage` | `(path: string) => Promise<{ path: string; mime: string; data: string }>` | `packages/protocol/src/workspace.ts` |
 
 #### `WorkspaceChangesService` (`packages/protocol/src/workspace-changes.ts`)
@@ -392,11 +396,11 @@ Comparison IDs, bases, and query/entry IDs are opaque and bound to the selected 
 command names, index, and object IDs do not appear on this generic surface. Failure to probe is
 never a clean working tree.
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `availability` | `(options?) => Promise<WorkspaceChangesAvailability>` | `packages/protocol/src/workspace-changes.ts` |
-| `list` | `(request?, options?) => Promise<WorkspaceChangesPage>` | `packages/protocol/src/workspace-changes.ts` |
-| `read` | `(request, options?) => Promise<WorkspaceChangeDetail>` | `packages/protocol/src/workspace-changes.ts` |
+| Method         | Signature                                               | File                                         |
+| -------------- | ------------------------------------------------------- | -------------------------------------------- |
+| `availability` | `(options?) => Promise<WorkspaceChangesAvailability>`   | `packages/protocol/src/workspace-changes.ts` |
+| `list`         | `(request?, options?) => Promise<WorkspaceChangesPage>` | `packages/protocol/src/workspace-changes.ts` |
+| `read`         | `(request, options?) => Promise<WorkspaceChangeDetail>` | `packages/protocol/src/workspace-changes.ts` |
 
 Production: [workspace-changes.ts](../../packages/protocol/src/workspace-changes.ts) and
 `GitChangesProvider` in
@@ -407,12 +411,12 @@ The kernel adapter contract is [workspace-changes.md](workspace-changes.md).
 
 #### `MemoryService` (`packages/protocol/src/memory.ts`)
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `health` | `() => Promise<MemoryHealthReport>` | `packages/protocol/src/memory.ts` |
-| `reindex` | `() => Promise<MemoryReindexResult>` | `packages/protocol/src/memory.ts` |
-| `jobs` | `(filter?: MemoryJobFilter) => Promise<{ jobs: MemoryJob[]; counts }>` | `packages/protocol/src/memory.ts` |
-| `retryJob` | `(runId: string) => Promise<MemoryJob \| null>` | `packages/protocol/src/memory.ts` |
+| Method     | Signature                                                              | File                              |
+| ---------- | ---------------------------------------------------------------------- | --------------------------------- |
+| `health`   | `() => Promise<MemoryHealthReport>`                                    | `packages/protocol/src/memory.ts` |
+| `reindex`  | `() => Promise<MemoryReindexResult>`                                   | `packages/protocol/src/memory.ts` |
+| `jobs`     | `(filter?: MemoryJobFilter) => Promise<{ jobs: MemoryJob[]; counts }>` | `packages/protocol/src/memory.ts` |
+| `retryJob` | `(runId: string) => Promise<MemoryJob \| null>`                        | `packages/protocol/src/memory.ts` |
 
 The service exposes operational health and job controls; the wiki is markdown on disk and agent
 tools own its content. Methods reject with `capability_disabled` when memory is
@@ -420,23 +424,23 @@ not configured (`packages/protocol/src/memory.ts`).
 
 #### `PlansService` (`packages/protocol/src/plans.ts`)
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `list` | `(input?: PlanListInput) => Promise<PlanListResult>` | `packages/protocol/src/plans.ts` |
-| `read` | `(id: string) => Promise<PlanDocumentDto>` | `packages/protocol/src/plans.ts` |
+| Method         | Signature                                                            | File                             |
+| -------------- | -------------------------------------------------------------------- | -------------------------------- |
+| `list`         | `(input?: PlanListInput) => Promise<PlanListResult>`                 | `packages/protocol/src/plans.ts` |
+| `read`         | `(id: string) => Promise<PlanDocumentDto>`                           | `packages/protocol/src/plans.ts` |
 | `setRetention` | `(id: string, retention: PlanRetention) => Promise<PlanDocumentDto>` | `packages/protocol/src/plans.ts` |
-| `delete` | `(id: string) => Promise<{ id: string; deleted: boolean }>` | `packages/protocol/src/plans.ts` |
+| `delete`       | `(id: string) => Promise<{ id: string; deleted: boolean }>`          | `packages/protocol/src/plans.ts` |
 
 `delete`'s doc comment: "throws when the plan is still live (`active` or `awaiting_approval`); only
 terminal plans may be deleted" (`packages/protocol/src/plans.ts`).
 
 #### `WorkflowsService` (`packages/protocol/src/workflows.ts`)
 
-| Method | Signature | Declaration |
-| --- | --- | --- |
-| `get` | `(id: string) => Promise<WorkflowDetail>` | `WorkflowsService.get` |
-| `list` | `(page?: Pagination) => Promise<Page<WorkflowSummary>>` | `WorkflowsService.list` |
-| `delete` | `(id: string) => Promise<void>` | `WorkflowsService.delete` |
+| Method   | Signature                                               | Declaration               |
+| -------- | ------------------------------------------------------- | ------------------------- |
+| `get`    | `(id: string) => Promise<WorkflowDetail>`               | `WorkflowsService.get`    |
+| `list`   | `(page?: Pagination) => Promise<Page<WorkflowSummary>>` | `WorkflowsService.list`   |
+| `delete` | `(id: string) => Promise<void>`                         | `WorkflowsService.delete` |
 
 No `start` method: the `WorkflowsService` doc comment states that a workflow is started through
 `RunService.start` like any run — the kernel routes it as a workflow when the entry agent profile
@@ -447,20 +451,20 @@ absence means the workflow has no such checkpoint.
 
 #### `SkillsService` (`packages/protocol/src/skills.ts`)
 
-| Method | Signature | File |
-| --- | --- | --- |
-| `list` | `() => Promise<SkillSummary[]>` | `packages/protocol/src/skills.ts` |
+| Method      | Signature                                                        | File                              |
+| ----------- | ---------------------------------------------------------------- | --------------------------------- |
+| `list`      | `() => Promise<SkillSummary[]>`                                  | `packages/protocol/src/skills.ts` |
 | `getPrompt` | `(name: string, args?: { task?: string }) => Promise<Message[]>` | `packages/protocol/src/skills.ts` |
 
 #### `SessionService` (`packages/protocol/src/sessions.ts`)
 
-| Method | Signature | File |
-| --- | --- | --- |
+| Method     | Signature                                                          | File                                |
+| ---------- | ------------------------------------------------------------------ | ----------------------------------- |
 | `listPage` | `(page?: CursorPagination) => Promise<CursorPage<SessionSummary>>` | `packages/protocol/src/sessions.ts` |
-| `list` | `() => Promise<Session[]>` | `packages/protocol/src/sessions.ts` |
-| `get` | `(id: string) => Promise<Session \| null>` | `packages/protocol/src/sessions.ts` |
-| `save` | `(session: Session) => Promise<void>` | `packages/protocol/src/sessions.ts` |
-| `delete` | `(id: string) => Promise<boolean>` | `packages/protocol/src/sessions.ts` |
+| `list`     | `() => Promise<Session[]>`                                         | `packages/protocol/src/sessions.ts` |
+| `get`      | `(id: string) => Promise<Session \| null>`                         | `packages/protocol/src/sessions.ts` |
+| `save`     | `(session: Session) => Promise<void>`                              | `packages/protocol/src/sessions.ts` |
+| `delete`   | `(id: string) => Promise<boolean>`                                 | `packages/protocol/src/sessions.ts` |
 
 Both `Session` and `SessionSummary` carry `SessionTotals` as
 `{ input: number; output: number; cached?: number; cost_usd?: number }`. `cached` is present only
@@ -471,9 +475,9 @@ rate. Production: `packages/protocol/src/sessions.ts` (`SessionTotals`). Test:
 
 #### `StorageService` (`packages/protocol/src/storage.ts`)
 
-| Method | Signature |
-| --- | --- |
-| `inspect` | `() => Promise<StorageSnapshot>` |
+| Method    | Signature                                                           |
+| --------- | ------------------------------------------------------------------- |
+| `inspect` | `() => Promise<StorageSnapshot>`                                    |
 | `cleanup` | `(request: StorageCleanupRequest) => Promise<StorageCleanupResult>` |
 
 `StorageSnapshot` contains only bounded category counts/bytes, a truncation flag and the
@@ -485,13 +489,13 @@ rate. Production: `packages/protocol/src/sessions.ts` (`SessionTotals`). Test:
 
 Defined at `packages/protocol/src/transport.ts`, not part of `KernelClient` itself:
 
-| Member | Signature | File |
-| --- | --- | --- |
-| `request<T>` | `(method: string, params?: unknown, options?: KernelRequestOptions) => Promise<T>` | `packages/protocol/src/transport.ts` |
-| `notify` | `(method: string, params?: unknown) => void` | `packages/protocol/src/transport.ts` |
-| `onNotification` | `(method: string, handler: (params: unknown) => void) => () => void` | `packages/protocol/src/transport.ts` |
-| `onClose?` | `(handler: (reason?: unknown) => void) => () => void` | `packages/protocol/src/transport.ts` |
-| `close` | `() => Promise<void>` | `packages/protocol/src/transport.ts` |
+| Member           | Signature                                                                          | File                                 |
+| ---------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
+| `request<T>`     | `(method: string, params?: unknown, options?: KernelRequestOptions) => Promise<T>` | `packages/protocol/src/transport.ts` |
+| `notify`         | `(method: string, params?: unknown) => void`                                       | `packages/protocol/src/transport.ts` |
+| `onNotification` | `(method: string, handler: (params: unknown) => void) => () => void`               | `packages/protocol/src/transport.ts` |
+| `onClose?`       | `(handler: (reason?: unknown) => void) => () => void`                              | `packages/protocol/src/transport.ts` |
+| `close`          | `() => Promise<void>`                                                              | `packages/protocol/src/transport.ts` |
 
 `KernelRequestOptions` (`packages/protocol/src/transport.ts`) carries exactly one field, `signal`.
 It is local cancellation metadata and stays out of serialized parameters.
@@ -500,21 +504,21 @@ It is local cancellation metadata and stays out of serialized parameters.
 
 ### 3.1 Foundational shared types (`common.ts`)
 
-| Type | Shape | File |
-| --- | --- | --- |
-| `Scope` | `"global" \| "workspace"` | `packages/protocol/src/common.ts` |
-| `Principal` | `{ readonly id: string; readonly display?: string }` | `packages/protocol/src/common.ts` |
-| `ProjectRef` | `{ readonly id: string; readonly label?: string }` | `packages/protocol/src/common.ts` |
-| `WorkspaceRef` | `{ id, projectId, label, kind: "primary" \| "external_worktree", path? }` | `packages/protocol/src/common.ts` |
-| `Pagination` | `{ limit?: number; offset?: number }` | `packages/protocol/src/common.ts` |
-| `Page<T>` | `{ items: T[]; total: number; limit: number; offset: number }` | `packages/protocol/src/common.ts` |
-| `CursorPagination` | `{ limit?: number; cursor?: string }` | `packages/protocol/src/common.ts` |
-| `CursorPage<T>` | `{ items: T[]; next_cursor?: string }` | `packages/protocol/src/common.ts` |
-| `Timestamp` | `number` (epoch ms) | `packages/protocol/src/common.ts` |
-| `JsonSchema` | `Record<string, unknown>` | `packages/protocol/src/common.ts` |
-| `KernelErrorCode` | 11-member string union (below) | `packages/protocol/src/common.ts` |
-| `KernelError` | `{ code, message, details?: unknown }` | `packages/protocol/src/common.ts` |
-| `Unsubscribe` | `() => void` | `packages/protocol/src/common.ts` |
+| Type               | Shape                                                                     | File                              |
+| ------------------ | ------------------------------------------------------------------------- | --------------------------------- |
+| `Scope`            | `"global" \| "workspace"`                                                 | `packages/protocol/src/common.ts` |
+| `Principal`        | `{ readonly id: string; readonly display?: string }`                      | `packages/protocol/src/common.ts` |
+| `ProjectRef`       | `{ readonly id: string; readonly label?: string }`                        | `packages/protocol/src/common.ts` |
+| `WorkspaceRef`     | `{ id, projectId, label, kind: "primary" \| "external_worktree", path? }` | `packages/protocol/src/common.ts` |
+| `Pagination`       | `{ limit?: number; offset?: number }`                                     | `packages/protocol/src/common.ts` |
+| `Page<T>`          | `{ items: T[]; total: number; limit: number; offset: number }`            | `packages/protocol/src/common.ts` |
+| `CursorPagination` | `{ limit?: number; cursor?: string }`                                     | `packages/protocol/src/common.ts` |
+| `CursorPage<T>`    | `{ items: T[]; next_cursor?: string }`                                    | `packages/protocol/src/common.ts` |
+| `Timestamp`        | `number` (epoch ms)                                                       | `packages/protocol/src/common.ts` |
+| `JsonSchema`       | `Record<string, unknown>`                                                 | `packages/protocol/src/common.ts` |
+| `KernelErrorCode`  | 11-member string union (below)                                            | `packages/protocol/src/common.ts` |
+| `KernelError`      | `{ code, message, details?: unknown }`                                    | `packages/protocol/src/common.ts` |
+| `Unsubscribe`      | `() => void`                                                              | `packages/protocol/src/common.ts` |
 
 Two distinct pagination shapes coexist by design: offset/limit `Page<T>` for `RunService.list` and
 `WorkflowsService.list` (whose contents are relatively stable), versus opaque-cursor `CursorPage<T>`
@@ -567,50 +571,50 @@ and [checkpoint-render.test.tsx](../../packages/code/tests/integration/checkpoin
 Defined as `RunEvent` in `packages/protocol/src/runs.ts`, one large union type. Every variant and its
 distinguishing fields:
 
-| `type` | Extra fields (beyond `at`/attribution) | Source |
-| --- | --- | --- |
-| `run_started` | `lead_model?`, `subagent_model?` | `packages/protocol/src/runs.ts` |
-| `run_ended` | `status`, `reason?`, `code?`, `disposition?: "final"\|"checkpoint"` | `packages/protocol/src/runs.ts` |
-| `iteration_started` | `iteration`, `model?` | `packages/protocol/src/runs.ts` |
-| `iteration_completed` | `iteration`, `model?`, `response`, `response_phase?: "commentary"\|"final_answer"`, `input_tokens`, `output_tokens`, `cached_tokens?` | `packages/protocol/src/runs.ts` |
-| `tool_call_started` | `call_id`, `tool`, `server`, `arguments?`, `control?` | `packages/protocol/src/runs.ts`; `control` is present only while the invocation is interruptible |
-| `tool_call` | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `interruption?` | `packages/protocol/src/runs.ts`; `interruption` implies `ok: false` and is operator-only |
-| `tool_output_delta` | `call_id`, `chunk` | `packages/protocol/src/runs.ts` |
-| `tool_call_announced` | `call_id`, `tool`, non-negative `iteration`, positive `attempt`; no arguments | `RunEvent` in `packages/protocol/src/runs.ts` |
-| `tool_control_released` | `call_id`, `tool_execution_id` | `RunEvent` in `packages/protocol/src/runs.ts` |
-| `tool_input_delta` | `call_id`, `tool`, `chars`, `stream_chars?`, `complete?: true` | `packages/protocol/src/runs.ts` (`RunEvent`) |
-| `reasoning` | `iteration`, `text` | `packages/protocol/src/runs.ts` |
-| `text_delta` | `iteration`, `channel: "text" \| "reasoning"`, `text`, `reset` | `packages/protocol/src/runs.ts` |
-| `model_error` | `iteration`, `kind`, `message` | `packages/protocol/src/runs.ts` |
-| `model_retry` | `iteration`, `kind`, `attempt`, `max_retries`, `delay_ms`, `status?`, `retry_after_ms?` | `packages/protocol/src/runs.ts` |
-| `delegation_created` | `delegation_id`, `title`, `task`, `profile?`, `tools?` | `packages/protocol/src/runs.ts` |
-| `delegation_started` | `delegation_id`, `model?` | `packages/protocol/src/runs.ts` |
-| `delegation_completed` \| `delegation_failed` | `delegation_id`, `status`, `summary?` | `packages/protocol/src/runs.ts` |
-| `workflow_run_started` | `run_id`, `parent_run_id`, `profile?`, `title`, `task`, `round_id?`, `pass?`, `item_index?`, `replica?`, `replica_count?` | `packages/protocol/src/runs.ts` |
-| `workflow_title_updated` | `run_id`, `title` | `packages/protocol/src/runs.ts` |
-| `workflow_sequence_state` | `run_id`, `session_id`, six-state `status`, `revision`, current/proposed round/pass, `leaders_started`, `max_total_leaders`, `reason?` | `RunEvent` in `packages/protocol/src/runs.ts` |
-| `workflow_run_progress` | `run_id`, `parent_run_id`, `iterations`, `input_tokens`, `output_tokens`, `cached_tokens?` | `RunEvent` |
-| `workflow_run_completed` | `run_id`, `parent_run_id`, `status` | `RunEvent` |
-| `workflow_run_failed` | `run_id`, `parent_run_id`, `status`, `error?` | `RunEvent` |
-| `plan_created` | `PlanProjection` fields | `RunEvent` |
-| `plan_updated` | `change: PlanUpdateChange` + `PlanProjection` fields | `RunEvent` |
-| — `PlanUpdateChange`'s 4 values | `content` (objective/context/tasks body edit) · `task` (a task marker/detail change) · `status` (the plan's status changed) · `recovery` (state restored on continuation) — all glossed at the type's own doc comment | `packages/protocol/src/runs.ts` |
-| `plan_removed` | `id`, `path?`, `revision`, `spec_revision` + partial `PlanProjection` | `RunEvent` |
-| `plan_review_requested` | `PlanProjection` fields | `RunEvent` |
-| `plan_review_resolved` | `outcome: "approved" \| "changes_requested" \| "cancelled"` + `PlanProjection` fields | `RunEvent` |
-| `soft_limit_check` | `dimension: "tokens" \| "iterations"`, `used`, `limit`, `outcome` | `RunEvent` |
-| `compaction_started` | `mode: "scheduled" \| "forced"` | `RunEvent` |
-| `compaction` | `operation`, `fallback_reason?`, `freed_chars?`, `contribution_count?`, `requested?: true`, `user_contribution_count?` | `RunEvent` |
-| `compaction_skipped` | `reason` (5-member union) | `RunEvent` |
-| `elicitation_requested` | `agent?`, `subagent_id?`, `question`, `options?` | `RunEvent` |
-| `elicitation_resolved` | `agent?`, `subagent_id?`, `question`, `outcome`, `answer?`, `options?` | `RunEvent` |
-| `approval_requested` / `approval_resolved` | action identity, requested/effective mode, reason; resolution outcome | `RunEvent` |
-| `execution_policy_result` / `execution_attempt` | action identity, decision/source or attempt phase/backend | `RunEvent` |
-| `steering_applied` | `message` | `RunEvent` |
-| `memory_ingest` | `detail: MemoryIngestDetail` | `RunEvent` |
-| `capability_event` | `capability`, `kind`, `projection`, `detail?`, `truncated` | `RunEvent` |
-| `events_dropped` | `dropped` | `RunEvent` |
-| `mcp_degraded` | `servers: { name; reason }[]` | `RunEvent` |
+| `type`                                          | Extra fields (beyond `at`/attribution)                                                                                                                                                                                | Source                                                                                           |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `run_started`                                   | `lead_model?`, `subagent_model?`                                                                                                                                                                                      | `packages/protocol/src/runs.ts`                                                                  |
+| `run_ended`                                     | `status`, `reason?`, `code?`, `disposition?: "final"\|"checkpoint"`                                                                                                                                                   | `packages/protocol/src/runs.ts`                                                                  |
+| `iteration_started`                             | `iteration`, `model?`                                                                                                                                                                                                 | `packages/protocol/src/runs.ts`                                                                  |
+| `iteration_completed`                           | `iteration`, `model?`, `response`, `response_phase?: "commentary"\|"final_answer"`, `input_tokens`, `output_tokens`, `cached_tokens?`                                                                                 | `packages/protocol/src/runs.ts`                                                                  |
+| `tool_call_started`                             | `call_id`, `tool`, `server`, `arguments?`, `control?`                                                                                                                                                                 | `packages/protocol/src/runs.ts`; `control` is present only while the invocation is interruptible |
+| `tool_call`                                     | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `interruption?`                                                                                                                       | `packages/protocol/src/runs.ts`; `interruption` implies `ok: false` and is operator-only         |
+| `tool_output_delta`                             | `call_id`, `chunk`                                                                                                                                                                                                    | `packages/protocol/src/runs.ts`                                                                  |
+| `tool_call_announced`                           | `call_id`, `tool`, non-negative `iteration`, positive `attempt`; no arguments                                                                                                                                         | `RunEvent` in `packages/protocol/src/runs.ts`                                                    |
+| `tool_control_released`                         | `call_id`, `tool_execution_id`                                                                                                                                                                                        | `RunEvent` in `packages/protocol/src/runs.ts`                                                    |
+| `tool_input_delta`                              | `call_id`, `tool`, `chars`, `stream_chars?`, `complete?: true`                                                                                                                                                        | `packages/protocol/src/runs.ts` (`RunEvent`)                                                     |
+| `reasoning`                                     | `iteration`, `text`                                                                                                                                                                                                   | `packages/protocol/src/runs.ts`                                                                  |
+| `text_delta`                                    | `iteration`, `channel: "text" \| "reasoning"`, `text`, `reset`                                                                                                                                                        | `packages/protocol/src/runs.ts`                                                                  |
+| `model_error`                                   | `iteration`, `kind`, `message`                                                                                                                                                                                        | `packages/protocol/src/runs.ts`                                                                  |
+| `model_retry`                                   | `iteration`, `kind`, `attempt`, `max_retries`, `delay_ms`, `status?`, `retry_after_ms?`                                                                                                                               | `packages/protocol/src/runs.ts`                                                                  |
+| `delegation_created`                            | `delegation_id`, `title`, `task`, `profile?`, `tools?`                                                                                                                                                                | `packages/protocol/src/runs.ts`                                                                  |
+| `delegation_started`                            | `delegation_id`, `model?`                                                                                                                                                                                             | `packages/protocol/src/runs.ts`                                                                  |
+| `delegation_completed` \| `delegation_failed`   | `delegation_id`, `status`, `summary?`                                                                                                                                                                                 | `packages/protocol/src/runs.ts`                                                                  |
+| `workflow_run_started`                          | `run_id`, `parent_run_id`, `profile?`, `title`, `task`, `round_id?`, `pass?`, `item_index?`, `replica?`, `replica_count?`                                                                                             | `packages/protocol/src/runs.ts`                                                                  |
+| `workflow_title_updated`                        | `run_id`, `title`                                                                                                                                                                                                     | `packages/protocol/src/runs.ts`                                                                  |
+| `workflow_sequence_state`                       | `run_id`, `session_id`, six-state `status`, `revision`, current/proposed round/pass, `leaders_started`, `max_total_leaders`, `reason?`                                                                                | `RunEvent` in `packages/protocol/src/runs.ts`                                                    |
+| `workflow_run_progress`                         | `run_id`, `parent_run_id`, `iterations`, `input_tokens`, `output_tokens`, `cached_tokens?`                                                                                                                            | `RunEvent`                                                                                       |
+| `workflow_run_completed`                        | `run_id`, `parent_run_id`, `status`                                                                                                                                                                                   | `RunEvent`                                                                                       |
+| `workflow_run_failed`                           | `run_id`, `parent_run_id`, `status`, `error?`                                                                                                                                                                         | `RunEvent`                                                                                       |
+| `plan_created`                                  | `PlanProjection` fields                                                                                                                                                                                               | `RunEvent`                                                                                       |
+| `plan_updated`                                  | `change: PlanUpdateChange` + `PlanProjection` fields                                                                                                                                                                  | `RunEvent`                                                                                       |
+| — `PlanUpdateChange`'s 4 values                 | `content` (objective/context/tasks body edit) · `task` (a task marker/detail change) · `status` (the plan's status changed) · `recovery` (state restored on continuation) — all glossed at the type's own doc comment | `packages/protocol/src/runs.ts`                                                                  |
+| `plan_removed`                                  | `id`, `path?`, `revision`, `spec_revision` + partial `PlanProjection`                                                                                                                                                 | `RunEvent`                                                                                       |
+| `plan_review_requested`                         | `PlanProjection` fields                                                                                                                                                                                               | `RunEvent`                                                                                       |
+| `plan_review_resolved`                          | `outcome: "approved" \| "changes_requested" \| "cancelled"` + `PlanProjection` fields                                                                                                                                 | `RunEvent`                                                                                       |
+| `soft_limit_check`                              | `dimension: "tokens" \| "iterations"`, `used`, `limit`, `outcome`                                                                                                                                                     | `RunEvent`                                                                                       |
+| `compaction_started`                            | `mode: "scheduled" \| "forced"`                                                                                                                                                                                       | `RunEvent`                                                                                       |
+| `compaction`                                    | `operation`, `fallback_reason?`, `freed_chars?`, `contribution_count?`, `requested?: true`, `user_contribution_count?`                                                                                                | `RunEvent`                                                                                       |
+| `compaction_skipped`                            | `reason` (5-member union)                                                                                                                                                                                             | `RunEvent`                                                                                       |
+| `elicitation_requested`                         | `agent?`, `subagent_id?`, `question`, `options?`                                                                                                                                                                      | `RunEvent`                                                                                       |
+| `elicitation_resolved`                          | `agent?`, `subagent_id?`, `question`, `outcome`, `answer?`, `options?`                                                                                                                                                | `RunEvent`                                                                                       |
+| `approval_requested` / `approval_resolved`      | action identity, requested/effective mode, reason; resolution outcome                                                                                                                                                 | `RunEvent`                                                                                       |
+| `execution_policy_result` / `execution_attempt` | action identity, decision/source or attempt phase/backend                                                                                                                                                             | `RunEvent`                                                                                       |
+| `steering_applied`                              | `message`                                                                                                                                                                                                             | `RunEvent`                                                                                       |
+| `memory_ingest`                                 | `detail: MemoryIngestDetail`                                                                                                                                                                                          | `RunEvent`                                                                                       |
+| `capability_event`                              | `capability`, `kind`, `projection`, `detail?`, `truncated`                                                                                                                                                            | `RunEvent`                                                                                       |
+| `events_dropped`                                | `dropped`                                                                                                                                                                                                             | `RunEvent`                                                                                       |
+| `mcp_degraded`                                  | `servers: { name; reason }[]`                                                                                                                                                                                         | `RunEvent`                                                                                       |
 
 The `RunEvent` union in `packages/protocol/src/runs.ts` is the authoritative
 catalog. The delegation completed/failed pair shares one object shape.
@@ -638,18 +642,18 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 
 ### 3.4 `StartRunParams` (`packages/protocol/src/runs.ts`)
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `execution_id?` | `string` | "Client-chosen id for idempotency + continuation; the kernel echoes it" (`packages/protocol/src/runs.ts`) |
-| `messages` | `Message[]` | required |
-| `agent?` | `string` | Agent Profile id; "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts`) |
-| `continue_from?` | `string` | resume / steer-after-end |
-| `session_id?` / `agent_instance_id?` | `string` | persisted conversation and entry-agent instance |
-| `prompt_cache_ttl?` | `"5m" \| "1h"` | forwarded only when provided (`packages/protocol/src/runs.ts`) |
-| `memory?` | `MemoryMode` | `"on" \| "off"` (`packages/protocol/src/runs.ts`) |
-| `plans?` | `PlansMode` | `"off" \| "on" \| "review"` (`packages/protocol/src/runs.ts`) |
-| `skill?` | `{ name: string; task?: string }` | the `/skill` flow |
-| `output_schema?` | `JsonSchema` | structured-output request |
+| Field                                | Type                              | Notes                                                                                                                |
+| ------------------------------------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `execution_id?`                      | `string`                          | "Client-chosen id for idempotency + continuation; the kernel echoes it" (`packages/protocol/src/runs.ts`)            |
+| `messages`                           | `Message[]`                       | required                                                                                                             |
+| `agent?`                             | `string`                          | Agent Profile id; "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts`) |
+| `continue_from?`                     | `string`                          | resume / steer-after-end                                                                                             |
+| `session_id?` / `agent_instance_id?` | `string`                          | persisted conversation and entry-agent instance                                                                      |
+| `prompt_cache_ttl?`                  | `"5m" \| "1h"`                    | forwarded only when provided (`packages/protocol/src/runs.ts`)                                                       |
+| `memory?`                            | `MemoryMode`                      | `"on" \| "off"` (`packages/protocol/src/runs.ts`)                                                                    |
+| `plans?`                             | `PlansMode`                       | `"off" \| "on" \| "review"` (`packages/protocol/src/runs.ts`)                                                        |
+| `skill?`                             | `{ name: string; task?: string }` | the `/skill` flow                                                                                                    |
+| `output_schema?`                     | `JsonSchema`                      | structured-output request                                                                                            |
 
 Configuration uses ordinary run parameters and tool events. The host owns action authority;
 clients do not supply a configuration consent nonce. Production: `StartRunParams` in
@@ -679,7 +683,9 @@ real types (not illustrative prose — every field below is copied from that fil
 ```ts
 // packages/protocol/tests/contract/public-contract.fixture.ts
 const capabilities = {
-  memory: true, skills: true, agent_tools: true,
+  memory: true,
+  skills: true,
+  agent_tools: true,
 } satisfies KernelCapabilities;
 
 // packages/protocol/tests/contract/public-contract.fixture.ts
@@ -692,8 +698,13 @@ const startParams = {
 
 // packages/protocol/tests/contract/public-contract.fixture.ts
 const textDelta = {
-  type: "text_delta", at: 1, agent: "lead",
-  iteration: 1, channel: "text", text: "Working", reset: false,
+  type: "text_delta",
+  at: 1,
+  agent: "lead",
+  iteration: 1,
+  channel: "text",
+  text: "Working",
+  reset: false,
 } satisfies RunEvent;
 ```
 
@@ -717,15 +728,15 @@ on the same part rather than separate variants.
 
 ### 3.8 Run status, usage and the top-level run DTOs (`runs.ts`)
 
-| Type | Shape | File |
-| --- | --- | --- |
-| `RunStatus` | `"running" \| "completed" \| "failed" \| "cancelled"` | `packages/protocol/src/runs.ts` |
-| `AgentRole` | `"lead" \| "subagent"` | `packages/protocol/src/runs.ts` |
-| `PerAgentUsage` | `{ role: AgentRole; model; input_tokens; output_tokens; cached_tokens; cache_write_tokens; iterations? }` | `packages/protocol/src/runs.ts` |
-| `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts` |
-| `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message; kind?; retry_after_ms? } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
-| `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts` |
-| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
+| Type                               | Shape                                                                                                                                                                                                                                       | File                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `RunStatus`                        | `"running" \| "completed" \| "failed" \| "cancelled"`                                                                                                                                                                                       | `packages/protocol/src/runs.ts` |
+| `AgentRole`                        | `"lead" \| "subagent"`                                                                                                                                                                                                                      | `packages/protocol/src/runs.ts` |
+| `PerAgentUsage`                    | `{ role: AgentRole; model; input_tokens; output_tokens; cached_tokens; cache_write_tokens; iterations? }`                                                                                                                                   | `packages/protocol/src/runs.ts` |
+| `RunUsage`                         | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }`                                                                                                                          | `packages/protocol/src/runs.ts` |
+| `RunResult`                        | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message; kind?; retry_after_ms? } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
+| `RunSummary`                       | `{ execution_id; owner?; status; created_at; ended_at? }`                                                                                                                                                                                   | `packages/protocol/src/runs.ts` |
+| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery`                                                                     | `packages/protocol/src/runs.ts` |
 
 `RunUsage.by_agent` is optional because "a live run's final result may
 report per-agent detail... instead" of the flat totals (`packages/protocol/src/runs.ts`), which are themselves
@@ -746,10 +757,10 @@ serializing a definition, settings, or secrets (`packages/protocol/src/extension
 
 ### 3.9 Elicitation types (`runs.ts`)
 
-| Type | Shape | Declaration |
-| --- | --- | --- |
-| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; window_ms?: number }` | `ElicitationRequest` |
-| `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }` | `ElicitationResponse` |
+| Type                  | Shape                                                                         | Declaration           |
+| --------------------- | ----------------------------------------------------------------------------- | --------------------- |
+| `ElicitationRequest`  | `{ id; execution_id; kind; prompt; schema?: JsonSchema; window_ms?: number }` | `ElicitationRequest`  |
+| `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }`                 | `ElicitationResponse` |
 
 `ElicitationRequest.kind` includes `"ask_user"` (a free question), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
 (an installed workflow preflight) and `"execution_approval"` (a host action decision) — plus a deliberately open `(string & {})` escape, "so a kernel may
@@ -757,16 +768,15 @@ add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/proto
 This is structurally the same open/closed pattern already noted for `capability_event` in §5
 invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 
-
 ### 3.10 `ConfigService` data shapes I: settings (`config.ts`)
 
-| Type | Shape | File |
-| --- | --- | --- |
+| Type                    | Shape                                                                                   | File                              |
+| ----------------------- | --------------------------------------------------------------------------------------- | --------------------------------- |
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts` |
-| `SettingsData` | Provider, model, MCP, capability and budget settings | `packages/protocol/src/config.ts` |
-| `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts` |
-| `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts` |
-| `MemoryConfig` | `{ enabled?; [k]: unknown }` | `packages/protocol/src/config.ts` |
+| `SettingsData`          | Provider, model, MCP, capability and budget settings                                    | `packages/protocol/src/config.ts` |
+| `ProviderConfig`        | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }`                                | `packages/protocol/src/config.ts` |
+| `McpServerConfig`       | `{ command?; args?; url?; [k]: unknown }`                                               | `packages/protocol/src/config.ts` |
+| `MemoryConfig`          | `{ enabled?; [k]: unknown }`                                                            | `packages/protocol/src/config.ts` |
 
 ### 3.11 `ConfigService` data shapes II: repair plan and agents (`config.ts`)
 
@@ -793,14 +803,14 @@ vocabulary" (`packages/protocol/src/config.ts`).
 
 ### 3.12 `MemoryService` health and job DTOs (`memory.ts`)
 
-| Type | Shape | File |
-| --- | --- | --- |
-| `MemoryHealthFinding` | `{ code: string; severity: MemoryHealthSeverity; path: string; message: string; suggested_action: string }` | `packages/protocol/src/memory.ts` |
-| `MemoryHealthSeverity` | `"error" \| "warning" \| "info"` | `packages/protocol/src/memory.ts` |
-| `MemoryHealthReport` | `{ generated_at; totals: { documents; topics; memories; pending_jobs; failed_jobs }; counts: Record<MemoryHealthSeverity, number>; findings: MemoryHealthFinding[]; truncated: boolean; skipped_codes: string[] }` | `packages/protocol/src/memory.ts` |
-| `MemoryJobState` | `"pending" \| "running" \| "retry_wait" \| "completed" \| "failed"` | `packages/protocol/src/memory.ts` |
-| `MemoryJobError` | `{ phase: string; message: string; at: Timestamp }` | `packages/protocol/src/memory.ts` |
-| `MemoryJob` | `{ run_id; state: MemoryJobState; attempts; enqueued_at; updated_at; next_attempt_at?; last_error?: MemoryJobError; note? }` | `packages/protocol/src/memory.ts` |
+| Type                   | Shape                                                                                                                                                                                                              | File                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| `MemoryHealthFinding`  | `{ code: string; severity: MemoryHealthSeverity; path: string; message: string; suggested_action: string }`                                                                                                        | `packages/protocol/src/memory.ts` |
+| `MemoryHealthSeverity` | `"error" \| "warning" \| "info"`                                                                                                                                                                                   | `packages/protocol/src/memory.ts` |
+| `MemoryHealthReport`   | `{ generated_at; totals: { documents; topics; memories; pending_jobs; failed_jobs }; counts: Record<MemoryHealthSeverity, number>; findings: MemoryHealthFinding[]; truncated: boolean; skipped_codes: string[] }` | `packages/protocol/src/memory.ts` |
+| `MemoryJobState`       | `"pending" \| "running" \| "retry_wait" \| "completed" \| "failed"`                                                                                                                                                | `packages/protocol/src/memory.ts` |
+| `MemoryJobError`       | `{ phase: string; message: string; at: Timestamp }`                                                                                                                                                                | `packages/protocol/src/memory.ts` |
+| `MemoryJob`            | `{ run_id; state: MemoryJobState; attempts; enqueued_at; updated_at; next_attempt_at?; last_error?: MemoryJobError; note? }`                                                                                       | `packages/protocol/src/memory.ts` |
 
 `MemoryJobState`'s own comment: `"retry_wait"` is "a failed attempt serving out its backoff" and
 `"failed"` is "terminal until an operator retries, and the job is kept as the evidence that something
@@ -839,7 +849,7 @@ UI must prompt for one" (`packages/protocol/src/models.ts`).
 ## 4. Behavior
 
 `@clarvis/protocol` has no runtime behavior of its own — it is erased at compile time (§7). What
-follows is the *contract* the code encodes as call/return shape, as stated in the doc comments
+follows is the _contract_ the code encodes as call/return shape, as stated in the doc comments
 attached to each method:
 
 1. A client obtains a `KernelClient` (construction is out of scope for this package — see
@@ -859,16 +869,17 @@ attached to each method:
    overwritten in that case" (`packages/protocol/src/config.ts`). This is optimistic concurrency control expressed
    purely through the method signature and its doc comment — no implementation of the check lives in
    this package.
+
 ### State implied by `PlanTaskStatus` (`packages/protocol/src/plans.ts`)
 
-| Status | Meaning | Closes the task? |
-| --- | --- | --- |
-| `pending` | not started | no |
-| `in_progress` | working | no |
-| `returned` | "a sub-agent's hand-back that still awaits the lead's judgment" | no — explicitly "not a closed state" (`packages/protocol/src/plans.ts`) |
-| `done` | complete, carries `result` | yes |
-| `abandoned` | complete, carries `reason` | yes |
-| `failed` | complete, carries `error` | not stated as closing in this file's comment, but grouped with done/abandoned as requiring "a matching outcome field" (`packages/protocol/src/plans.ts`) |
+| Status        | Meaning                                                         | Closes the task?                                                                                                                                         |
+| ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pending`     | not started                                                     | no                                                                                                                                                       |
+| `in_progress` | working                                                         | no                                                                                                                                                       |
+| `returned`    | "a sub-agent's hand-back that still awaits the lead's judgment" | no — explicitly "not a closed state" (`packages/protocol/src/plans.ts`)                                                                                  |
+| `done`        | complete, carries `result`                                      | yes                                                                                                                                                      |
+| `abandoned`   | complete, carries `reason`                                      | yes                                                                                                                                                      |
+| `failed`      | complete, carries `error`                                       | not stated as closing in this file's comment, but grouped with done/abandoned as requiring "a matching outcome field" (`packages/protocol/src/plans.ts`) |
 
 ### `PlanStatus` (`packages/protocol/src/plans.ts`)
 
@@ -893,7 +904,7 @@ The following are derived directly from this package's own source and tests.
 2. **No file anywhere in `src/` or `tests/` imports a runtime value from `@clarvis/protocol` —
    every import is `import type` (or an `export type` re-export).**
    Verified directly by running it: a multiline ripgrep search for
-   `import \{[^}]*\} from "@clarvis/protocol";` (a *value*-form brace import, as opposed to
+   `import \{[^}]*\} from "@clarvis/protocol";` (a _value_-form brace import, as opposed to
    `import type { ... }`) across every `packages/*/src` and `packages/*/tests` tree returns **zero**
    matches, while the same search restricted to `import type` returns matches in every consumer
    (`code`, `kernel`). Both consumer tsconfigs enable `verbatimModuleSyntax`
@@ -929,7 +940,7 @@ The following are derived directly from this package's own source and tests.
    `RUN_EVENT_POLICY` makes a new discriminator fail typechecking until its source, durability,
    mapping and backpressure behavior are classified (`packages/kernel/src/runs/event-policy.ts`).
 
-6. **`PlansService.list`/`SessionService.listPage` use opaque-cursor paging; `RunService.list`/
+5. **`PlansService.list`/`SessionService.listPage` use opaque-cursor paging; `RunService.list`/
    `WorkflowsService.list` use offset/limit paging — the two families are never interchanged.**
    Production: `packages/protocol/src/plans.ts` (`PlanListInput.cursor?`, `packages/protocol/src/plans.ts`), `packages/protocol/src/sessions.ts`
    (`CursorPagination`, `packages/protocol/src/common.ts`) versus `RunService.list` and
@@ -937,14 +948,14 @@ The following are derived directly from this package's own source and tests.
    rationale beyond the type comment "for stores whose
    contents change over time" (`packages/protocol/src/common.ts`); unpinned by any test in this package.
 
-7. **Compaction start is an explicit `RunEvent` rather than inferred from a later outcome.**
+6. **Compaction start is an explicit `RunEvent` rather than inferred from a later outcome.**
    `compaction_started` carries attribution plus `mode`, while `compaction` may carry only the
    bounded `fallback_reason` values `summarization_failed` or `summary_not_effective`.
    Production: `packages/protocol/src/runs.ts` (`RunEvent`). Test:
    `packages/kernel/tests/contract/memory/transport-codecs.test.ts` ("preserves compaction lifecycle and
    fallback attribution") round-trips both strict wire shapes.
 
-8. **`PlanProjection.revision` and `.spec_revision` are two independently-bumped counters, and a
+7. **`PlanProjection.revision` and `.spec_revision` are two independently-bumped counters, and a
    human approval binds only to the second.**
    Production: `packages/protocol/src/runs.ts` — "Monotonic counter bumped on every write (the CAS baseline)" vs.
    "Counter bumped only when the plan's substance changes; approval binds to it." Restated
@@ -953,7 +964,7 @@ The following are derived directly from this package's own source and tests.
    declarations in two files; unpinned by a test in this package (the CAS mechanics are plan-package
    territory — see `specs/hosts/protocol.md` §8 delegation note and the sibling plan-capability document).
 
-9. **Extension Profile selection and composition are preview-bound, while execution history carries only
+8. **Extension Profile selection and composition are preview-bound, while execution history carries only
    its minimal identity.** `ExtensionProfileService.select`, `.clearSelection`, and
    `.applyComposition` require `preview_token`; composition and definition updates require an exact
    expected revision, and `ExtensionProfileRunRef` contains only `id` and `fingerprint`.
@@ -963,19 +974,19 @@ The following are derived directly from this package's own source and tests.
    `KernelClient`; runtime behavior is pinned by
    `packages/kernel/tests/integration/extension-profile-manager.test.ts` and owned by
    [Extension Profiles](extension-profiles.md#5-invariants).
-10. **Marketplace dialect does not cross the kernel protocol boundary.** Clients project a listing
-    into the closed `PluginInstallSource` union; kernels receive an explicit Git/local/npm source and
-    apply acquisition policy there. Production: `PluginInstallSource` and
-    `PluginService.installSource` in `packages/protocol/src/plugins.ts`. Test: service projection and
-    install-source cases in `packages/code/tests/integration/app-commands.test.tsx` and
-    `packages/kernel/tests/integration/plugin-service.test.ts`.
-11. **Publisher identity and skill requirements survive the wire as metadata, never authority.**
+9. **Marketplace dialect does not cross the kernel protocol boundary.** Clients project a listing
+   into the closed `PluginInstallSource` union; kernels receive an explicit Git/local/npm source and
+   apply acquisition policy there. Production: `PluginInstallSource` and
+   `PluginService.installSource` in `packages/protocol/src/plugins.ts`. Test: service projection and
+   install-source cases in `packages/code/tests/integration/app-commands.test.tsx` and
+   `packages/kernel/tests/integration/plugin-service.test.ts`.
+10. **Publisher identity and skill requirements survive the wire as metadata, never authority.**
     `PluginView.author` is distinct from presentation developer/display names, and
     `SkillSummary.dependencies` cannot add an MCP server. Production:
     `packages/protocol/src/{plugins,skills}.ts`. Test:
     `packages/kernel/tests/integration/plugin-service.test.ts` and
     `packages/kernel/tests/component/skills-service.test.ts`.
-12. **The workflow checkpoint uses the same closed shape live and at rest.**
+11. **The workflow checkpoint uses the same closed shape live and at rest.**
     `workflow_sequence_state` and `WorkflowSequence` carry the same six-state lifecycle, CAS
     revision, current/proposed round/pass and cumulative leader counters; `WorkflowDetail.sequence`
     is optional when no controlled round checkpoint exists. The live event is classified non-droppable but
@@ -983,42 +994,42 @@ The following are derived directly from this package's own source and tests.
     Production: `RunEvent` in `packages/protocol/src/runs.ts`, `WorkflowSequence` in
     `packages/protocol/src/workflows.ts`, and `RUN_EVENT_POLICY`.
     Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts` (`preserves the workflow round
-    checkpoint contract`) and `packages/kernel/tests/integration/workflows-service.test.ts` (`emits
-    and persists every Admiral-controlled round checkpoint`).
+checkpoint contract`) and `packages/kernel/tests/integration/workflows-service.test.ts` (`emits
+and persists every Admiral-controlled round checkpoint`).
 
 ## 6. Failure modes and degradation
 
-This package defines no error *handling* — it defines the vocabulary a kernel is expected to return
+This package defines no error _handling_ — it defines the vocabulary a kernel is expected to return
 errors in, and documents on individual methods where a specific code applies:
 
-| Situation | Code / shape | Where documented |
-| --- | --- | --- |
-| Generic kernel-level failure | `KernelError` with one of 11 `KernelErrorCode` values | `packages/protocol/src/common.ts` |
-| A settings write raced a concurrent edit | `conflict` | `packages/protocol/src/config.ts` (`updateSettings`) (`repairSettings`) |
-| Memory not configured on this kernel | `capability_disabled` (implied by `KernelErrorCode`, applied per `packages/protocol/src/memory.ts`'s doc comment "the methods reject with a `capability_disabled` / memory-disabled `KernelError`") | `packages/protocol/src/memory.ts` |
-| Deleting a plan that is still `active`/`awaiting_approval` | throws (unspecified which `KernelErrorCode`, but the method's own doc says "throws when the plan is still live") | `packages/protocol/src/plans.ts` |
-| A run ended on a failure | `RunResult.error?: { code: string; message: string; kind?: ProviderFailureKind; retry_after_ms?: number }`, "present only on a `failed` run" | `packages/protocol/src/runs.ts` |
-| A workflow leader failed | `workflow_run_failed`'s `error?: { code; message }` | `RunEvent` in `packages/protocol/src/runs.ts` |
-| A run was rebuilt from a damaged crash journal | `RunDetail.recovery?: RunRecovery` — `skipped_lines` and `synthesized_tool_calls` counts, "present ... only when something was actually lost or synthesized, so its absence means the record is intact" | `packages/protocol/src/runs.ts` |
-| A settings scope file exists but fails to parse/validate | `SettingsSource.error?: string` — "the UI shows this instead of silently treating the scope as empty" | `packages/protocol/src/config.ts` |
-| An Extension Profile selection or definition is invalid | `ResolvedExtensionProfile.status: "invalid"` plus typed `ExtensionProfileIssue[]`; no fallback is represented | `ExtensionProfileStatus`, `ExtensionProfileIssue`, and `ResolvedExtensionProfile` in `packages/protocol/src/extension-profiles.ts` |
-| An Extension Profile reference is missing or a workspace executable surface is untrusted | `status: "degraded"` plus the exact `missing_plugin`, `missing_skill`, or `workspace_untrusted` issue | `ExtensionProfileIssueCode` in `packages/protocol/src/extension-profiles.ts` |
-| An agent config file's frontmatter fails to parse | `AgentDoc.malformed?: string` — "the `frontmatter` above is then the lenient fallback (`{}`), not the file's real content" | `packages/protocol/src/config.ts` |
-| An agent config file overlaying a shipped agent is unusable | `AgentOverlay.status: "rejected"` + `reason` — "the shipped default runs unchanged" | `packages/protocol/src/config.ts` |
-| A repository's `settings.json` asked for fields it may not set on its own authority | `SettingsView.withheld_workspace_fields?: readonly string[]` | `packages/protocol/src/config.ts` |
-| A capability event's own type is not in this protocol version | `capability_event` with `projection`/`truncated` fields rather than a widened `type` | `RunEvent.capability_event` |
-| Live event consumer fell behind (backpressure) | `events_dropped` — "emitted at most once... only incremental variants are ever dropped, and their authoritative content still arrives" | `RunEvent.events_dropped` |
-| MCP servers degraded for this run | persisted `mcp_degraded` event listing `{ name, reason }[]`; clients may present it ephemerally rather than as conversation content | `RunEvent.mcp_degraded` |
-| A tool call the provider abandoned mid-stream never settles | not modeled by this package at all — the closest adjacent shape, `tool_call_started`, has no corresponding "abandoned" variant; only `tool_call` (`ok: boolean`) is authoritative |
+| Situation                                                                                | Code / shape                                                                                                                                                                                            | Where documented                                                                                                                   |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Generic kernel-level failure                                                             | `KernelError` with one of 11 `KernelErrorCode` values                                                                                                                                                   | `packages/protocol/src/common.ts`                                                                                                  |
+| A settings write raced a concurrent edit                                                 | `conflict`                                                                                                                                                                                              | `packages/protocol/src/config.ts` (`updateSettings`) (`repairSettings`)                                                            |
+| Memory not configured on this kernel                                                     | `capability_disabled` (implied by `KernelErrorCode`, applied per `packages/protocol/src/memory.ts`'s doc comment "the methods reject with a `capability_disabled` / memory-disabled `KernelError`")     | `packages/protocol/src/memory.ts`                                                                                                  |
+| Deleting a plan that is still `active`/`awaiting_approval`                               | throws (unspecified which `KernelErrorCode`, but the method's own doc says "throws when the plan is still live")                                                                                        | `packages/protocol/src/plans.ts`                                                                                                   |
+| A run ended on a failure                                                                 | `RunResult.error?: { code: string; message: string; kind?: ProviderFailureKind; retry_after_ms?: number }`, "present only on a `failed` run"                                                            | `packages/protocol/src/runs.ts`                                                                                                    |
+| A workflow leader failed                                                                 | `workflow_run_failed`'s `error?: { code; message }`                                                                                                                                                     | `RunEvent` in `packages/protocol/src/runs.ts`                                                                                      |
+| A run was rebuilt from a damaged crash journal                                           | `RunDetail.recovery?: RunRecovery` — `skipped_lines` and `synthesized_tool_calls` counts, "present ... only when something was actually lost or synthesized, so its absence means the record is intact" | `packages/protocol/src/runs.ts`                                                                                                    |
+| A settings scope file exists but fails to parse/validate                                 | `SettingsSource.error?: string` — "the UI shows this instead of silently treating the scope as empty"                                                                                                   | `packages/protocol/src/config.ts`                                                                                                  |
+| An Extension Profile selection or definition is invalid                                  | `ResolvedExtensionProfile.status: "invalid"` plus typed `ExtensionProfileIssue[]`; no fallback is represented                                                                                           | `ExtensionProfileStatus`, `ExtensionProfileIssue`, and `ResolvedExtensionProfile` in `packages/protocol/src/extension-profiles.ts` |
+| An Extension Profile reference is missing or a workspace executable surface is untrusted | `status: "degraded"` plus the exact `missing_plugin`, `missing_skill`, or `workspace_untrusted` issue                                                                                                   | `ExtensionProfileIssueCode` in `packages/protocol/src/extension-profiles.ts`                                                       |
+| An agent config file's frontmatter fails to parse                                        | `AgentDoc.malformed?: string` — "the `frontmatter` above is then the lenient fallback (`{}`), not the file's real content"                                                                              | `packages/protocol/src/config.ts`                                                                                                  |
+| An agent config file overlaying a shipped agent is unusable                              | `AgentOverlay.status: "rejected"` + `reason` — "the shipped default runs unchanged"                                                                                                                     | `packages/protocol/src/config.ts`                                                                                                  |
+| A repository's `settings.json` asked for fields it may not set on its own authority      | `SettingsView.withheld_workspace_fields?: readonly string[]`                                                                                                                                            | `packages/protocol/src/config.ts`                                                                                                  |
+| A capability event's own type is not in this protocol version                            | `capability_event` with `projection`/`truncated` fields rather than a widened `type`                                                                                                                    | `RunEvent.capability_event`                                                                                                        |
+| Live event consumer fell behind (backpressure)                                           | `events_dropped` — "emitted at most once... only incremental variants are ever dropped, and their authoritative content still arrives"                                                                  | `RunEvent.events_dropped`                                                                                                          |
+| MCP servers degraded for this run                                                        | persisted `mcp_degraded` event listing `{ name, reason }[]`; clients may present it ephemerally rather than as conversation content                                                                     | `RunEvent.mcp_degraded`                                                                                                            |
+| A tool call the provider abandoned mid-stream never settles                              | not modeled by this package at all — the closest adjacent shape, `tool_call_started`, has no corresponding "abandoned" variant; only `tool_call` (`ok: boolean`) is authoritative                       |
 
-Two properties the package states about *degradation of fidelity* rather than error per se:
+Two properties the package states about _degradation of fidelity_ rather than error per se:
 
 - `events_dropped`'s own comment: dropping only ever affects incremental/live-only variants, and "the
   authoritative content still arrives — a `tool_call` carries its tool's full output and
-  `iteration_completed.response` the final assistant text — so this reports fidelity of the *live*
+  `iteration_completed.response` the final assistant text — so this reports fidelity of the _live_
   view, not data loss" (`events_dropped` in `RunEvent`).
 - `RunRecovery`'s own comment: "counts only: the skipped lines themselves never cross the wire"
-  (`packages/protocol/src/runs.ts`) — a client is told *how much* was lost, never *what*.
+  (`packages/protocol/src/runs.ts`) — a client is told _how much_ was lost, never _what_.
 
 ## 7. Coupling
 

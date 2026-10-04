@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createSignal } from "solid-js";
 import type {
   ExtensionProfileRef,
   ExtensionProfileService,
@@ -499,4 +500,80 @@ test("keeps Extension Profile load failures visible until a successful retry", a
   expect(frame).toContain("builtin:default");
   expect(frame).not.toContain("Extension Profile catalog unavailable");
   rendered.renderer.destroy();
+});
+
+test("returning from the composer refreshes new definitions and the active snapshot", async () => {
+  const [active, setActive] = createSignal(true);
+  const { keymap } = createFakeKeymap();
+  const { host } = createViewHost({
+    interaction: { keymap } as unknown as Interaction,
+    active,
+    close: () => {},
+    dispatch: () => {},
+  });
+  const builtin = resolved({ scope: "builtin", name: "default" });
+  const research = resolved({ scope: "workspace", name: "research" });
+  let selected = builtin;
+  let definitions = [{ ref: builtin.ref, immutable: true }];
+  let reloads = 0;
+  const service = {
+    list: async () => {
+      reloads += 1;
+      return definitions;
+    },
+    current: async () => selected,
+    inventory: async () => ({ plugins: [], standalone_skills: [] }),
+    get: async (ref: ExtensionProfileRef) => (ref.name === "research" ? research : builtin),
+    preview: async () => {
+      throw new Error("not used");
+    },
+    previewClear: async () => {
+      throw new Error("not used");
+    },
+    previewComposition: async () => {
+      throw new Error("not used");
+    },
+    select: async () => {
+      throw new Error("not used");
+    },
+    clearSelection: async () => {
+      throw new Error("not used");
+    },
+    applyComposition: async () => {
+      throw new Error("not used");
+    },
+    create: async () => {
+      throw new Error("not used");
+    },
+    update: async () => {
+      throw new Error("not used");
+    },
+    delete: async () => {
+      throw new Error("not used");
+    },
+    clone: async () => {
+      throw new Error("not used");
+    },
+  } satisfies ExtensionProfileService;
+  const rendered = await openRender(
+    (() =>
+      ExtensionProfileBrowser(host, {
+        extensionProfiles: service,
+        reconnect: async () => ({ ok: true, message: "ok" }),
+        runActive: () => false,
+        notify: () => {},
+        configure: () => {},
+      })) as never,
+    { width: 120, height: 32 },
+  );
+  await settle(rendered, () => rendered.captureCharFrame().includes("builtin:default"));
+  setActive(false);
+  await rendered.renderOnce();
+  selected = research;
+  definitions = [...definitions, { ref: research.ref, immutable: false }];
+  setActive(true);
+  await settle(rendered, () => rendered.captureCharFrame().includes("workspace:research"));
+  expect(rendered.captureCharFrame()).toContain("workspace:research");
+  expect(rendered.captureCharFrame()).toContain("1/0 plugins");
+  expect(reloads).toBe(2);
 });

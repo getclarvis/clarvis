@@ -43,7 +43,8 @@ checks headless unavailability and an authenticated goal through actual kernel e
 coordinator and authenticated kernel RPC. The local and SSH bootstrap APIs use the same
 FileKernel options. The hosted graph accepts owner-provided projection/index storage and
 an authentication callback. Client disconnect retires observation/control and applies the run's explicit
-disconnect policy; only its process owner calls the host's `close`. `InProcessKernel.prepareRun`
+disconnect policy. An armed TUI connection also requests workspace-wide physical shutdown from the
+process owner; deliberate background exit and reconnect disarm that connection. `InProcessKernel.prepareRun`
 captures effective root/leader configuration without inference, and its single-use start still enters
 the existing execution-id, owner and Extension Profile leases. `serveLocalFileKernel` adds a private
 lease/discovery record, authenticated listener and independent idle lifecycle;
@@ -241,7 +242,9 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 
 Human-authored plans and memory remain in workspace/global content trees; machine state uses
 `@clarvis/paths` global state roots. Run journals are recovered before the kernel reports ready.
-Durable memory jobs begin draining only after the host calls `startMemoryRecovery()`. Workspace
+Durable memory jobs begin draining only after the host calls `startMemoryRecovery()`.
+`stopMemoryRecovery()` is idempotent, prevents later starts and aborts indexing before hosted
+settlement waits. Interrupted jobs are recovered by the next host's background worker. Workspace
 housekeeping sweeps generic temporary spill artifacts without deleting Git checkouts.
 
 Remote MCP OAuth is the deliberate credential exception to run-scoped state: its bounded,
@@ -277,26 +280,27 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    `packages/kernel/src/file-kernel.ts`.
    Test: `packages/kernel/tests/unit/lifecycle.test.ts`;
    `packages/kernel/tests/integration/file-kernel.test.ts` (`retries failed disposal through
-   the public kernel close path`).
+the public kernel close path`).
 
-6. **Kernel construction starts no memory-index inference; explicit recovery start is idempotent and
+5. **Kernel construction starts no memory-index inference; explicit recovery start is idempotent and
    applies once to resident owners plus every later owner generation.**
    Production: `InProcessKernel.startMemoryRecovery` and `buildOwner` in
    `packages/kernel/src/kernel.ts`; `forEachResident` and `resident` in
    `packages/kernel/src/core/owner-scope-pool.ts`; host calls in `packages/code/src/runtime.tsx`,
    `packages/kernel/src/serve.ts`.
    Test: `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery
-   only after the host releases boot`).
+only after the host releases boot`, `stops recovery before shutdown and cannot restart memory on the
+retiring kernel`).
 
-7. **One file kernel composes one immutable resolved Extension Profile.** Mutating a definition
+6. **One file kernel composes one immutable resolved Extension Profile.** Mutating a definition
    or persisted selection cannot change its active plugins, skill roots, run metadata, or
    fingerprint; a host must reconnect. Production: `createExtensionProfileManager` and `resolveActive` in
    `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; composition in
    `packages/kernel/src/file-kernel.ts`. Test:
    `packages/kernel/tests/integration/extension-profile-manager.test.ts` (`pins the active snapshot until
-   reconnect`). The full contract is [Extension Profiles](extension-profiles.md#5-invariants).
+reconnect`). The full contract is [Extension Profiles](extension-profiles.md#5-invariants).
 
-8. **Every extension-consuming run owned by the file kernel, including a delayed memory-indexer continuation,
+7. **Every extension-consuming run owned by the file kernel, including a delayed memory-indexer continuation,
    acquires the same immutable Extension Profile lease.** Admission validates before execution and release
    runs after success or failure. Production: `acquireExtensionProfileRunLease` and
    `executeExtensionProfileRun` in `packages/kernel/src/file-kernel.ts`; `withRunLease` in
@@ -313,18 +317,18 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 
 ## 8. Failure behavior
 
-| Failure | Result |
-| --- | --- |
-| Git discovery is unavailable | deterministic canonical-path identity fallback |
-| Config/plugin scope is invalid | rejected scope is reported; valid scopes continue |
-| Extension Profile selection or definition is invalid | kernel remains fail-closed on that invalid Extension Profile; no builtin fallback is activated |
-| Selected Extension Profile inventory is missing or untrusted | kernel boots with a `degraded` resolved snapshot and only healthy, trusted selected contributions activate |
+| Failure                                                                                | Result                                                                                                                                   |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Git discovery is unavailable                                                           | deterministic canonical-path identity fallback                                                                                           |
+| Config/plugin scope is invalid                                                         | rejected scope is reported; valid scopes continue                                                                                        |
+| Extension Profile selection or definition is invalid                                   | kernel remains fail-closed on that invalid Extension Profile; no builtin fallback is activated                                           |
+| Selected Extension Profile inventory is missing or untrusted                           | kernel boots with a `degraded` resolved snapshot and only healthy, trusted selected contributions activate                               |
 | A remote MCP server requires interactive OAuth and the host supplied no browser opener | explicit `MCPInteractiveAuthorizationUnavailableError`; the URL is not opened implicitly and no credential is moved through the protocol |
-| OAuth callback, state, authorization URL or persisted store is invalid | authorization fails with a bounded typed error; unrelated plugin contributions and local MCP transports remain available |
-| Orphan recovery fails | warning and degraded recovery count; kernel continues booting |
-| A lifecycle resource fails to close | remaining resources still close; aggregate failure returned; failed resources retained for later close retry |
-| Owner cache is exhausted | `resource_exhausted` |
-| Workspace file escapes or is unreadable | `invalid_request` or `not_found` through the workspace service |
+| OAuth callback, state, authorization URL or persisted store is invalid                 | authorization fails with a bounded typed error; unrelated plugin contributions and local MCP transports remain available                 |
+| Orphan recovery fails                                                                  | warning and degraded recovery count; kernel continues booting                                                                            |
+| A lifecycle resource fails to close                                                    | remaining resources still close; aggregate failure returned; failed resources retained for later close retry                             |
+| Owner cache is exhausted                                                               | `resource_exhausted`                                                                                                                     |
+| Workspace file escapes or is unreadable                                                | `invalid_request` or `not_found` through the workspace service                                                                           |
 
 ## 9. Dependency seams
 

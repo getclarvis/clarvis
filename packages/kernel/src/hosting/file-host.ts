@@ -58,6 +58,8 @@ interface FileRunHostCommonOptions {
   exposeLocalControls?: boolean;
   /** Reveal the server-owned session namespace to a remote application client. */
   exposeDefaultOwner?: boolean;
+  /** Wake the process lifecycle immediately when an operator requests retirement. */
+  onShutdownRequested?(): void;
 }
 
 /** File-backed host composition over the native Kernel. */
@@ -145,6 +147,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
   };
   const disconnections = new Set<Promise<void>>();
   const roles = new Map<string, HostingPeer["role"]>();
+  const disconnectActions = new Map<string, "shutdown" | "detach">();
   let maintenance = false;
   let closing: Promise<void> | undefined;
   const goalServices = new Map<string, ReturnType<typeof createGoalService>>();
@@ -441,6 +444,11 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
         if (closing !== undefined) throw kernelError("unavailable", "host is closing");
         await options.assertAuthority?.();
         restartRequested = true;
+        options.onShutdownRequested?.();
+      },
+      setDisconnectAction(peerId, action) {
+        assertWritable();
+        disconnectActions.set(peerId, action);
       },
     });
     const ownedOperator = operator;
@@ -623,8 +631,14 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             ...(role === "operator" && exposeLocalControls ? { local_host: true as const } : {}),
           },
           close() {
+            const shutdown = disconnectActions.get(connection.peer.id) === "shutdown";
+            disconnectActions.delete(connection.peer.id);
             roles.delete(connection.peer.id);
             ownedOperator.disconnect(connection.peer.id);
+            if (shutdown && closing === undefined && !restartRequested) {
+              restartRequested = true;
+              options.onShutdownRequested?.();
+            }
             const pending = bestEffort(
               async () => {
                 await connection.close();
@@ -665,8 +679,13 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       close() {
         closing ??= (async () => {
           roles.clear();
+          disconnectActions.clear();
           ownedOperator.close();
-          const settled = await Promise.allSettled([owned.close(), ...disconnections]);
+          const settled = await Promise.allSettled([
+            kernel.stopMemoryRecovery(),
+            owned.close(),
+            ...disconnections,
+          ]);
           const goalSettled = await Promise.allSettled(
             [...goalServices.values()].map((service) => service.close()),
           );

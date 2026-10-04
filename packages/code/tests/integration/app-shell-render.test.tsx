@@ -411,7 +411,6 @@ function defaultProps(overrides: {
   quitCalls?: number[];
   active?: Accessor<boolean>;
   compacting?: Accessor<boolean>;
-  continuesOnExit?: Accessor<boolean>;
   cancel?: () => boolean;
   status?: Accessor<string>;
   goals?: AppProps["run"]["goals"];
@@ -477,7 +476,6 @@ function defaultProps(overrides: {
         compact: () => {},
         cancel: overrides.cancel ?? (() => false),
         active: overrides.active ?? (() => false),
-        continuesOnExit: overrides.continuesOnExit,
         startedAt: () => (overrides.active?.() ? Date.now() - 5000 : null),
         sessionUsageBaseline: overrides.sessionUsageBaseline ?? (() => null),
         workflowActivity: overrides.workflowActivity ?? (() => null),
@@ -2280,39 +2278,42 @@ test("/quit calls shell.quit() directly when there is nothing to lose", async ()
   t.renderer.destroy();
 });
 
-test.each([true, false])(
-  "/quit respects the observed run's continue policy (%s) without sending cancellation",
-  async (continues) => {
-    const quitCalls: number[] = [];
-    const cancellations: number[] = [];
-    const t = await mountApp(
-      defaultProps({
-        quitCalls,
-        active: () => true,
-        continuesOnExit: () => continues,
-        cancel: () => {
-          cancellations.push(1);
-          return true;
-        },
-      }),
-    );
-    try {
-      const frame = await captureUntil(t, "working");
-      expect(frame.includes("continues after exit")).toBe(continues);
-      await t.mockInput.typeText("/quit");
-      await t.renderOnce();
-      press(t, "escape");
-      await t.renderOnce();
-      t.mockInput.pressEnter();
-      await t.renderOnce();
-      expect(quitCalls).toEqual(continues ? [1] : []);
-      expect(cancellations).toEqual([]);
-      if (!continues) expect(t.captureCharFrame()).toContain("press again to quit (run active)");
-    } finally {
-      t.renderer.destroy();
-    }
-  },
-);
+test("/quit warns before exiting an active run and leaves workspace cancellation to the host", async () => {
+  const quitCalls: number[] = [];
+  const cancellations: number[] = [];
+  const t = await mountApp(
+    defaultProps({
+      quitCalls,
+      active: () => true,
+      cancel: () => {
+        cancellations.push(1);
+        return true;
+      },
+    }),
+  );
+  try {
+    const frame = await captureUntil(t, "working");
+    expect(frame).not.toContain("continues after exit");
+    await t.mockInput.typeText("/quit");
+    await t.renderOnce();
+    press(t, "escape");
+    await t.renderOnce();
+    t.mockInput.pressEnter();
+    await t.renderOnce();
+    expect(quitCalls).toEqual([]);
+    expect(t.captureCharFrame()).toContain("press again to quit (run active)");
+    await t.mockInput.typeText("/quit");
+    await t.renderOnce();
+    press(t, "escape");
+    await t.renderOnce();
+    t.mockInput.pressEnter();
+    await t.renderOnce();
+    expect(quitCalls).toEqual([1]);
+    expect(cancellations).toEqual([]);
+  } finally {
+    t.renderer.destroy();
+  }
+});
 
 test("a clean managed worktree asks whether to remove its checkout before exit", async () => {
   const quitCalls: number[] = [];

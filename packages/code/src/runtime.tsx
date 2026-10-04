@@ -553,6 +553,7 @@ async function runApp(
     ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
     logger: diagnostics?.logger ?? createLogger("silent"),
     openMcpAuthorizationUrl: openPublicUrl,
+    shutdownOnExit: true,
   });
   const connectWorkspaceManager = (): Promise<WorkspaceClientManager> =>
     diagnosticAsync("boot.workspace-manager", () =>
@@ -1248,8 +1249,14 @@ async function runApp(
     runHost.setRunStatus(value);
   };
   let workspaceCloseFlight: Promise<void> | undefined;
+  let backgroundExit = false;
   const closeWorkspace = (): Promise<void> => {
     workspaceCloseFlight ??= (async () => {
+      try {
+        await workspaceManager.prepareExit(backgroundExit ? "detach" : "shutdown");
+      } catch (error) {
+        diagnosticEvent("workspace.exit.failed", { reason: errorText(error) }, "warn");
+      }
       loops?.dispose();
       goals.dispose();
       pendingGoalView = undefined;
@@ -1529,6 +1536,8 @@ async function runApp(
             attach: (ref, control) => runHost.attachHostedRun(ref, control),
             newConversation: () => runHost.clearSession(),
             exit: async (receipt) => {
+              await workspaceManager.prepareExit("detach");
+              backgroundExit = true;
               await platform.shutdown(
                 "user-quit",
                 undefined,
@@ -1556,7 +1565,6 @@ async function runApp(
     interruptTool: (toolExecutionId) => runHost.interruptTool(toolExecutionId),
     forceStop: () => runHost.teardownRuns(),
     active: () => runHost.runActive(),
-    continuesOnExit: () => runHost.continuesOnExit(),
     physicalActive: () => runHost.physicalWorkActive(),
     memory: () => runHost.memory(),
     startedAt: () => runHost.runStartedAt(),

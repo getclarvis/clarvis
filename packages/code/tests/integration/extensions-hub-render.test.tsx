@@ -337,6 +337,13 @@ function mount(
       inventory = { ...inventory, plugins: [...inventory.plugins, context7Inventory()] };
       return plugin;
     },
+    installUrl: async (url, source) => {
+      await options.installGate;
+      installed.push(`${url}:${source}`);
+      const plugin = installedPlugin(source);
+      inventory = { ...inventory, plugins: [...inventory.plugins, context7Inventory()] };
+      return plugin;
+    },
     refresh: options.refresh ?? (async () => {}),
     reconnect: async () => options.reconnectResult ?? { ok: true, message: "connected" },
     runActive: () => options.runActive === true,
@@ -869,4 +876,70 @@ test("the 80x24 Extensions intro gives its rows to decisions instead of crowding
   expect(frame).not.toContain("e → Extension Profiles");
   expect(frame).not.toContain("d8888b");
   rendered.renderer.destroy();
+});
+
+test("external Git install preserves the draft on cancel and stages its exact MCP plugin until Apply", async () => {
+  const mounted = mount({
+    inventory: { plugins: [], standalone_skills: [] },
+    listings: [],
+    profileScope: "workspace",
+    initialExtensionProfile: { scope: "workspace", name: "mine" },
+  });
+  const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
+    width: 120,
+    height: 32,
+  });
+  await settle(rendered, () => rendered.captureCharFrame().includes("Install external plugin"));
+  expect(mounted.host.scope()).toBe("workspace");
+  mounted.press("down");
+  mounted.press("return");
+  await settle(rendered, () => rendered.captureCharFrame().includes("External plugin Git URL"));
+  mounted.press("escape");
+  await settle(rendered, () => rendered.captureCharFrame().includes("Install external plugin"));
+  expect(mounted.installed).toEqual([]);
+  expect(mounted.host.pendingConfirm()).toBeNull();
+  mounted.press("down");
+  mounted.press("return");
+  await settle(rendered, () => rendered.captureCharFrame().includes("External plugin Git URL"));
+  await rendered.mockInput.typeText("https://example.invalid/external-mcp.git");
+  mounted.press("return");
+  await settle(rendered, () =>
+    mounted.notifications.some((message) => message.includes("staged, not active")),
+  );
+  expect(mounted.installed).toEqual(["https://example.invalid/external-mcp.git:agents"]);
+  expect(mounted.applied).toEqual([]);
+  await settle(rendered, () => rendered.captureCharFrame().includes("1 selected"));
+  mounted.press("home");
+  mounted.press("return");
+  await settle(rendered, () => mounted.previews.length === 1);
+  expect(mounted.previews[0]!.selection_scope).toBe("workspace");
+  expect(mounted.previews[0]!.definition.plugins).toEqual([
+    { scope: "global", source: "agents", name: "context7" },
+  ]);
+  await settle(rendered, () => rendered.captureCharFrame().includes("MCP servers (1)"));
+  mounted.press("return");
+  await rendered.renderOnce();
+  mounted.press("return");
+  await settle(rendered, () => mounted.applied.length === 1);
+  expect(mounted.applied[0]!.definition.plugins).toEqual(mounted.previews[0]!.definition.plugins);
+});
+
+test("new Extension Profile name cancellation returns to the chosen scope", async () => {
+  const mounted = mount({ initialExtensionProfile: { scope: "builtin", name: "default" } });
+  const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
+    width: 120,
+    height: 32,
+  });
+  await settle(rendered, () => rendered.captureCharFrame().includes("This workspace"));
+  mounted.press("return");
+  await rendered.renderOnce();
+  mounted.press("end");
+  mounted.press("return");
+  await settle(rendered, () => rendered.captureCharFrame().includes("Extension Profile name:"));
+  mounted.press("escape");
+  await settle(rendered, () =>
+    rendered.captureCharFrame().includes("New global Extension Profile"),
+  );
+  expect(mounted.host.scope()).toBe("workspace");
+  expect(mounted.applied).toEqual([]);
 });

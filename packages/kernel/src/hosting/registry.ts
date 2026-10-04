@@ -1913,6 +1913,13 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     }),
     async close() {
       closing = true;
+      const cancellations = Promise.allSettled(
+        [...entries.values()].map(async (entry) => {
+          entry.stopRequested = true;
+          entry.preparation.abort();
+          await entry.source?.cancel();
+        }),
+      );
       cancelRecoveryWake?.();
       cancelRecoveryWake = undefined;
       await bestEffort(() => syncing, {
@@ -1920,8 +1927,11 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         operation: "hosting.recovery.sync",
         logger,
       });
-      await Promise.all([...connections.values()].map(closeConnection));
-      await Promise.all(
+      const [cancelled] = await Promise.all([
+        cancellations,
+        Promise.all([...connections.values()].map(closeConnection)),
+      ]);
+      const outcomes = await Promise.allSettled(
         [...entries.values()].map(async (entry) => {
           await bestEffort(() => entry.recovery, {
             scope: observationScope,
@@ -1939,6 +1949,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         }),
       );
       await commitTail;
+      const failure = [...cancelled, ...outcomes].find((outcome) => outcome.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
     },
   };
 }

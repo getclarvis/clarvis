@@ -353,7 +353,7 @@ describe("hosted execution observation", () => {
     await f.execution.dispose();
   });
 
-  it("waits for physical closure and reconciliation after cancellation acknowledgement", async () => {
+  it("waits for execution closure and reconciliation without memory grace after cancellation", async () => {
     const writing = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     const f = await fixture({
@@ -373,12 +373,7 @@ describe("hosted execution observation", () => {
     });
     f.finish();
     await f.source.done;
-    expect(f.execution.state().physicalClosed).toBe(false);
-    f.context.emit({
-      type: "memory_ingest",
-      at: 2,
-      detail: { execution_id: completed.execution_id, phase: "done" },
-    });
+    await f.source.closed;
     await writing.promise;
     expect(f.execution.state().physicalClosed).toBe(true);
     expect(f.execution.state().reconciled).toBe(false);

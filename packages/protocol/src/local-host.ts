@@ -36,4 +36,6 @@ export interface LocalHostService {
   requestRestart(): Promise<void>;
   /** Explicit operator replacement: stop new admission, cancel hosted work, and retire this generation. */
   requestShutdown(): Promise<void>;
+  /** Connection-local exit action. TUI connections arm shutdown; deliberate handoff/reconnect detaches. */
+  setDisconnectAction(action: "shutdown" | "detach"): Promise<void>;
 }

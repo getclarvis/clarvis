@@ -43,6 +43,8 @@ export interface WorkspaceClientOptions extends Pick<
 > {
   globalDir: string;
   openMcpAuthorizationUrl?: (url: string) => Promise<boolean>;
+  /** Arm workspace-wide cancellation on TUI exit, including unexpected transport closure. */
+  shutdownOnExit?: boolean;
   /** Explicit process destination. Omission selects the local host. */
   destination?:
     | { readonly kind: "local" }
@@ -137,8 +139,9 @@ async function admitConnection(
 
 /**
  * Owns one authenticated connection to the independently launched workspace host. Closing this
- * manager releases only the connection. Recovery authenticates a new connection without restarting
- * the host. Explicit reload requests a quiescent restart; active backgrounds refuse that operation.
+ * manager retires a TUI-owned host unless an explicit background exit was prepared. Recovery
+ * authenticates a new connection without replaying work. Explicit reload requests a quiescent
+ * restart; active backgrounds refuse that operation.
  */
 export class WorkspaceClientManager {
   private closed = false;
@@ -153,6 +156,7 @@ export class WorkspaceClientManager {
   private readonly browserAttempts = new Set<string>();
   private readonly retiringClients = new WeakSet<KernelClient>();
   private reconnecting: { mode: ReconnectMode; task: Promise<void> } | undefined;
+  private exitPreparation: Promise<void> | undefined;
 
   private constructor(
     private kernel: KernelClient,
@@ -190,7 +194,10 @@ export class WorkspaceClientManager {
       connection.closed,
     );
     try {
-      if (plan.destination.kind === "local") await manager.refresh();
+      if (plan.destination.kind === "local") {
+        await manager.refresh();
+        if (options.shutdownOnExit) await client.localHost!.setDisconnectAction("shutdown");
+      }
     } catch (error) {
       await client.close();
       throw error;
@@ -390,9 +397,16 @@ export class WorkspaceClientManager {
               defaultOwner: this.defaultOwner,
               connectHost: this.connectHost,
             };
-      const retirePrevious = async (): Promise<void> => {
+      const retirePrevious = async (disarm = false): Promise<void> => {
         this.retiringClients.add(previous);
         try {
+          if (
+            mode === "connection" &&
+            previousDestination.kind === "local" &&
+            this.options.shutdownOnExit &&
+            disarm
+          )
+            await previous.localHost!.setDisconnectAction("detach");
           await previous.close();
         } catch (error) {
           this.retiringClients.delete(previous);
@@ -423,9 +437,11 @@ export class WorkspaceClientManager {
           state = await client.localHost!.inspect();
         }
         if (mode === "connection" && previousDestination.kind === "local") {
-          await retirePrevious();
+          await retirePrevious(state?.host_generation === this.status?.host_generation);
         }
         if (this.closed) throw new Error("workspace client is closed");
+        if (nextPlan.destination.kind === "local" && this.options.shutdownOnExit)
+          await client.localHost!.setDisconnectAction("shutdown");
       } catch (error) {
         await client.close();
         throw error;
@@ -451,11 +467,26 @@ export class WorkspaceClientManager {
     }
   }
 
+  /** Prepare one deliberate exit before local cleanup; background is authorized only by a confirmed handoff. */
+  prepareExit(action: "shutdown" | "detach" = "shutdown"): Promise<void> {
+    this.exitPreparation ??= (async () => {
+      clearTimeout(this.timer);
+      if (this.destination.kind !== "local" || !this.options.shutdownOnExit) return;
+      if (action === "detach") await this.kernel.localHost!.setDisconnectAction("detach");
+      else await this.kernel.localHost!.requestShutdown();
+    })();
+    return this.exitPreparation;
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.timer);
-    await this.kernel.close();
+    try {
+      await this.prepareExit();
+    } finally {
+      await this.kernel.close();
+    }
     this.driftListeners.clear();
     this.skillsListeners.clear();
     this.runtimeListeners.clear();
